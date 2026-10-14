@@ -181,6 +181,7 @@ def update_course_api(course_id: str) -> tuple[Response, int] | Response:
     actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or {}
+    payload["as_draft"] = True
     client_row_version = payload.get("row_version") or request.headers.get("If-Match")
     if client_row_version is not None:
         target_course = _resolve_course(course_id, session=db.session)
@@ -937,16 +938,15 @@ def record_course_lesson_progress_api(
             "seconds_increment must be an integer and view_fraction must be a float."
         ) from None
 
-    min_sec = 0 if (is_completed_flag or vf_float >= 0.95) else 1
-    bounded_sec = max(min_sec, min(sec_int, 60))
     bounded_vf = max(0.0, min(vf_float, 1.0))
-    client_event_id = payload.get("client_event_id") or request.headers.get("X-Client-Event-Id")
-
-    if bounded_sec == 0:
+    if sec_int == 0:
         progress = reconcile_lesson_progress(
             actor, lesson.id, bounded_vf, session=db.session, is_completed=is_completed_flag
         )
     else:
+        bounded_sec = max(1, min(sec_int, 60))
+        client_event_id = payload.get("client_event_id") or request.headers.get("X-Client-Event-Id")
+
         progress = record_lesson_progress(
             actor=actor,
             lesson_id=lesson.id,
@@ -954,7 +954,6 @@ def record_course_lesson_progress_api(
             view_fraction=bounded_vf,
             client_event_id=client_event_id,
             enforce_wall_clock=True,
-            is_completed=is_completed_flag,
             session=db.session,
         )
 

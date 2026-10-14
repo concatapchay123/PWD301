@@ -1755,15 +1755,12 @@ def record_lesson_progress(
         sec = int(seconds_increment)
     except (ValueError, TypeError):
         raise LessonValidationError("seconds_increment must be an integer.") from None
-    if (
-        sec < (0 if (server_verified or is_completed or vf >= 0.95) else 1)
-        or sec > MAX_PING_SECONDS
-    ):
+    if sec < (0 if (server_verified or vf >= 0.95) else 1) or sec > MAX_PING_SECONDS:
         raise LessonValidationError(
             f"seconds_increment must be between 1 and {MAX_PING_SECONDS} seconds."
         )
 
-    if _lesson_requires_video_watch(lesson) and not (server_verified or is_completed):
+    if _lesson_requires_video_watch(lesson) and not server_verified:
         raise LessonValidationError("A playback session is required for video progress.")
 
     event_id = None
@@ -1913,12 +1910,20 @@ def record_lesson_progress(
     progress.updated_at = now_ts
 
     # Evaluate completion: monotonic, idempotent
-    # TASK-092 & Invariant 31: Purge old reading-time / word count formulas.
-    # Non-video lessons enforce 20s minimum dwell time.
-    # Video lessons strictly require 100% video completion (cannot be bypassed by is_completed).
+    # Invariant: Respect lesson configuration while strictly enforcing completion requirements.
     requires_video = _lesson_requires_video_watch(lesson)
-    min_completion_seconds = 0 if requires_video else 20
-    viewed_fraction_required = 0.99 if requires_video else 0.0
+    min_completion_seconds = (
+        0
+        if requires_video
+        else (
+            lesson.minimum_completion_seconds
+            if lesson.minimum_completion_seconds is not None
+            else 20
+        )
+    )
+    viewed_fraction_required = (
+        0.99 if requires_video else float(lesson.viewed_fraction_required or 0.0)
+    )
 
     progress_snapshot: dict[str, Any] = {}
     if progress.completion_rule_snapshot_json:
@@ -1937,8 +1942,14 @@ def record_lesson_progress(
         fraction_ok = float(progress.max_view_fraction) >= 0.99 or vf >= 0.99
         criteria_met = fraction_ok and quiz_is_complete
     else:
-        time_spent_ok = (progress.seconds_spent >= min_completion_seconds) or is_completed
-        criteria_met = time_spent_ok and quiz_is_complete
+        time_spent_ok = (progress.seconds_spent >= min_completion_seconds) or (
+            min_completion_seconds == 0
+        )
+        fraction_ok = (
+            float(progress.max_view_fraction) >= viewed_fraction_required
+            or vf >= viewed_fraction_required
+        )
+        criteria_met = time_spent_ok and fraction_ok and quiz_is_complete
 
     newly_completed = False
     if criteria_met and progress.completed_at is None:

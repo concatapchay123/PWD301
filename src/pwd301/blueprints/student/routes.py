@@ -542,18 +542,17 @@ def record_student_progress_route(
             "seconds_increment must be an integer and view_fraction must be a float."
         ) from None
 
-    min_sec = 0 if (is_completed_flag or vf_float >= 0.95) else 1
-    bounded_sec = max(min_sec, min(sec_int, 60))
     bounded_vf = max(0.0, min(vf_float, 1.0))
-    client_event_id = payload.get("client_event_id") or request.headers.get("X-Client-Event-Id")
-
-    if bounded_sec == 0:
+    if sec_int == 0:
         from pwd301.services.playback_service import reconcile_lesson_progress
 
         progress = reconcile_lesson_progress(
             actor, lesson_id, bounded_vf, is_completed=is_completed_flag
         )
     else:
+        bounded_sec = max(1, min(sec_int, 60))
+        client_event_id = payload.get("client_event_id") or request.headers.get("X-Client-Event-Id")
+
         progress = record_lesson_progress(
             actor=actor,
             lesson_id=lesson_id,
@@ -561,7 +560,6 @@ def record_student_progress_route(
             view_fraction=bounded_vf,
             client_event_id=client_event_id,
             enforce_wall_clock=True,
-            is_completed=is_completed_flag,
         )
 
     pct = 0.0

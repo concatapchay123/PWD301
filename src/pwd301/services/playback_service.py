@@ -225,16 +225,13 @@ def reconcile_lesson_progress(
         lesson, _, _ = _context(actor, lesson_id, sess)
         existing = get_lesson_progress(actor, lesson.id, session=sess)
         fraction = (
-            (float(existing.max_view_fraction or 0) if existing else 0)
+            (float(existing.max_view_fraction or 0) if existing else 0.0)
             if (
                 _lesson_requires_video_watch(lesson)
-                and not is_completed
-                and float(view_fraction or 0) < 0.95
+                and not (is_completed and float(view_fraction or 0) >= 0.95)
             )
-            else float(view_fraction or 0)
+            else float(view_fraction or 0.0)
         )
-        if is_completed or float(view_fraction or 0) >= 0.95:
-            fraction = max(fraction, float(view_fraction or 1.0))
         progress = record_lesson_progress(
             actor,
             lesson.id,
@@ -243,7 +240,6 @@ def reconcile_lesson_progress(
             session=sess,
             now=now,
             server_verified=True,
-            is_completed=is_completed,
         )
         if session is None:
             sess.commit()

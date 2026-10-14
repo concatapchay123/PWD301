@@ -1461,9 +1461,43 @@ def create_lesson_route(course_id: str) -> Any:
                     "Vui lòng rút lại xét duyệt trước khi tiếp tục thêm bài giảng."
                 )
 
-            # Unified Staging Draft Engine: Lessons created on published courses always stage as DRAFT
-            payload["status"] = "DRAFT"
-            lesson = create_lesson(actor, course.id, payload, session=db.session)
+            has_active_draft = (
+                db.session.query(Lesson.id)
+                .filter(
+                    Lesson.course_id == course.id,
+                    Lesson.status == "DRAFT",
+                    Lesson.deleted_at.is_(None),
+                )
+                .first()
+                is not None
+            )
+            is_changeset_flow = (
+                has_active_draft
+                or request.args.get("as_draft") == "true"
+                or request.args.get("changeset") == "true"
+                or (
+                    isinstance(payload, dict)
+                    and (
+                        payload.get("as_draft") is True
+                        or payload.get("changeset") is True
+                        or payload.get("in_changeset") is True
+                    )
+                )
+            )
+            if is_changeset_flow:
+                payload["status"] = "DRAFT"
+                lesson = create_lesson(actor, course.id, payload, session=db.session)
+            else:
+                from pwd301.services.lesson_service import create_lesson_change_request
+
+                payload["change_type"] = "LESSON_STRUCTURE"
+                payload["action"] = "CREATE_LESSON"
+                change_req, lesson = create_lesson_change_request(
+                    actor=actor,
+                    course_id=course.id,
+                    payload=payload,
+                    session=db.session,
+                )
         else:
             if unit_is_staged:
                 payload["status"] = "DRAFT"

@@ -913,14 +913,17 @@ def queue_course_metadata_review(
         return course
     proposed = actual_diff
 
-    # Unified Staging Draft (TASK-091): Store proposed metadata in working draft changeset
+    # Unified Staging Draft vs Standard Metadata Review Request
+    is_draft_requested = bool(
+        data.get("as_draft") or data.get("changeset") or data.get("in_changeset")
+    )
     existing_req = (
         sess.query(CourseChangeRequest)
         .filter_by(
             course_id=course.id,
             requested_by_user_id=actor.id,
-            change_type="COURSE_VERSION_CHANGESET",
-            status="DRAFT",
+            change_type="COURSE_VERSION_CHANGESET" if is_draft_requested else "COURSE_METADATA",
+            status="DRAFT" if is_draft_requested else "PENDING",
         )
         .first()
     )
@@ -930,10 +933,13 @@ def queue_course_metadata_review(
             curr_payload = json.loads(existing_req.proposed_payload_json or "{}")
         except Exception:
             curr_payload = {}
-        curr_meta = curr_payload.get("course_metadata") or {}
-        curr_meta.update(proposed)
-        curr_payload["course_metadata"] = curr_meta
-        curr_payload["action"] = "COURSE_VERSION_CHANGESET"
+        if is_draft_requested:
+            curr_meta = curr_payload.get("course_metadata") or {}
+            curr_meta.update(proposed)
+            curr_payload["course_metadata"] = curr_meta
+            curr_payload["action"] = "COURSE_VERSION_CHANGESET"
+        else:
+            curr_payload.update(proposed)
         existing_req.proposed_payload_json = json.dumps(
             curr_payload, ensure_ascii=False, default=str
         )
@@ -944,19 +950,23 @@ def queue_course_metadata_review(
         req = CourseChangeRequest(
             course_id=course.id,
             requested_by_user_id=actor.id,
-            change_type="COURSE_VERSION_CHANGESET",
+            change_type="COURSE_VERSION_CHANGESET" if is_draft_requested else "COURSE_METADATA",
             target_type="COURSE",
             target_id=course.id,
             proposed_payload_json=json.dumps(
-                {
-                    "action": "COURSE_VERSION_CHANGESET",
-                    "version_title": "Bản nháp cập nhật",
-                    "course_metadata": proposed,
-                },
+                (
+                    {
+                        "action": "COURSE_VERSION_CHANGESET",
+                        "version_title": "Bản nháp cập nhật",
+                        "course_metadata": proposed,
+                    }
+                    if is_draft_requested
+                    else proposed
+                ),
                 ensure_ascii=False,
                 default=str,
             ),
-            status="DRAFT",
+            status="DRAFT" if is_draft_requested else "PENDING",
             created_at=now,
         )
         sess.add(req)
