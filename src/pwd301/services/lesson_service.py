@@ -1269,16 +1269,17 @@ def reorder_lessons(
     seen_ids: set[int] = set()
 
     for item in ordered_lesson_ids:
+        target_val = (item.get("lesson_id") or item.get("id")) if isinstance(item, dict) else item
         matched: Lesson | None = None
-        if isinstance(item, int):
-            matched = id_map.get(item)
-        elif isinstance(item, uuid.UUID):
-            matched = public_id_map.get(str(item))
-        elif isinstance(item, str):
-            if item.isdigit():
-                matched = id_map.get(int(item))
+        if isinstance(target_val, int):
+            matched = id_map.get(target_val)
+        elif isinstance(target_val, uuid.UUID):
+            matched = public_id_map.get(str(target_val))
+        elif isinstance(target_val, str):
+            if target_val.isdigit():
+                matched = id_map.get(int(target_val))
             if matched is None:
-                matched = public_id_map.get(item.strip().lower())
+                matched = public_id_map.get(target_val.strip().lower())
 
         if matched is None:
             raise LessonPositionConflictError(
