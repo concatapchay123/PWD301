@@ -281,6 +281,45 @@ def update_learning_unit(
     return unit
 
 
+def _cleanup_lesson_resources(
+    sess: Session | scoped_session[Any],
+    lesson: Lesson,
+    actor: User,
+    now: datetime.datetime,
+) -> None:
+    """Soft-delete/remove LessonResource links and trash orphaned FileAssets for a deleted lesson."""
+    from pwd301.models.file_import import FileAsset, LessonResource
+
+    lesson_resources = (
+        sess.query(LessonResource).filter(LessonResource.lesson_id == lesson.id).all()
+    )
+    for lr in lesson_resources:
+        fa_id = lr.file_asset_id
+        sess.delete(lr)
+        sess.flush()
+
+        # Check if fa_id is still referenced by any other active (non-deleted, non-TRASH) lesson
+        other_active_ref = (
+            sess.query(LessonResource)
+            .join(Lesson, LessonResource.lesson_id == Lesson.id)
+            .filter(
+                LessonResource.file_asset_id == fa_id,
+                Lesson.id != lesson.id,
+                Lesson.deleted_at.is_(None),
+                Lesson.status.notin_(("TRASH", "HISTORICAL")),
+            )
+            .first()
+        )
+        if not other_active_ref:
+            fa = sess.get(FileAsset, fa_id)
+            if fa and fa.deleted_at is None and fa.status != "TRASH":
+                if fa.asset_type not in ("COURSE_IMAGE", "QUESTION_IMAGE", "IMPORT_SOURCE"):
+                    fa.deleted_at = now
+                    fa.status = "TRASH"
+                    fa.deleted_by_user_id = actor.id
+                    fa.restore_until = now + datetime.timedelta(days=30)
+
+
 def delete_learning_unit(
     actor: User,
     unit_id: uuid.UUID | str,
@@ -314,12 +353,16 @@ def delete_learning_unit(
             sess.commit()
         return True
 
+    now = utc_now()
     for lesson in unit.lessons:
         if lesson.deleted_at is None:
-            lesson.deleted_at = utc_now()
-            lesson.updated_at = utc_now()
+            lesson.deleted_at = now
+            lesson.status = "TRASH"
+            lesson.deleted_by_user_id = actor.id
+            lesson.updated_at = now
+            _cleanup_lesson_resources(sess, lesson, actor, now)
 
-    unit.deleted_at = utc_now()
+    unit.deleted_at = now
     from pwd301.models.course import CourseChangeRequest
 
     pending_crs = (
@@ -1474,6 +1517,9 @@ def trash_lesson(
     lesson.updated_at = now
     sess.flush()
 
+    # Clean up associated LessonResource entries and mark orphaned FileAssets as TRASH
+    _cleanup_lesson_resources(sess, lesson, actor, now)
+
     # Re-compact remaining active lessons to contiguous 1..(N-1)
     remaining_lessons = (
         sess.query(Lesson)
@@ -2123,7 +2169,7 @@ def record_lesson_progress(
         )
     )
     viewed_fraction_required = (
-        0.99 if requires_video else float(lesson.viewed_fraction_required or 0.0)
+        0.95 if requires_video else float(lesson.viewed_fraction_required or 0.0)
     )
 
     progress_snapshot: dict[str, Any] = {}
@@ -2140,17 +2186,24 @@ def record_lesson_progress(
         progress_snapshot.get("mini_quiz_completed_at")
     )
     if requires_video:
-        fraction_ok = float(progress.max_view_fraction) >= 0.99 or vf >= 0.99
+        fraction_ok = (
+            float(progress.max_view_fraction) >= 0.95
+            or vf >= 0.95
+            or is_completed
+        )
         criteria_met = fraction_ok and quiz_is_complete
     else:
         time_spent_ok = (progress.seconds_spent >= min_completion_seconds) or (
             min_completion_seconds == 0
-        )
+        ) or is_completed
         fraction_ok = (
             float(progress.max_view_fraction) >= viewed_fraction_required
             or vf >= viewed_fraction_required
+            or is_completed
         )
-        criteria_met = time_spent_ok and fraction_ok and quiz_is_complete
+        criteria_met = (time_spent_ok and fraction_ok and quiz_is_complete) or (
+            is_completed and quiz_is_complete
+        )
 
     newly_completed = False
     if criteria_met and progress.completed_at is None:

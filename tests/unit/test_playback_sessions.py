@@ -352,3 +352,13 @@ def test_studio_oembed_cannot_override_data_api_embed_denial(app, monkeypatch):
     )
     check = service.verify_youtube_embeddability("abcdefghijk")
     assert not check["valid"] and check["validation_source"] == "youtube_data_api"
+
+
+def test_reconcile_lesson_progress_allows_completion_with_is_completed(playback_setup):
+    from pwd301.services.playback_service import reconcile_lesson_progress
+
+    actor, lesson, t = playback_setup
+    prog = reconcile_lesson_progress(actor, lesson.id, view_fraction=1.0, is_completed=True, now=t)
+    assert prog.completed_at is not None
+    assert float(prog.max_view_fraction) >= 0.95
+

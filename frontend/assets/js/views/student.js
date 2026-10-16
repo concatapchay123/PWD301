@@ -111,7 +111,7 @@ class StudentView {
         <div class="space-y-3">${pairs.map((pair, index) => `<button type="button" class="matching-card-left w-full min-h-12 rounded-xl border border-slate-700/80 bg-slate-800 p-3 text-left flex items-center justify-between gap-2" data-left-key="${esc(pair.key)}" aria-pressed="false">
           <span class="text-xs">${index + 1}. ${esc(pair.left)}</span><span class="port-dot w-4 h-4 rounded-full border-2 border-slate-500 shrink-0" data-port="left-${esc(pair.key)}"></span>
         </button>`).join('')}</div>
-        <div class="space-y-3">${rights.map((right, index) => `<button type="button" class="matching-card-right w-full min-h-12 rounded-xl border border-slate-700/80 bg-slate-800 p-3 text-right flex items-center justify-between gap-2" data-right-pos="${index}" data-right-text="${esc(right.text)}" aria-pressed="false">
+        <div class="space-y-3">${rights.map((right, index) => `<button type="button" class="matching-card-right w-full min-h-12 rounded-xl border border-slate-700/80 bg-slate-800 p-3 text-right flex items-center justify-between gap-2" data-right-pos="${index}" data-right-text="${esc(right.text)}" data-right-key="${esc(right.key || right.text)}" data-right-id="${esc(right.id || index)}" aria-pressed="false">
           <span class="port-dot w-4 h-4 rounded-full border-2 border-slate-500 shrink-0" data-port="right-${index}"></span><span class="text-xs">${esc(right.text)}</span>
         </button>`).join('')}</div>
       </div>
@@ -2394,6 +2394,25 @@ class StudentView {
         });
       }
 
+      // Dynamic Course Progress Calculation for Console Header Badge
+      const getCourseProgressStats = () => {
+        const completedCount = allLessons.filter(l => Boolean(l.is_completed || l._isCompleted)).length;
+        const totalCount = allLessons.length;
+        const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+        return { completedCount, totalCount, progressPercent };
+      };
+
+      const updateConsoleCourseProgressBadge = () => {
+        const badge = document.getElementById('console-course-progress-badge');
+        if (badge) {
+          const { completedCount, totalCount, progressPercent } = getCourseProgressStats();
+          badge.innerHTML = `
+            <span class="material-symbols-outlined text-[16px] text-emerald-600 dark:text-emerald-400">trending_up</span>
+            <span>Tiến độ: <strong class="font-extrabold">${progressPercent}%</strong></span>
+          `;
+        }
+      };
+
       // Dynamic Re-evaluation of Unlock Status across all Lessons and Exams (TASK-092)
       const recalculateAllUnlocks = () => {
         let seqIndex = 0;
@@ -2468,6 +2487,7 @@ class StudentView {
             }
           });
         }
+        updateConsoleCourseProgressBadge();
       };
 
       // Initial active item determination (Auto-Resume)
@@ -2478,20 +2498,6 @@ class StudentView {
       if (!activeItem && initialLessonId) {
         activeItem = flatNavList.find(i => i.type === 'lesson' && String(i.id) === String(initialLessonId)) || null;
       }
-      // Anti-Bypass: If student has a pending unfinished quiz for this course, navigate directly to that lesson
-      try {
-        const pendingQuizRaw = sessionStorage.getItem('pwd301_pending_quiz_' + courseId);
-        if (pendingQuizRaw) {
-          const pq = JSON.parse(pendingQuizRaw);
-          if (pq && pq.lessonId && !pq.passed) {
-            const pendingLesson = flatNavList.find(i => i.type === 'lesson' && String(i.id) === String(pq.lessonId));
-            if (pendingLesson) {
-              activeItem = pendingLesson;
-            }
-          }
-        }
-      } catch (e) {}
-
       if (!activeItem) {
         const incompleteUnlockedLesson = flatNavList.find(i => i.type === 'lesson' && !i.isCompleted && i.isUnlocked);
         activeItem = incompleteUnlockedLesson || flatNavList.find(i => i.type === 'lesson') || flatNavList[0] || null;
@@ -2512,8 +2518,11 @@ class StudentView {
 
       // Collect all attached resource IDs across all lessons to isolate course-level general files
       const attachedAssetIds = new Set();
+      const activeLessonIds = new Set();
       modules.forEach(mod => {
         (mod.lessons || []).forEach(les => {
+          const lid = les.id || les.lesson_id || les.public_id;
+          if (lid) activeLessonIds.add(String(lid));
           (les.resources || []).forEach(r => {
             if (isCoverAsset(r)) return;
             const aid = r.asset_id || r.file_asset?.public_id || r.file_asset?.id || r.id;
@@ -2524,9 +2533,12 @@ class StudentView {
         });
       });
 
-      // General course resources: files not attached to any specific lesson
+      // General course resources: files not attached to any specific lesson and not orphaned
       const generalCourseResources = (allResources || []).filter(r => {
+        if (!r) return false;
         if (isCoverAsset(r)) return false;
+        if (r.is_orphaned || r.is_deleted || r.status === 'TRASH' || r.deleted_at || r.is_trashed) return false;
+        if (r.lesson_id && !activeLessonIds.has(String(r.lesson_id))) return false;
         const aid = r.asset_id || r.resource_id || r.id;
         const fn = r.filename;
         if (aid && attachedAssetIds.has(String(aid))) return false;
@@ -2624,6 +2636,10 @@ class StudentView {
 
             <!-- Header Action Controls -->
             <div class="flex items-center gap-2 sm:gap-3">
+              <div id="console-course-progress-badge" class="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-bold shrink-0">
+                <span class="material-symbols-outlined text-[16px] text-emerald-600 dark:text-emerald-400">trending_up</span>
+                <span>Tiến độ: <strong class="font-extrabold">${getCourseProgressStats().progressPercent}%</strong></span>
+              </div>
               <a
                 href="#/student/courses"
                 id="console-exit-btn"
@@ -4143,16 +4159,34 @@ class StudentView {
           if (!activeVideoUrl && Array.isArray(lesson.video_urls) && lesson.video_urls.length > 0) {
             activeVideoUrl = lesson.video_urls[0];
           }
-          if (!activeVideoUrl && isPreview && Array.isArray(lesson.resources)) {
+          if (!activeVideoUrl && Array.isArray(lesson.resources)) {
             const vidRes = lesson.resources.find(r => {
               const mime = (r.file_asset?.mime_type || r.mime_type || '').toLowerCase();
               const fn = (r.file_asset?.original_filename || r.filename || r.label || '').toLowerCase();
               const scanStatus = r.file_asset?.scan_status || r.scan_status;
-              return scanStatus === 'CLEAN' && (mime.startsWith('video/') || fn.match(/\.(mp4|webm|mkv|mov)$/i));
+              return (scanStatus === 'CLEAN' || !scanStatus) && (mime.startsWith('video/') || fn.match(/\.(mp4|webm|mkv|mov)$/i));
             });
             if (vidRes) {
-              const assetId = vidRes.asset_id || vidRes.file_asset_id || vidRes.file_asset?.public_id;
-              if (assetId) activeVideoUrl = `/api/files/${encodeURIComponent(assetId)}/stream`;
+              const assetId = vidRes.file_asset?.public_id || vidRes.asset_id || vidRes.file_asset_id;
+              const coursePubId = course.public_id || course.id || courseId;
+              const lesPubId = lesson.public_id || lesson.lesson_id || lesson.id || expectedLessonId;
+              if (coursePubId && lesPubId && assetId) {
+                activeVideoUrl = `/student/courses/${encodeURIComponent(coursePubId)}/lessons/${encodeURIComponent(lesPubId)}/video/${encodeURIComponent(assetId)}/playlist.m3u8`;
+              } else if (coursePubId && lesPubId) {
+                activeVideoUrl = `/student/courses/${encodeURIComponent(coursePubId)}/lessons/${encodeURIComponent(lesPubId)}/video/playlist.m3u8`;
+              } else if (assetId) {
+                activeVideoUrl = `/api/files/${encodeURIComponent(assetId)}/stream`;
+              }
+            }
+          }
+          // Security Invariant: Students get 403 Forbidden from /api/files/<assetId>/stream. Resolve to HLS.
+          if (activeVideoUrl && String(activeVideoUrl).includes('/api/files/')) {
+            const m = String(activeVideoUrl).match(/\/api\/files\/([^\/]+)\/stream/);
+            const assetId = m ? m[1] : null;
+            const coursePubId = course.public_id || course.id || courseId;
+            const lesPubId = lesson.public_id || lesson.lesson_id || lesson.id || expectedLessonId;
+            if (coursePubId && lesPubId && assetId) {
+              activeVideoUrl = `/student/courses/${encodeURIComponent(coursePubId)}/lessons/${encodeURIComponent(lesPubId)}/video/${encodeURIComponent(assetId)}/playlist.m3u8`;
             }
           }
           lesson.video_url = activeVideoUrl;
@@ -4280,44 +4314,53 @@ class StudentView {
                 </section>
               `).join('')}
 
-              <!-- Clean Markdown Reader -->
-              <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-10 shadow-sm text-slate-800 dark:text-slate-200 leading-relaxed text-sm sm:text-base space-y-5">
-                ${UI.renderMarkdown(lesson.markdown_content || 'Nội dung bài giảng đang được hoàn thiện.')}
-              </div>
-
-              <!-- Question Gate Card (TASK-094 Standardized "Câu hỏi") -->
-              ${hasMiniQuiz ? `
-                <div class="bg-indigo-50/50 dark:bg-slate-900 border border-indigo-200/60 dark:border-indigo-900/60 rounded-2xl p-6 sm:p-8 shadow-sm space-y-4" id="cisco-question-gate-card">
+              <!-- Question Gate Card (Standardized Review Questions below Video) -->
+              ${hasMiniQuiz ? (() => {
+                const isQuizLocked = hasVideo && !videoWatched && !isCompleted;
+                return `
+                <div class="bg-indigo-50/50 dark:bg-slate-900 border ${isQuizLocked ? 'border-amber-300 dark:border-amber-800/80' : 'border-indigo-200/60 dark:border-indigo-900/60'} rounded-2xl p-6 sm:p-8 shadow-sm space-y-4" id="cisco-question-gate-card">
                   <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div class="flex items-center gap-3">
-                      <div class="w-12 h-12 rounded-2xl bg-indigo-600/10 dark:bg-indigo-400/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
-                        <span class="material-symbols-outlined text-2xl">quiz</span>
+                      <div class="w-12 h-12 rounded-2xl ${isQuizLocked ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' : 'bg-indigo-600/10 dark:bg-indigo-400/10 text-indigo-600 dark:text-indigo-400'} flex items-center justify-center font-bold">
+                        <span class="material-symbols-outlined text-2xl">${isQuizLocked ? 'lock' : 'quiz'}</span>
                       </div>
                       <div>
                         <div class="flex items-center gap-2">
-                          <h3 class="font-black text-slate-900 dark:text-white text-base">Câu hỏi</h3>
-                          <span id="cisco-question-status-badge" class="px-2.5 py-0.5 rounded-full text-xs font-bold ${hasPassedQuiz ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'}">
-                            ${hasPassedQuiz ? 'Đã hoàn thành' : 'Chưa hoàn thành'}
+                          <h3 class="font-black text-slate-900 dark:text-white text-base">Câu hỏi ôn tập</h3>
+                          <span id="cisco-question-status-badge" class="px-2.5 py-0.5 rounded-full text-xs font-bold ${isQuizLocked ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 flex items-center gap-1' : (hasPassedQuiz ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300')}">
+                            ${isQuizLocked ? '<span class="material-symbols-outlined text-[13px]">lock</span> Đang khóa' : (hasPassedQuiz ? 'Đã hoàn thành' : 'Chưa hoàn thành')}
                           </span>
                         </div>
                         <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                           ${lesson.quiz.length} câu hỏi • Yêu cầu đạt &ge; ${quizPassingPercent}% để hoàn thành bài giảng
                         </p>
+                        ${isQuizLocked ? `
+                          <p id="cisco-question-lock-hint" class="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1 font-semibold">
+                            <span class="material-symbols-outlined text-[14px]">info</span> Vui lòng xem hết video để mở khóa câu hỏi ôn tập
+                          </p>
+                        ` : ''}
                       </div>
                     </div>
                     <div>
                       <button
                         type="button"
                         id="btn-open-question-modal"
-                        class="w-full sm:w-auto px-5 py-2.5 rounded-xl ${hasPassedQuiz ? 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300' : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-600/20'} font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
+                        class="w-full sm:w-auto px-5 py-2.5 rounded-xl ${isQuizLocked ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed border border-slate-300/80 dark:border-slate-700 select-none' : (hasPassedQuiz ? 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 cursor-pointer' : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-600/20 cursor-pointer')} font-bold text-xs transition-all flex items-center justify-center gap-2"
+                        ${isQuizLocked ? 'disabled title="Vui lòng xem hết video để mở khóa câu hỏi ôn tập"' : ''}
                       >
-                        <span class="material-symbols-outlined text-[18px]">${hasPassedQuiz ? 'visibility' : 'play_arrow'}</span>
-                        <span>${hasPassedQuiz ? 'Xem lại câu hỏi' : 'Làm câu hỏi ngay'}</span>
+                        <span class="material-symbols-outlined text-[18px]">${isQuizLocked ? 'lock' : (hasPassedQuiz ? 'visibility' : 'play_arrow')}</span>
+                        <span>${isQuizLocked ? 'Đang khóa câu hỏi' : (hasPassedQuiz ? 'Xem lại câu hỏi' : 'Làm câu hỏi ngay')}</span>
                       </button>
                     </div>
                   </div>
                 </div>
-              ` : ''}
+                `;
+              })() : ''}
+
+              <!-- Clean Markdown Reader -->
+              <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-10 shadow-sm text-slate-800 dark:text-slate-200 leading-relaxed text-sm sm:text-base space-y-5">
+                ${UI.renderMarkdown(lesson.markdown_content || 'Nội dung bài giảng đang được hoàn thiện.')}
+              </div>
 
               <!-- Lesson Resources List (if any) -->
               ${lessonResources.length > 0 ? `
@@ -4449,7 +4492,7 @@ class StudentView {
 
           const isLessonRequirementsMet = () => {
             if (isCompleted) return true;
-            const dwellOk = dwellElapsed >= dwellRequired;
+            const dwellOk = hasVideo || (dwellElapsed >= dwellRequired);
             const videoOk = !hasVideo || videoWatched;
             const quizOk = !hasMiniQuiz || hasPassedQuiz;
             return dwellOk && videoOk && quizOk;
@@ -4458,7 +4501,7 @@ class StudentView {
           const getMissingRequirements = () => {
             if (isCompleted) return [];
             const missing = [];
-            if (dwellElapsed < dwellRequired) {
+            if (!hasVideo && dwellElapsed < dwellRequired) {
               missing.push(`Cần học tối thiểu 30s (còn ${dwellRequired - dwellElapsed}s)`);
             }
             if (hasVideo && !videoWatched) {
@@ -4501,6 +4544,7 @@ class StudentView {
             } catch (e) {}
 
             recalculateAllUnlocks();
+            updateConsoleCourseProgressBadge();
             renderSidebarOutline();
             updateFloatingNav();
             renderBottomNav();
@@ -4515,7 +4559,7 @@ class StudentView {
             if (!isLessonRequirementsMet()) return false;
             if (isPreview) return true;
             try {
-              const result = await ApiClient.recordLessonProgress(trackedLessonId, 0, 0, false);
+              const result = await ApiClient.recordLessonProgress(trackedLessonId, 0, 1.0, true);
               if (!result?.is_completed && !result?.progress?.is_completed) return false;
               setLessonCompleted();
               UI.showToast('Bạn đã hoàn thành bài học. Có thể chuyển sang bài tiếp theo.', 'success');
@@ -4650,12 +4694,38 @@ class StudentView {
             }
           };
 
+          const updateQuestionGateCardUI = () => {
+            const gateCard = document.getElementById('cisco-question-gate-card');
+            const openGateBtn = document.getElementById('btn-open-question-modal');
+            const badge = document.getElementById('cisco-question-status-badge');
+            const hint = document.getElementById('cisco-question-lock-hint');
+            if (hint) hint.remove();
+            if (gateCard) {
+              gateCard.classList.remove('border-amber-300', 'dark:border-amber-800/80');
+              gateCard.classList.add('border-indigo-200/60', 'dark:border-indigo-900/60');
+            }
+            if (badge) {
+              badge.className = `px-2.5 py-0.5 rounded-full text-xs font-bold ${hasPassedQuiz ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'}`;
+              badge.textContent = hasPassedQuiz ? 'Đã hoàn thành' : 'Chưa hoàn thành';
+            }
+            if (openGateBtn) {
+              openGateBtn.removeAttribute('disabled');
+              openGateBtn.title = '';
+              openGateBtn.className = `w-full sm:w-auto px-5 py-2.5 rounded-xl ${hasPassedQuiz ? 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300' : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-600/20'} font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer`;
+              openGateBtn.innerHTML = `
+                <span class="material-symbols-outlined text-[18px]">${hasPassedQuiz ? 'visibility' : 'play_arrow'}</span>
+                <span>${hasPassedQuiz ? 'Xem lại câu hỏi' : 'Làm câu hỏi ngay'}</span>
+              `;
+            }
+          };
+
           const handleConfirmed = result => {
             const body = document.getElementById('cisco-lesson-content-body');
             if (!body || body.dataset.lessonId !== String(trackedLessonId)) return;
             if (result.is_video_complete) {
               videoWatched = true;
               if (antiSeekLabel) antiSeekLabel.textContent = 'Hệ thống đã ghi nhận đủ tiến độ video.';
+              updateQuestionGateCardUI();
               checkAndUnlockLesson();
             }
             if (result.is_completed) setLessonCompleted();
@@ -4675,6 +4745,7 @@ class StudentView {
               onProgress: updateProgressUI, onConfirmed: handleConfirmed,
               onEnded: async () => {
                 videoWatched = true;
+                updateQuestionGateCardUI();
                 if (hasMiniQuiz && !hasPassedQuiz) {
                   openQuestionModal();
                 } else {
@@ -4721,6 +4792,10 @@ class StudentView {
           const openQuestionModal = () => {
             if (!hasMiniQuiz || !lesson.quiz || !lesson.quiz.length) return;
             if (document.getElementById('cisco-question-modal')) return;
+            if (hasVideo && !videoWatched && !isCompleted) {
+              UI.showToast('Vui lòng xem hết video để mở khóa câu hỏi ôn tập', 'warning');
+              return;
+            }
 
             // Mark pending quiz state in sessionStorage
             try {
@@ -4868,12 +4943,44 @@ class StudentView {
                           </div>
                         ` : ''}
 
-                        ${qType === 'MATCHING' ? StudentView.renderMatchingBoard({
-                          pairs: (q.pairs || []).map((pair, index) => ({ key: String(index), left: pair.left,
-                            options: (q.shuffled_rights || (q.pairs || []).map(item => item.right)).map(text => ({ key: text, text })) })),
-                          rights: (q.shuffled_rights || (q.pairs || []).map(item => item.right)).map(text => ({ text })),
-                          attributes: 'data-cisco-quiz-qidx="' + qIdx + '"', selectClass: 'cisco-quiz-matching-select', questionIndex: qIdx
-                        }) : ''}
+                        ${qType === 'MATCHING' ? (() => {
+                          const pairsList = q.pairs || [];
+                          if (!q.shuffled_rights) {
+                            const originalRights = pairsList.map(item => item.right);
+                            let shuffled = [...originalRights];
+                            if (shuffled.length > 1) {
+                              for (let i = shuffled.length - 1; i > 0; i--) {
+                                const j = Math.floor(Math.random() * (i + 1));
+                                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+                              }
+                              // Derangement guarantee: ensure no item is in 1:1 row alignment with original index
+                              let attempts = 0;
+                              while (shuffled.some((item, idx) => item === originalRights[idx]) && attempts < 15) {
+                                attempts++;
+                                for (let i = shuffled.length - 1; i > 0; i--) {
+                                  const j = Math.floor(Math.random() * (i + 1));
+                                  [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+                                }
+                              }
+                              if (shuffled.some((item, idx) => item === originalRights[idx])) {
+                                shuffled = [...originalRights.slice(1), originalRights[0]];
+                              }
+                            }
+                            q.shuffled_rights = shuffled;
+                          }
+                          const rightsList = q.shuffled_rights;
+                          return StudentView.renderMatchingBoard({
+                            pairs: pairsList.map((pair, index) => ({
+                              key: String(index),
+                              left: pair.left,
+                              options: rightsList.map(text => ({ key: text, text }))
+                            })),
+                            rights: rightsList.map((text, index) => ({ text, key: text, id: `r-${index}` })),
+                            attributes: 'data-cisco-quiz-qidx="' + qIdx + '"',
+                            selectClass: 'cisco-quiz-matching-select',
+                            questionIndex: qIdx
+                          });
+                        })() : ''}
 
                         ${qType === 'TRUE_FALSE' ? `
                           <div class="grid grid-cols-2 gap-3 cisco-modal-quiz-tf">
@@ -5355,6 +5462,7 @@ class StudentView {
             if (resetBtn) {
               resetBtn.onclick = () => {
                 hasPassedQuiz = false;
+                (lesson.quiz || []).forEach(q => { q.shuffled_rights = null; });
                 modalWrapper.querySelectorAll('input[type="radio"], input[type="checkbox"]').forEach(r => r.checked = false);
                 modalWrapper.querySelectorAll('.cisco-modal-blank-input').forEach(inp => {
                   inp.value = '';
@@ -5400,32 +5508,16 @@ class StudentView {
             }
           };
 
-          // Wire Gate Card Open Button
+          // Wire Gate Card Open Button (Student-initiated, strictly no auto-popup)
           const openGateBtn = document.getElementById('btn-open-question-modal');
           if (openGateBtn) {
-            openGateBtn.onclick = () => openQuestionModal();
-          }
-
-          // Auto-trigger Modal on Scroll into View (TASK-094 & Invariant 35)
-          const gateCard = document.getElementById('cisco-question-gate-card');
-          if (gateCard && hasMiniQuiz && !hasPassedQuiz) {
-            const observer = new IntersectionObserver((entries) => {
-              entries.forEach(entry => {
-                if (entry.isIntersecting && !hasPassedQuiz) {
-                  openQuestionModal();
-                }
-              });
-            }, { threshold: 0.3 });
-            observer.observe(gateCard);
-          }
-
-          // Anti-Bypass: Auto-open Modal on Mount if lesson has unpassed quiz
-          if (hasMiniQuiz && !hasPassedQuiz && !isCompleted) {
-            setTimeout(() => {
-              if (!hasPassedQuiz && !document.getElementById('cisco-question-modal')) {
-                openQuestionModal();
+            openGateBtn.onclick = () => {
+              if (hasVideo && !videoWatched && !isCompleted) {
+                UI.showToast('Vui lòng xem hết video để mở khóa câu hỏi ôn tập', 'warning');
+                return;
               }
-            }, 800);
+              openQuestionModal();
+            };
           }
 
         } catch (err) {
@@ -5610,14 +5702,30 @@ class StudentView {
       if (!destroyed) options.onConfirmed?.(data);
       return data;
     };
-    const ready = ApiClient.startLessonPlayback(lessonId, mediaId).then(apply);
+    let ready = ApiClient.startLessonPlayback(lessonId, mediaId).then(apply);
     const flush = () => {
       if (flight) { flushQueued = true; return flight.then(() => pending ? null : flight); }
       const capturedSample = { ...sample };
       flight = ready.then(() => {
         if (!pending) pending = { playback_session_id: session.session_id, sequence: session.next_sequence, media_id: mediaId, ...capturedSample };
         return ApiClient.recordPlaybackHeartbeat(lessonId, pending);
-      }).then(result => { pending = null; return apply(result); }).catch(error => {
+      }).then(result => { pending = null; return apply(result); }).catch(async error => {
+        pending = null;
+        const msg = String(error?.rawMessage || error?.message || '');
+        const isSequenceOrSessionMismatch =
+          error?.status === 400 &&
+          (msg.toLowerCase().includes('sequence') ||
+           msg.toLowerCase().includes('session') ||
+           msg.toLowerCase().includes('resume') ||
+           error?.code === 'VALIDATION_ERROR');
+        if (isSequenceOrSessionMismatch && !destroyed) {
+          try {
+            ready = ApiClient.startLessonPlayback(lessonId, mediaId).then(apply);
+            await ready;
+          } catch (syncErr) {
+            console.warn('Failed to resync playback session:', syncErr);
+          }
+        }
         if (!destroyed) options.onError?.(error);
       }).finally(() => {
         flight = null;
