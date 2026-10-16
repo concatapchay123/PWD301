@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
 from pwd301.models.attempt_regrade import AssessmentAttempt
-from pwd301.models.course import Enrollment, EnrollmentPeriod
+from pwd301.models.course import Enrollment, EnrollmentPeriod, LessonProgress
 from pwd301.models.types import utc_now
 from pwd301.seeds.baseline import seed_baseline
 from pwd301.services.assessment_service import (
@@ -73,7 +73,6 @@ def exam_env(app: Flask) -> dict[str, Any]:
         },
         session=sess,
     )
-    course.status = "PUBLISHED"
     sess.flush()
 
     # 3. Enroll student
@@ -196,6 +195,20 @@ def exam_env(app: Flask) -> dict[str, Any]:
         session=sess,
     )
     publish_assessment(actor=inst_user, assessment_id=assessment.id, session=sess)
+    # Build the initial graph before exposing the approved baseline to students.
+    lesson.status = "PUBLISHED"
+    course.status = "PUBLISHED"
+    course.approved_at = utc_now()
+    course.published_at = utc_now()
+    sess.add(
+        LessonProgress(
+            enrollment_period_id=period.id,
+            lesson_id=lesson.id,
+            seconds_spent=30,
+            max_view_fraction=1,
+            completed_at=utc_now(),
+        )
+    )
     sess.commit()
 
     return {
@@ -247,6 +260,20 @@ def test_exam_display_and_monitoring_policy_is_validated_and_delivered(
         session=db.session,
     )
     publish_assessment(instructor, assessment.id, session=db.session)
+    from pwd301.models.identity import User
+    from pwd301.services.lesson_service import (
+        approve_course_change_request,
+        submit_course_changeset,
+    )
+
+    pending = submit_course_changeset(
+        instructor, course.id, {"title": "Monitored assessment"}, session=db.session
+    )
+    administrator = next(user for user in db.session.query(User).all() if user.is_primary_admin)
+    approve_course_change_request(
+        administrator, pending.id, "Approve test baseline", session=db.session
+    )
+    db.session.commit()
     with pytest.raises(AssessmentLockedError):
         update_assessment(
             instructor, assessment.id, {"monitoring_enabled": False}, session=db.session
@@ -507,7 +534,7 @@ def test_resource_vault_dual_id_resolution_and_streaming(
 
     # 1. Lesson reader payload contains download_url and file_asset_id
     les_resp = client.get(f"/student/courses/{course_id}/lessons/{lesson_id}")
-    assert les_resp.status_code == 200
+    assert les_resp.status_code == 200, (les_resp.get_json(), exam_env["lesson"].status)
     les_data = les_resp.get_json()
     assert "resources" in les_data and len(les_data["resources"]) >= 1
     res_item = les_data["resources"][0]

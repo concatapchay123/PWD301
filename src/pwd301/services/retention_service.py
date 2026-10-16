@@ -316,12 +316,32 @@ def prune_trash_entities(
         .limit(batch_size)
         .all()
     )
+    from pwd301.services.course_workflow_service import payload_for
+
+    retained_files: dict[int, set[str]] = {}
+    for record in (
+        sess.query(CourseChangeRequest)
+        .filter(CourseChangeRequest.course_id.in_({asset.course_id for asset in expired_files}))
+        .all()
+    ):
+        payload = payload_for(record)
+        retained = retained_files.setdefault(record.course_id, set())
+        retained.update(str(identifier) for identifier in payload.get("new_file_assets") or [])
+        for identifier, identity in (payload.get("asset_manifest") or {}).items():
+            retained.add(str(identifier))
+            if isinstance(identity, dict):
+                retained.update(
+                    str(identity[key]) for key in ("asset_id", "public_id") if identity.get(key)
+                )
 
     storage_root = None
     with contextlib.suppress(Exception):
         storage_root = get_file_storage_root()
 
     for asset in expired_files:
+        retained = retained_files.get(asset.course_id, set())
+        if str(asset.id) in retained or str(asset.public_id) in retained:
+            continue
         # Delete linked lesson resources
         sess.query(LessonResource).filter(LessonResource.file_asset_id == asset.id).delete(
             synchronize_session=False

@@ -12,6 +12,8 @@ CREATE TABLE assessments (
     public_id UNIQUEIDENTIFIER NOT NULL DEFAULT (NEWSEQUENTIALID()),
     course_id BIGINT NOT NULL,
     creator_user_id BIGINT NULL,
+    change_request_id BIGINT NULL,
+    previous_assessment_id BIGINT NULL,
     title NVARCHAR(200) NOT NULL,
     description NVARCHAR(MAX) NULL,
     assessment_type VARCHAR(20) NOT NULL,
@@ -56,7 +58,9 @@ CREATE TABLE assessments (
     CONSTRAINT ck_assessments_exam_layout CHECK (exam_layout IN ('STANDARD','FOCUS')),
     CONSTRAINT fk_assessments_course_id FOREIGN KEY (course_id) REFERENCES courses (id),
     CONSTRAINT fk_assessments_creator_user_id FOREIGN KEY (creator_user_id) REFERENCES users (id),
-    CONSTRAINT fk_assessments_deleted_by_user_id FOREIGN KEY (deleted_by_user_id) REFERENCES users (id)
+    CONSTRAINT fk_assessments_deleted_by_user_id FOREIGN KEY (deleted_by_user_id) REFERENCES users (id),
+    CONSTRAINT fk_assessments_change_request_id FOREIGN KEY (change_request_id) REFERENCES course_change_requests (id),
+    CONSTRAINT fk_assessments_previous_assessment_id FOREIGN KEY (previous_assessment_id) REFERENCES assessments (id)
 );
 GO
 

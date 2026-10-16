@@ -388,6 +388,79 @@ def with_storage_budget(function: Callable[..., Any]) -> Callable[..., Any]:
     return guarded
 
 
+def _ensure_file_asset_authoring(actor: User, asset: FileAsset, sess: Any) -> None:
+    from pwd301.models.file_import import QuestionRevisionResource
+    from pwd301.models.question_bank import Question, QuestionRevision
+    from pwd301.services.course_workflow_service import ensure_course_authoring, should_stage
+
+    course = ensure_course_authoring(actor, asset.course_id, session=sess)
+    if not should_stage(actor, course, sess):
+        return
+    lesson_reference = (
+        sess.query(LessonResource.id)
+        .join(Lesson, Lesson.id == LessonResource.lesson_id)
+        .filter(
+            LessonResource.file_asset_id == asset.id,
+            Lesson.status.in_(("ACTIVE", "PUBLISHED", "HIDDEN", "HISTORICAL")),
+        )
+        .first()
+    )
+    question_reference = (
+        sess.query(QuestionRevisionResource.id)
+        .join(
+            QuestionRevision, QuestionRevision.id == QuestionRevisionResource.question_revision_id
+        )
+        .join(Question, Question.id == QuestionRevision.question_id)
+        .filter(
+            QuestionRevisionResource.file_asset_id == asset.id,
+            sa.or_(
+                Question.status != "DRAFT",
+                QuestionRevision.was_student_exposed == sa.true(),
+                QuestionRevision.was_used_for_grading == sa.true(),
+            ),
+        )
+        .first()
+    )
+    held, approved = _course_file_memberships(course, sess)
+    identifier = str(asset.public_id)
+    draft_reference = (
+        sess.query(LessonResource.id)
+        .join(Lesson, Lesson.id == LessonResource.lesson_id)
+        .filter(
+            LessonResource.file_asset_id == asset.id,
+            Lesson.status.in_(("DRAFT", "PENDING_APPROVAL")),
+            Lesson.change_request_id.is_not(None),
+        )
+        .first()
+        or sess.query(QuestionRevisionResource.id)
+        .join(
+            QuestionRevision, QuestionRevision.id == QuestionRevisionResource.question_revision_id
+        )
+        .join(Question, Question.id == QuestionRevision.question_id)
+        .filter(
+            QuestionRevisionResource.file_asset_id == asset.id,
+            Question.status == "DRAFT",
+            QuestionRevision.was_student_exposed == sa.false(),
+            QuestionRevision.was_used_for_grading == sa.false(),
+        )
+        .first()
+    )
+    legacy_baseline = (
+        asset.asset_type == "RESOURCE" and identifier not in held and not draft_reference
+    )
+    if (
+        course.thumbnail_file_asset_id == asset.id
+        or lesson_reference
+        or question_reference
+        or identifier in approved
+        or legacy_baseline
+    ):
+        raise ConflictError(
+            "Tệp đang được nội dung đã duyệt sử dụng. Hãy tải một tệp mới và thay thế "
+            "hoặc gỡ liên kết trong bản nháp khóa học để gửi duyệt."
+        )
+
+
 @with_storage_budget
 def store_file_stream(
     actor: User,
@@ -410,7 +483,9 @@ def store_file_stream(
     7. Rollback retains content-addressed files for conservative orphan reconciliation.
     """
     sess = session if session is not None else db.session
-    course = require_course_manager(actor, course_id, session=sess)
+    from pwd301.services.course_workflow_service import ensure_course_authoring
+
+    course = ensure_course_authoring(actor, course_id, session=sess)
 
     clean_filename = sanitize_filename(filename)
     validate_file_metadata(clean_filename, content_type)
@@ -587,6 +662,7 @@ def store_file_stream(
                     completed_at=now,
                 )
             )
+            _stage_uploaded_file(actor, course, asset, sess)
             sess.commit()
             if newly_created_dest is not None and blob.storage_backend == "s3":
                 newly_created_dest.unlink(missing_ok=True)
@@ -662,6 +738,7 @@ def store_file_stream(
             except Exception:
                 pass
 
+            _stage_uploaded_file(actor, course, asset, sess)
             sess.commit()
             return asset
 
@@ -719,6 +796,7 @@ def store_file_stream(
                 session=sess,
             )
 
+            _stage_uploaded_file(actor, course, asset, sess)
             sess.commit()
             return asset
 
@@ -747,7 +825,7 @@ def add_file_revision(
     if asset is None:
         raise FileAssetNotFoundError("File asset not found.")
 
-    require_course_manager(actor, asset.course_id, session=sess)
+    _ensure_file_asset_authoring(actor, asset, sess)
 
     if asset.status in ("TRASH", "DELETED"):
         raise FileValidationError("Cannot add revision to a trashed or deleted file asset.")
@@ -1036,7 +1114,7 @@ def trash_file_asset(
     if asset is None:
         raise FileAssetNotFoundError("File asset not found.")
 
-    require_course_manager(actor, asset.course_id, session=sess)
+    _ensure_file_asset_authoring(actor, asset, sess)
 
     now = utc_now()
     asset.status = "TRASH"
@@ -1046,6 +1124,7 @@ def trash_file_asset(
     asset.updated_at = now
 
     try:
+        _stage_uploaded_file(actor, asset.course, asset, sess)
         sess.commit()
     except Exception:
         sess.rollback()
@@ -1064,7 +1143,7 @@ def restore_file_asset(
     if asset is None:
         raise FileAssetNotFoundError("File asset not found.")
 
-    require_course_manager(actor, asset.course_id, session=sess)
+    _ensure_file_asset_authoring(actor, asset, sess)
 
     now = utc_now()
     asset.status = "ACTIVE"
@@ -1074,11 +1153,115 @@ def restore_file_asset(
     asset.updated_at = now
 
     try:
+        _stage_uploaded_file(actor, asset.course, asset, sess)
         sess.commit()
     except Exception:
         sess.rollback()
         raise
     return asset
+
+
+def _stage_uploaded_file(actor, course, asset, session):
+    from pwd301.services.course_workflow_service import (
+        payload_for,
+        should_stage,
+        working_changeset,
+        write_payload,
+    )
+
+    if not should_stage(actor, course, session):
+        return
+    record = working_changeset(actor, course, session)
+    payload = payload_for(record)
+    identifier = str(asset.public_id)
+    uploaded = set(payload.get("uploaded_file_assets") or [])
+    uploaded.add(identifier)
+    payload["uploaded_file_assets"] = sorted(uploaded)
+    accepted = set(payload.get("new_file_assets") or [])
+    revision = (
+        session.query(FileRevision).filter_by(file_asset_id=asset.id, is_current=True).first()
+    )
+    scans = latest_file_scan_results(revision) if revision is not None else []
+    eligible = (
+        asset.status == "ACTIVE"
+        and asset.deleted_at is None
+        and revision is not None
+        and revision.status == "ACTIVE"
+        and revision.blob is not None
+        and revision.blob.status == "PRESENT"
+        and bool(scans)
+        and all(scan.status == "PASS" for scan in scans)
+        and any(scan.scan_type == "MALWARE" for scan in scans)
+    )
+    if eligible:
+        accepted.add(identifier)
+    else:
+        accepted.discard(identifier)
+    payload["new_file_assets"] = sorted(accepted)
+    write_payload(record, payload, session)
+
+
+def _course_file_memberships(course, session) -> tuple[set[str], set[str]]:
+    from pwd301.services.course_workflow_service import payload_for
+
+    held: set[str] = set()
+    approved: set[str] = set()
+    for record in (
+        session.query(CourseChangeRequest)
+        .filter_by(course_id=course.id, change_type="COURSE_VERSION_CHANGESET")
+        .all()
+    ):
+        payload = payload_for(record)
+        accepted = set(payload.get("new_file_assets") or [])
+        held.update(accepted)
+        held.update(payload.get("uploaded_file_assets") or [])
+        if record.status in ("APPROVED", "APPLIED"):
+            approved.update(accepted)
+    return held, approved
+
+
+def unapproved_course_asset_ids(course, session=None) -> set[str]:
+    """Draft and discarded uploads stay private until an exact aggregate approves them."""
+    from pwd301.models.file_import import QuestionRevisionResource
+    from pwd301.models.question_bank import Question, QuestionRevision
+
+    sess = session if session is not None else db.session
+    held, released = _course_file_memberships(course, sess)
+    blocked = held - released
+    if not blocked:
+        return blocked
+    assets = sess.query(FileAsset).filter(FileAsset.course_id == course.id).all()
+    by_id = {asset.id: str(asset.public_id) for asset in assets if str(asset.public_id) in blocked}
+    live_ids = {
+        row[0]
+        for row in sess.query(LessonResource.file_asset_id)
+        .join(Lesson, Lesson.id == LessonResource.lesson_id)
+        .filter(
+            LessonResource.file_asset_id.in_(by_id),
+            Lesson.status == "PUBLISHED",
+            Lesson.deleted_at.is_(None),
+            Lesson.change_request_id.is_(None),
+        )
+        .all()
+    }
+    live_ids.update(
+        row[0]
+        for row in sess.query(QuestionRevisionResource.file_asset_id)
+        .join(
+            QuestionRevision, QuestionRevision.id == QuestionRevisionResource.question_revision_id
+        )
+        .join(Question, Question.id == QuestionRevision.question_id)
+        .filter(
+            QuestionRevisionResource.file_asset_id.in_(by_id),
+            Question.course_id == course.id,
+            Question.status == "ACTIVE",
+            Question.change_request_id.is_(None),
+            QuestionRevision.is_current == sa.true(),
+        )
+        .all()
+    )
+    live_ids.add(course.thumbnail_file_asset_id)
+    return blocked - {by_id[identifier] for identifier in live_ids if identifier in by_id}
 
 
 def latest_file_scan_results(revision: FileRevision) -> list[FileScanResult]:
@@ -1120,15 +1303,14 @@ def authorize_file_download(
 
     # Ma trận phân quyền Zero-Trust
     if public_course_thumbnail:
+        from pwd301.services.course_service import get_course_thumbnail_asset
+
+        cover = get_course_thumbnail_asset(course, session=sess)
         is_authorized = bool(
             course.status == "PUBLISHED"
             and course.deleted_at is None
-            and course.thumbnail_file_asset_id == asset.id
-            and asset.asset_type == "COURSE_IMAGE"
-            and asset.deleted_at is None
-            and asset.virus_scan_status == "CLEAN"
-            and asset.has_passed_malware_scan
-            and asset.mime_type.lower() in {"image/jpeg", "image/png", "image/webp"}
+            and cover is not None
+            and cover.id == asset.id
         )
     elif actor is not None and (
         actor.is_admin or (actor.has_role("INSTRUCTOR") and course.owner_instructor_id == actor.id)
@@ -1151,6 +1333,8 @@ def authorize_file_download(
         )
         if enrollment is None:
             raise FileAccessDeniedError("You are not actively enrolled in this course.")
+        if str(asset.public_id) in unapproved_course_asset_ids(course, sess):
+            raise FileAccessDeniedError("Tệp nằm trong bản nháp chưa được phê duyệt.")
 
         # 3. Nếu tệp gắn với Lesson, bài học đó phải ở trạng thái PUBLISHED
         lesson_resources = (
@@ -1246,7 +1430,7 @@ def get_file_for_download(
     sess = session if session is not None else db.session
     course = sess.get(Course, asset.course_id)
     manager = actor is not None and (
-        actor.is_admin
+        actor.has_admin_permission("COURSE_REVIEW")
         or (
             actor.has_role("INSTRUCTOR")
             and course is not None
@@ -1361,6 +1545,21 @@ def cleanup_storage_cache() -> int:
     return removed
 
 
+def _resource_authoring_target(actor: User, lesson: Lesson, course: Course, sess: Any) -> Lesson:
+    from pwd301.services.course_workflow_service import should_stage, working_changeset
+    from pwd301.services.lesson_service import update_lesson
+
+    if not should_stage(actor, course, sess):
+        return lesson
+    target = update_lesson(actor, lesson.id, {}, session=sess)
+    draft = working_changeset(actor, course, sess)
+    if target.change_request_id not in (None, draft.id):
+        raise FileValidationError("Lesson does not belong to the editable course draft.")
+    target.change_request_id = draft.id
+    sess.flush()
+    return target
+
+
 def attach_resource_to_lesson(
     actor: User,
     lesson_id: Lesson | int | uuid.UUID | str,
@@ -1376,28 +1575,9 @@ def attach_resource_to_lesson(
     if lesson is None:
         raise ResourceNotFoundError("Lesson not found.")
 
-    require_course_manager(actor, lesson.course_id, session=sess)
-    if not actor.is_admin:
-        pending_cr = (
-            sess.query(CourseChangeRequest)
-            .filter(
-                CourseChangeRequest.course_id == lesson.course_id,
-                CourseChangeRequest.status == "PENDING",
-                CourseChangeRequest.target_type == "COURSE",
-                sa.or_(
-                    CourseChangeRequest.change_type == "COURSE_VERSION_CHANGESET",
-                    CourseChangeRequest.proposed_payload_json.like(
-                        '%"action": "COURSE_VERSION_CHANGESET"%'
-                    ),
-                ),
-            )
-            .first()
-        )
-        if pending_cr is not None:
-            raise ConflictError(
-                "Khóa học hiện đang có 1 đợt cập nhật đang chờ Quản trị viên xét duyệt. "
-                "Toàn bộ thao tác chỉnh sửa tạm thời bị khóa cho đến khi được duyệt hoặc bạn rút lại yêu cầu."
-            )
+    from pwd301.services.course_workflow_service import ensure_course_authoring
+
+    course = ensure_course_authoring(actor, lesson.course_id, session=sess)
 
     asset = _resolve_file_asset(asset_id, session=sess)
     if asset is None:
@@ -1408,6 +1588,7 @@ def attach_resource_to_lesson(
         raise FileValidationError("File asset belongs to a different course than the lesson.")
     if asset.asset_type != "RESOURCE":
         raise FileValidationError("Only learning resources can be attached to a lesson.")
+    lesson = _resource_authoring_target(actor, lesson, course, sess)
 
     existing = (
         sess.query(LessonResource)
@@ -1493,28 +1674,9 @@ def detach_resource_from_lesson(
     if lesson is None:
         raise ResourceNotFoundError("Lesson not found.")
 
-    require_course_manager(actor, lesson.course_id, session=sess)
-    if not actor.is_admin:
-        pending_cr = (
-            sess.query(CourseChangeRequest)
-            .filter(
-                CourseChangeRequest.course_id == lesson.course_id,
-                CourseChangeRequest.status == "PENDING",
-                CourseChangeRequest.target_type == "COURSE",
-                sa.or_(
-                    CourseChangeRequest.change_type == "COURSE_VERSION_CHANGESET",
-                    CourseChangeRequest.proposed_payload_json.like(
-                        '%"action": "COURSE_VERSION_CHANGESET"%'
-                    ),
-                ),
-            )
-            .first()
-        )
-        if pending_cr is not None:
-            raise ConflictError(
-                "Khóa học hiện đang có 1 đợt cập nhật đang chờ Quản trị viên xét duyệt. "
-                "Toàn bộ thao tác chỉnh sửa tạm thời bị khóa cho đến khi được duyệt hoặc bạn rút lại yêu cầu."
-            )
+    from pwd301.services.course_workflow_service import ensure_course_authoring
+
+    course = ensure_course_authoring(actor, lesson.course_id, session=sess)
 
     # Resolve resource by synthetic public_id, internal id, or asset public_id
     res: LessonResource | None = None
@@ -1531,6 +1693,16 @@ def detach_resource_from_lesson(
 
     if res is None:
         raise ResourceNotFoundError("Lesson resource link not found.")
+
+    target = _resource_authoring_target(actor, lesson, course, sess)
+    if target.id != lesson.id:
+        res = (
+            sess.query(LessonResource)
+            .filter_by(lesson_id=target.id, file_asset_id=res.file_asset_id)
+            .first()
+        )
+        if res is None:
+            raise ResourceNotFoundError("Lesson resource link is already absent from the draft.")
 
     sess.delete(res)
     try:

@@ -30,7 +30,6 @@ from pwd301.services.file_service import (
     get_file_download_ticket,
     get_file_for_download,
     get_file_scan_history,
-    materialize_authorized_blob,
     quarantine_override,
     rescan_file_asset,
     restore_file_asset,
@@ -73,33 +72,9 @@ def download_file_api(asset_id: str) -> tuple[Response, int] | Response:
         raise FileValidationError("version must be a positive integer.")
     revision_no = int(version_param) if version_param and version_param.isdigit() else None
 
-    # Enforce email verification for students accessing media streams
-    if (
-        actor is not None
-        and not (actor.is_admin or actor.has_role("INSTRUCTOR"))
-        and not getattr(actor, "is_email_verified", True)
-    ):
-        return (
-            jsonify(
-                {
-                    "error": {
-                        "code": "EMAIL_NOT_VERIFIED",
-                        "message": "Tài khoản học viên cần xác thực email trước khi xem video bài giảng.",
-                    }
-                }
-            ),
-            403,
-        )
-
-    if is_preview:
-        asset, blob, _ = authorize_file_download(
-            actor, asset_id, revision_no=revision_no, session=db.session
-        )
-        physical_path = materialize_authorized_blob(blob)
-    else:
-        asset, blob, physical_path = get_file_for_download(
-            actor, asset_id, revision_no=revision_no, session=db.session
-        )
+    asset, blob, physical_path = get_file_for_download(
+        actor, asset_id, revision_no=revision_no, session=db.session
+    )
 
     if revision_no is not None:
         target_rev = next((r for r in asset.revisions if r.revision_no == revision_no), None)

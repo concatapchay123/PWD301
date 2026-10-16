@@ -9,7 +9,6 @@ import logging
 import re
 import uuid
 from collections import defaultdict
-from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +21,6 @@ from flask import (
     send_file,
     session,
 )
-from sqlalchemy import func
 
 from pwd301.blueprints.student import student_bp
 from pwd301.extensions import db
@@ -1040,17 +1038,16 @@ def my_learning() -> Any:
 @student_bp.route("/assessments", methods=["GET"])
 @student_required
 def assessments_view() -> Any:
-    """Student view for upcoming and past assessments with full items listing."""
+    """Student assessments share the same attempt, score and start-state contract."""
+    from sqlalchemy.orm import selectinload
+
     from pwd301.models.assessment import Assessment
     from pwd301.models.attempt_regrade import AssessmentAttempt
-    from pwd301.models.types import utc_now
-    from pwd301.services.assessment_service import _normalize_dt
+    from pwd301.services.assessment_student_service import student_assessment_summary
 
     actor = require_authenticated_actor()
     sess = db.session
     overview = get_student_learning_overview(actor, session=sess)
-
-    # Find active & completed enrollment course IDs
     enrollments = (
         sess.query(Enrollment)
         .filter(
@@ -1059,402 +1056,118 @@ def assessments_view() -> Any:
         )
         .all()
     )
-    enrolled_course_ids = [e.course_id for e in enrollments]
-
-    items: list[dict[str, Any]] = []
-    if enrolled_course_ids:
-        assessments = (
-            sess.query(Assessment)
-            .filter(
-                Assessment.course_id.in_(enrolled_course_ids),
-                Assessment.status == "PUBLISHED",
-                Assessment.deleted_at.is_(None),
-            )
-            .order_by(Assessment.created_at.desc())
-            .all()
+    enrollment_map = {e.course_id: e for e in enrollments}
+    assessments = (
+        sess.query(Assessment)
+        .filter(
+            Assessment.course_id.in_(enrollment_map),
+            Assessment.status == "PUBLISHED",
+            Assessment.deleted_at.is_(None),
         )
-        assessment_ids = [a.id for a in assessments]
-        attempts_by_assessment: dict[int, list[AssessmentAttempt]] = defaultdict(list)
-        if assessment_ids:
-            all_attempts = (
-                sess.query(AssessmentAttempt)
-                .filter(
-                    AssessmentAttempt.assessment_id.in_(assessment_ids),
-                    AssessmentAttempt.student_user_id == actor.id,
-                    AssessmentAttempt.status != "CANCELLED",
-                )
-                .order_by(AssessmentAttempt.id.asc())
-                .all()
-            )
-            for att in all_attempts:
-                attempts_by_assessment[att.assessment_id].append(att)
-
-        for a in assessments:
-            attempts_for_a = attempts_by_assessment.get(a.id, [])
-            a_attempts_count = len(attempts_for_a)
-            a_limit = a.attempt_limit
-            a_is_limit_reached = bool(
-                a_limit is not None and a_limit > 0 and a_attempts_count >= a_limit
-            )
-            a_remaining = (
-                max(0, a_limit - a_attempts_count)
-                if (a_limit is not None and a_limit > 0)
-                else None
-            )
-            existing_attempt = attempts_for_a[-1] if attempts_for_a else None
-
-            max_pts = float(
-                getattr(a, "max_points", None)
-                or (
-                    sum(float(qa.points or 0.0) for qa in a.question_assignments)
-                    if getattr(a, "question_assignments", None)
-                    else 10.0
-                )
-                or 10.0
-            )
-            res_raw = None
-            res_passed = None
-            if existing_attempt and existing_attempt.result:
-                if existing_attempt.result.raw_score is not None:
-                    res_raw = float(existing_attempt.result.raw_score)
-                if existing_attempt.result.passed is not None:
-                    res_passed = bool(existing_attempt.result.passed)
-
-            now_utc = utc_now()
-            open_dt = _normalize_dt(a.open_at)
-            close_dt = _normalize_dt(a.close_at)
-            waiting_room_opens_at_dt = (open_dt - timedelta(minutes=30)) if open_dt else None
-
-            a_is_open = True
-            a_seconds_until_open = 0
-            if open_dt and now_utc < open_dt:
-                a_is_open = False
-                a_seconds_until_open = max(0, int((open_dt - now_utc).total_seconds()))
-
-            a_is_waiting_room_open = True
-            a_seconds_until_waiting_room_open = 0
-            if waiting_room_opens_at_dt and now_utc < waiting_room_opens_at_dt:
-                a_is_waiting_room_open = False
-                a_seconds_until_waiting_room_open = max(
-                    0, int((waiting_room_opens_at_dt - now_utc).total_seconds())
-                )
-
-            a_is_closed = False
-            if close_dt and now_utc >= close_dt:
-                a_is_closed = True
-
-            a_is_locked = False
-            a_lock_reason = None
-            a_can_start = bool(a_is_open and not a_is_closed and not a_is_limit_reached)
-
-            if a.assessment_type in ("FINAL", "FINAL_EXAM"):
-                course_lessons = (
-                    sess.query(Lesson)
-                    .filter(
-                        Lesson.course_id == a.course_id,
-                        Lesson.status == "PUBLISHED",
-                        Lesson.deleted_at.is_(None),
-                    )
-                    .all()
-                )
-                if course_lessons:
-                    lesson_ids = [les.id for les in course_lessons]
-                    enr = next((e for e in enrollments if e.course_id == a.course_id), None)
-                    period_id = enr.current_period_id if enr else None
-                    completed_count = 0
-                    if period_id:
-                        completed_count = (
-                            sess.query(func.count(LessonProgress.id))
-                            .filter(
-                                LessonProgress.enrollment_period_id == period_id,
-                                LessonProgress.lesson_id.in_(lesson_ids),
-                                LessonProgress.completed_at.isnot(None),
-                            )
-                            .scalar()
-                        ) or 0
-                    if completed_count < len(course_lessons):
-                        a_is_locked = True
-                        a_can_start = False
-                        a_lock_reason = (
-                            f"Bạn cần hoàn thành tất cả các bài học trong khóa học ({completed_count}/{len(course_lessons)} bài) "
-                            "trước khi tham gia bài thi cuối kỳ (Final Exam)."
-                        )
-
-            items.append(
-                {
-                    "assessment_id": str(a.public_id),
-                    "id": str(a.public_id),
-                    "title": a.title,
-                    "course_code": a.course.course_code if a.course else None,
-                    "course_title": a.course.title if a.course else None,
-                    "assessment_type": a.assessment_type,
-                    "time_limit_minutes": a.time_limit_minutes or 45,
-                    "duration_minutes": a.time_limit_minutes or 45,
-                    "max_points": max_pts,
-                    "status": a.status,
-                    "open_at": a.open_at.isoformat() if a.open_at else None,
-                    "close_at": a.close_at.isoformat() if a.close_at else None,
-                    "is_open": a_is_open,
-                    "is_closed": a_is_closed,
-                    "is_waiting_room_open": a_is_waiting_room_open,
-                    "waiting_room_opens_at": (
-                        waiting_room_opens_at_dt.isoformat() if waiting_room_opens_at_dt else None
-                    ),
-                    "seconds_until_waiting_room_open": a_seconds_until_waiting_room_open,
-                    "seconds_until_open": a_seconds_until_open,
-                    "attempt_id": str(existing_attempt.public_id) if existing_attempt else None,
-                    "attempt_status": existing_attempt.status if existing_attempt else None,
-                    "raw_score": res_raw,
-                    "is_passed": res_passed,
-                    "attempt_limit": a_limit,
-                    "attempts_count": a_attempts_count,
-                    "remaining_attempts": a_remaining,
-                    "is_attempt_limit_reached": a_is_limit_reached,
-                    "is_locked": a_is_locked,
-                    "lock_reason": a_lock_reason,
-                    "can_start": a_can_start,
-                }
-            )
-
-    return (
-        jsonify(
-            {
-                "items": items,
-                "assessments": items,
-                "upcoming": overview["upcoming_assessments"],
-                "recent_results": overview["recent_results"],
-            }
-        ),
-        200,
+        .order_by(Assessment.created_at.desc())
+        .all()
+        if enrollment_map
+        else []
     )
+    attempts = (
+        sess.query(AssessmentAttempt)
+        .options(
+            selectinload(AssessmentAttempt.result),
+            selectinload(AssessmentAttempt.attempt_questions),
+        )
+        .filter(
+            AssessmentAttempt.assessment_id.in_([a.id for a in assessments]),
+            AssessmentAttempt.student_user_id == actor.id,
+            AssessmentAttempt.status != "CANCELLED",
+        )
+        .all()
+        if assessments
+        else []
+    )
+    grouped_attempts: dict[int, list[AssessmentAttempt]] = defaultdict(list)
+    for attempt in attempts:
+        grouped_attempts[attempt.assessment_id].append(attempt)
+    items = []
+    for assessment in assessments:
+        items.append(
+            {
+                "assessment_id": str(assessment.public_id),
+                "id": str(assessment.public_id),
+                "title": assessment.title,
+                "course_id": str(assessment.course.public_id),
+                "course_code": assessment.course.course_code,
+                "course_title": assessment.course.title,
+                "assessment_type": assessment.assessment_type,
+                "status": assessment.status,
+                "time_limit_minutes": assessment.time_limit_minutes,
+                "duration_minutes": assessment.time_limit_minutes,
+                "open_at": assessment.open_at.isoformat() if assessment.open_at else None,
+                "close_at": assessment.close_at.isoformat() if assessment.close_at else None,
+                **student_assessment_summary(
+                    actor,
+                    assessment,
+                    session=sess,
+                    attempts=grouped_attempts[assessment.id],
+                    enrollment=enrollment_map[assessment.course_id],
+                ),
+            }
+        )
+    return jsonify(
+        {
+            "items": items,
+            "assessments": items,
+            "upcoming": overview["upcoming_assessments"],
+            "recent_results": overview["recent_results"],
+        }
+    ), 200
 
 
 @student_bp.route("/assessments/<assessment_id>", methods=["GET"])
 @student_required
 def assessment_detail_view(assessment_id: str) -> Any:
-    """Student view for assessment details and rules before starting."""
-    from pwd301.models.attempt_regrade import AssessmentAttempt
-    from pwd301.models.course import Enrollment, EnrollmentPeriod
-    from pwd301.models.types import utc_now
-    from pwd301.services.assessment_service import (
-        _normalize_dt,
-        _resolve_assessment,
-        get_assessment_detail,
-    )
+    """Waiting-room configuration and authoritative student assessment summary."""
+    from pwd301.services.assessment_service import _resolve_assessment, get_assessment_detail
+    from pwd301.services.assessment_student_service import student_assessment_summary
 
     actor = require_authenticated_actor()
-    assess_obj = _resolve_assessment(assessment_id, session=db.session)
-    if assess_obj is None:
+    assessment = _resolve_assessment(assessment_id, session=db.session)
+    if assessment is None:
         raise ResourceNotFoundError("Assessment not found.")
-
-    assessment_data = get_assessment_detail(actor, assess_obj, session=db.session)
-    if assess_obj.course:
-        assessment_data["course_code"] = assess_obj.course.course_code
-        assessment_data["course_title"] = assess_obj.course.title
-
-    active_attempt = (
-        db.session.query(AssessmentAttempt)
-        .filter(
-            AssessmentAttempt.assessment_id == assess_obj.id,
-            AssessmentAttempt.student_user_id == actor.id,
-            AssessmentAttempt.status == "IN_PROGRESS",
-        )
-        .first()
-    )
-
-    now_utc = utc_now()
-    open_at_dt = _normalize_dt(assess_obj.open_at)
-    close_at_dt = _normalize_dt(assess_obj.close_at)
-    waiting_room_opens_at_dt = (open_at_dt - timedelta(minutes=30)) if open_at_dt else None
-
-    is_open = True
-    seconds_until_open = 0
-    if open_at_dt and now_utc < open_at_dt:
-        is_open = False
-        seconds_until_open = max(0, int((open_at_dt - now_utc).total_seconds()))
-
-    is_waiting_room_open = True
-    seconds_until_waiting_room_open = 0
-    if waiting_room_opens_at_dt and now_utc < waiting_room_opens_at_dt:
-        is_waiting_room_open = False
-        seconds_until_waiting_room_open = max(
-            0, int((waiting_room_opens_at_dt - now_utc).total_seconds())
-        )
-
-    is_closed = False
-    if close_at_dt and now_utc >= close_at_dt:
-        is_closed = True
-
-    # Identify current enrollment period to calculate attempts accurately
     enrollment = (
         db.session.query(Enrollment)
         .filter(
             Enrollment.student_user_id == actor.id,
-            Enrollment.course_id == assess_obj.course_id,
-            Enrollment.status.in_(["ACTIVE", "COMPLETED"]),
+            Enrollment.course_id == assessment.course_id,
+            Enrollment.status.in_(("ACTIVE", "COMPLETED")),
         )
         .first()
     )
-    current_period = None
-    if enrollment and enrollment.current_period_id:
-        current_period = (
-            db.session.query(EnrollmentPeriod)
-            .filter(
-                EnrollmentPeriod.id == enrollment.current_period_id,
-                EnrollmentPeriod.status == "ACTIVE",
-            )
-            .first()
-        )
-
-    attempts_query = db.session.query(AssessmentAttempt).filter(
-        AssessmentAttempt.assessment_id == assess_obj.id,
-        AssessmentAttempt.student_user_id == actor.id,
-        AssessmentAttempt.status != "CANCELLED",
+    if enrollment is None:
+        raise ForbiddenError("Bạn chưa ghi danh khóa học này.")
+    assessment_data = get_assessment_detail(actor, assessment, session=db.session)
+    assessment_data["course_code"] = assessment.course.course_code
+    assessment_data["course_title"] = assessment.course.title
+    summary = student_assessment_summary(
+        actor, assessment, session=db.session, enrollment=enrollment
     )
-    if current_period is not None:
-        attempts_query = attempts_query.filter(
-            AssessmentAttempt.enrollment_period_id == current_period.id
-        )
-    attempts = attempts_query.order_by(AssessmentAttempt.attempt_number.asc()).all()
-
-    attempts_count = len(attempts)
-    attempt_limit = assess_obj.attempt_limit
-    is_attempt_limit_reached = bool(
-        attempt_limit is not None and attempt_limit > 0 and attempts_count >= attempt_limit
-    )
-    remaining_attempts = (
-        max(0, attempt_limit - attempts_count)
-        if (attempt_limit is not None and attempt_limit > 0)
-        else None
-    )
-
-    # Check score release policy for student
-    policy = assess_obj.score_release_policy
-    attempts_summary: list[dict[str, Any]] = []
-    best_att = None
-    highest_score = -1.0
-
-    for att in attempts:
-        is_score_released = False
-        if policy == "IMMEDIATE":
-            is_score_released = bool(att.result and att.result.status in ("FINAL", "RELEASED"))
-        elif policy == "AFTER_CLOSE":
-            is_score_released = bool(close_at_dt and now_utc >= close_at_dt)
-        elif policy == "INSTRUCTOR_RELEASE":
-            is_score_released = bool(att.result and att.result.status == "RELEASED")
-
-        raw_score = None
-        max_score = None
-        passed = None
-        if is_score_released and att.result:
-            raw_score = float(att.result.raw_score) if att.result.raw_score is not None else None
-            max_score = float(att.result.max_score) if att.result.max_score is not None else None
-            passed = bool(att.result.passed) if att.result.passed is not None else None
-            if raw_score is not None and raw_score > highest_score:
-                highest_score = raw_score
-                best_att = att
-
-        attempts_summary.append(
-            {
-                "attempt_id": str(att.public_id),
-                "attempt_number": att.attempt_number,
-                "status": att.status,
-                "started_at": att.started_at.isoformat() if att.started_at else None,
-                "submitted_at": att.submitted_at.isoformat() if att.submitted_at else None,
-                "raw_score": raw_score,
-                "max_score": max_score,
-                "passed": passed,
-                "is_score_released": is_score_released,
-            }
-        )
-
-    latest_attempt_id = str(attempts[-1].public_id) if attempts else None
-    best_attempt_id = str(best_att.public_id) if best_att else latest_attempt_id
-
-    is_locked = False
-    lock_reason = None
-    if assess_obj.assessment_type in ("FINAL", "FINAL_EXAM"):
-        course_lessons = (
-            db.session.query(Lesson)
-            .filter(
-                Lesson.course_id == assess_obj.course_id,
-                Lesson.status == "PUBLISHED",
-                Lesson.deleted_at.is_(None),
-            )
-            .all()
-        )
-        if course_lessons:
-            lesson_ids = [les.id for les in course_lessons]
-            completed_count = 0
-            if current_period is not None:
-                completed_count = (
-                    db.session.query(func.count(LessonProgress.id))
-                    .filter(
-                        LessonProgress.enrollment_period_id == current_period.id,
-                        LessonProgress.lesson_id.in_(lesson_ids),
-                        LessonProgress.completed_at.isnot(None),
-                    )
-                    .scalar()
-                ) or 0
-            if completed_count < len(course_lessons):
-                is_locked = True
-                lock_reason = (
-                    f"Bạn cần hoàn thành tất cả các bài học trong khóa học ({completed_count}/{len(course_lessons)} bài) "
-                    "trước khi tham gia bài thi cuối kỳ (Final Exam)."
-                )
-
-    can_start = bool(
-        is_open
-        and not is_closed
-        and not is_attempt_limit_reached
-        and active_attempt is None
-        and not is_locked
-    )
-
-    return (
-        jsonify(
-            {
-                "assessment_id": str(assess_obj.public_id),
-                "title": assessment_data.get("title"),
-                "assessment": assessment_data,
-                "is_open": is_open,
-                "is_closed": is_closed,
-                "is_locked": is_locked,
-                "lock_reason": lock_reason,
-                "is_waiting_room_open": is_waiting_room_open,
-                "waiting_room_opens_at": (
-                    waiting_room_opens_at_dt.isoformat() if waiting_room_opens_at_dt else None
-                ),
-                "seconds_until_waiting_room_open": seconds_until_waiting_room_open,
-                "seconds_until_open": seconds_until_open,
-                "open_at": open_at_dt.isoformat() if open_at_dt else None,
-                "close_at": close_at_dt.isoformat() if close_at_dt else None,
-                "server_now_iso": now_utc.isoformat(),
-                "active_attempt_id": str(active_attempt.public_id) if active_attempt else None,
-                "attempt_limit": attempt_limit,
-                "attempts_count": attempts_count,
-                "remaining_attempts": remaining_attempts,
-                "is_attempt_limit_reached": is_attempt_limit_reached,
-                "can_start": can_start,
-                "student_name": (
-                    actor.display_name or getattr(actor, "full_name", None) or "Học viên"
-                ),
-                "student_email": actor.email,
-                "proctoring_config": {
-                    "monitoring_enabled": True,
-                    "request_fullscreen": True,
-                    "tab_switch_detection": True,
-                    "blur_detection": True,
-                    "away_duration_tracking": True,
-                    "anti_cheating_restrictions": True,
-                },
-                "attempts": attempts_summary,
-                "latest_attempt_id": latest_attempt_id,
-                "best_attempt_id": best_attempt_id,
-            }
-        ),
-        200,
-    )
+    return jsonify(
+        {
+            "assessment_id": str(assessment.public_id),
+            "title": assessment.title,
+            "assessment": assessment_data,
+            **summary,
+            "student_name": actor.display_name or getattr(actor, "full_name", None) or "Học viên",
+            "student_email": actor.email,
+            "proctoring_config": {
+                "monitoring_enabled": assessment.monitoring_enabled,
+                "request_fullscreen": assessment.request_fullscreen,
+                "tab_switch_detection": True,
+                "blur_detection": True,
+                "away_duration_tracking": True,
+                "anti_cheating_restrictions": True,
+            },
+        }
+    ), 200
 
 
 def _get_student_attempt_result_data(actor: Any, attempt_id: str) -> dict[str, Any]:
@@ -1524,6 +1237,7 @@ def attempt_result_view(attempt_id: str) -> Any:
 @student_required
 def attempt_result_pdf(attempt_id: str) -> Response:
     """Download a released student result as a server-generated PDF attachment."""
+    from pwd301.services.exceptions import AssessmentValidationError
     from pwd301.services.result_pdf_service import build_attempt_result_pdf
 
     actor = require_authenticated_actor()
@@ -1533,7 +1247,12 @@ def attempt_result_pdf(attempt_id: str) -> Response:
             "The result PDF is available only after the score is released or submitted."
         )
 
-    pdf_bytes = build_attempt_result_pdf(result_data)
+    try:
+        pdf_bytes = build_attempt_result_pdf(result_data)
+    except ValueError as exc:
+        raise AssessmentValidationError(
+            "Không thể xuất PDF vì có công thức toán học không hợp lệ hoặc vượt giới hạn an toàn."
+        ) from exc
     assessment_code = result_data.get("assessment_code")
     assessment_title = result_data.get("assessment_title")
     filename = sanitize_filename(
@@ -1912,7 +1631,6 @@ def student_course_detail(course_id: str) -> Any:
     is_full = bool(course.capacity is not None and active_count >= course.capacity)
 
     from pwd301.models.assessment import Assessment
-    from pwd301.models.attempt_regrade import AssessmentAttempt
     from pwd301.models.course import LearningUnit
     from pwd301.models.file_import import FileAsset
 
@@ -1951,35 +1669,10 @@ def student_course_detail(course_id: str) -> Any:
         .all()
     )
 
+    from pwd301.services.assessment_student_service import student_assessment_summary
+
     serialized_assessments = []
-    assessment_ids = [a.id for a in assessments]
-    attempts_by_assessment: dict[int, list[AssessmentAttempt]] = defaultdict(list)
-    if assessment_ids:
-        all_attempts = (
-            db.session.query(AssessmentAttempt)
-            .filter(
-                AssessmentAttempt.assessment_id.in_(assessment_ids),
-                AssessmentAttempt.student_user_id == actor.id,
-                AssessmentAttempt.status != "CANCELLED",
-            )
-            .order_by(AssessmentAttempt.id.asc())
-            .all()
-        )
-        for att in all_attempts:
-            attempts_by_assessment[att.assessment_id].append(att)
-
     for a in assessments:
-        attempts_for_a = attempts_by_assessment.get(a.id, [])
-        a_attempts_count = len(attempts_for_a)
-        a_limit = a.attempt_limit
-        a_is_limit_reached = bool(
-            a_limit is not None and a_limit > 0 and a_attempts_count >= a_limit
-        )
-        a_remaining = (
-            max(0, a_limit - a_attempts_count) if (a_limit is not None and a_limit > 0) else None
-        )
-        existing_attempt = attempts_for_a[-1] if attempts_for_a else None
-
         linked_lesson_id = None
         linked_unit_id = None
         for qa in getattr(a, "question_assignments", []):
@@ -2016,23 +1709,12 @@ def student_course_detail(course_id: str) -> Any:
                 "lesson_id": linked_lesson_id,
                 "learning_unit_id": linked_unit_id,
                 "assessment_type": a.assessment_type,
-                "time_limit_minutes": a.time_limit_minutes,
-                "attempt_limit": a_limit,
-                "attempts_count": a_attempts_count,
-                "remaining_attempts": a_remaining,
-                "is_attempt_limit_reached": a_is_limit_reached,
-                "max_points": float(
-                    getattr(a, "max_points", None)
-                    or (
-                        sum(float(qa.points or 0.0) for qa in a.question_assignments)
-                        if getattr(a, "question_assignments", None)
-                        else 10.0
-                    )
-                    or 10.0
-                ),
                 "status": a.status,
-                "attempt_id": str(existing_attempt.public_id) if existing_attempt else None,
-                "attempt_status": existing_attempt.status if existing_attempt else None,
+                "time_limit_minutes": a.time_limit_minutes,
+                "duration_minutes": a.time_limit_minutes,
+                "open_at": a.open_at.isoformat() if a.open_at else None,
+                "close_at": a.close_at.isoformat() if a.close_at else None,
+                **student_assessment_summary(actor, a, session=db.session, enrollment=enrollment),
             }
         )
 
@@ -2046,8 +1728,13 @@ def student_course_detail(course_id: str) -> Any:
         )
         .all()
     )
+    from pwd301.services.file_service import unapproved_course_asset_ids
+
+    hidden_assets = unapproved_course_asset_ids(course, db.session)
     serialized_resources = []
     for fa in file_assets:
+        if str(fa.public_id) in hidden_assets:
+            continue
         if fa.virus_scan_status != "CLEAN":
             continue
         latest_rev = fa.revisions[-1] if fa.revisions else None
@@ -2176,6 +1863,7 @@ def student_course_detail(course_id: str) -> Any:
         db.session.query(LearningUnit)
         .filter(
             LearningUnit.course_id == course.id,
+            LearningUnit.change_request_id.is_(None),
             LearningUnit.deleted_at.is_(None),
         )
         .order_by(LearningUnit.position.asc(), LearningUnit.id.asc())

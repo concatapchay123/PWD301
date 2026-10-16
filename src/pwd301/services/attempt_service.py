@@ -51,7 +51,7 @@ from pwd301.models.attempt_regrade import (
     AttemptQuestionGrade,
     AttemptQuestionGradeHistory,
 )
-from pwd301.models.course import Course, Enrollment, EnrollmentPeriod, Lesson, LessonProgress
+from pwd301.models.course import Course, Enrollment, EnrollmentPeriod
 from pwd301.models.file_import import QuestionRevisionResource
 from pwd301.models.identity import User
 from pwd301.models.notification_audit import AuditEvent
@@ -652,33 +652,17 @@ def start_assessment_attempt(
                 f"Attempt limit ({assessment.attempt_limit}) reached for this enrollment period."
             )
 
-    # 5.1 Enforce Course Completion for FINAL Exams (Category 5)
-    if assessment.assessment_type in ("FINAL", "FINAL_EXAM"):
-        course_lessons = (
-            sess.query(Lesson)
-            .filter(
-                Lesson.course_id == assessment.course_id,
-                Lesson.status == "PUBLISHED",
-                Lesson.deleted_at.is_(None),
-            )
-            .all()
+    # Use the identical prerequisite count shown by student lists and waiting rooms.
+    from pwd301.services.assessment_student_service import final_assessment_prerequisites
+
+    completed_count, required_count = final_assessment_prerequisites(
+        assessment, current_period.id, sess
+    )
+    if completed_count < required_count:
+        raise AttemptValidationError(
+            f"Bạn chưa hoàn thành tất cả các bài học trong khóa học ({completed_count}/{required_count} bài). "
+            "Vui lòng hoàn thành toàn bộ bài học trước khi tham gia bài thi cuối kỳ (Final Exam)."
         )
-        if course_lessons:
-            lesson_ids = [les.id for les in course_lessons]
-            completed_count = (
-                sess.query(func.count(LessonProgress.id))
-                .filter(
-                    LessonProgress.enrollment_period_id == current_period.id,
-                    LessonProgress.lesson_id.in_(lesson_ids),
-                    LessonProgress.completed_at.isnot(None),
-                )
-                .scalar()
-            ) or 0
-            if completed_count < len(course_lessons):
-                raise AttemptValidationError(
-                    f"Bạn chưa hoàn thành tất cả các bài học trong khóa học ({completed_count}/{len(course_lessons)} bài). "
-                    "Vui lòng hoàn thành toàn bộ bài học trước khi tham gia bài thi cuối kỳ (Final Exam)."
-                )
 
     # 6. Compute server-authoritative deadline per Algorithm 06
     deadline_at = _calculate_deadline(assessment, now)
@@ -3165,29 +3149,9 @@ def get_attempt_result_for_student(
     result = attempt.result
     now = utc_now()
 
-    is_score_released = False
-    if is_admin or is_manager:
-        is_score_released = True
-    elif attempt.status in ("IN_PROGRESS", "PENDING_GRADING"):
-        is_score_released = False
-    elif assessment is None:
-        is_score_released = True
-    else:
-        policy = assessment.score_release_policy
-        if policy == "IMMEDIATE":
-            is_score_released = (
-                attempt.status == "GRADED"
-                and result is not None
-                and result.status in ("FINAL", "RELEASED")
-            )
-        elif policy == "AFTER_CLOSE":
-            close_at = _normalize_dt(assessment.close_at)
-            curr_now = _normalize_dt(now)
-            is_score_released = bool(
-                close_at and curr_now and curr_now >= close_at and attempt.status == "GRADED"
-            )
-        elif policy == "INSTRUCTOR_RELEASE":
-            is_score_released = bool(result and result.status == "RELEASED")
+    from pwd301.services.assessment_student_service import student_score_released
+
+    is_score_released = bool(is_admin or is_manager or student_score_released(attempt, now))
 
     if not is_score_released:
         return {
@@ -3228,12 +3192,14 @@ def get_attempt_result_for_student(
                     "selected_choice_ids": [],
                 }
             )
+        if assessment and assessment.answer_visibility_policy == "NEVER":
+            masked_questions = []
         return {
             "attempt_id": str(attempt.public_id),
             "assessment_id": str(assessment.public_id) if assessment else None,
             "attempt_number": attempt.attempt_number,
             "status": attempt.status,
-            "score_status": "RESULTS_HIDDEN",
+            "score_status": "RELEASED",
             "allow_student_view_results": False,
             "score_release_policy": assessment.score_release_policy if assessment else "IMMEDIATE",
             "answer_visibility_policy": assessment.answer_visibility_policy
@@ -3241,12 +3207,18 @@ def get_attempt_result_for_student(
             else "NEVER",
             "answers_visible": False,
             "message": "Bài thi đã nộp thành công. Giảng viên đã tắt tính năng xem chi tiết kết quả cho bài kiểm tra này.",
-            "raw_score": None,
-            "total_score": None,
-            "max_score": None,
-            "max_points": None,
-            "percent_score": None,
-            "passed": None,
+            "raw_score": float(result.raw_score) if result else None,
+            "total_score": float(result.raw_score) if result else None,
+            "max_score": float(result.max_score) if result else None,
+            "max_points": float(result.max_score) if result else None,
+            "percent_score": float(result.percent_score)
+            if result and result.percent_score is not None
+            else None,
+            "passed": bool(result.passed) if result and result.passed is not None else None,
+            "is_passed": bool(result.passed) if result and result.passed is not None else None,
+            "passing_percent": float(assessment.passing_percent)
+            if assessment and assessment.passing_percent is not None
+            else 50.0,
             "questions": masked_questions,
         }
 
@@ -3684,30 +3656,10 @@ def get_attempt_grade_history(
 
     # If student, enforce score release policy
     if is_owner and not (is_admin or is_manager):
-        assessment = attempt.assessment
-        result = attempt.result
         now = utc_now()
-        is_score_released = False
-        if assessment is None:
-            is_score_released = True
-        elif attempt.status in ("IN_PROGRESS", "PENDING_GRADING"):
-            is_score_released = False
-        else:
-            policy = assessment.score_release_policy
-            if policy == "IMMEDIATE":
-                is_score_released = (
-                    attempt.status == "GRADED"
-                    and result is not None
-                    and result.status in ("FINAL", "RELEASED")
-                )
-            elif policy == "AFTER_CLOSE":
-                close_at = _normalize_dt(assessment.close_at)
-                curr_now = _normalize_dt(now)
-                is_score_released = bool(
-                    close_at and curr_now and curr_now >= close_at and attempt.status == "GRADED"
-                )
-            elif policy == "INSTRUCTOR_RELEASE":
-                is_score_released = bool(result and result.status == "RELEASED")
+        from pwd301.services.assessment_student_service import student_score_released
+
+        is_score_released = student_score_released(attempt, now)
 
         if not is_score_released:
             raise ScoreReleasePolicyError(
@@ -3744,6 +3696,22 @@ def get_attempt_grade_history(
         }
         for h in result_history
     ]
+
+    if (
+        is_owner
+        and not (is_admin or is_manager)
+        and attempt.assessment
+        and (
+            not attempt.assessment.allow_student_view_results
+            or attempt.assessment.answer_visibility_policy == "NEVER"
+        )
+    ):
+        return {
+            "attempt_id": str(attempt.public_id),
+            "assessment_id": str(attempt.assessment.public_id),
+            "overall_history": overall_data,
+            "question_history": [],
+        }
 
     # Fetch question grade history
     q_map = {q.id: q for q in attempt.attempt_questions}

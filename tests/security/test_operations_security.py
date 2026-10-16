@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from pwd301.extensions import db
 from pwd301.models.identity import Role, User
 from pwd301.models.operations import BackupRun
+from pwd301.models.types import utc_now
 from pwd301.services.exceptions import AuditPersistenceError
 from pwd301.services.jwt_auth_service import create_token_pair
 from pwd301.services.operations_service import create_database_backup
@@ -63,7 +64,7 @@ def admin_user(app: Flask, setup_roles: dict[str, Role]) -> User:
         role_code="ADMIN",
         session=sess,
     )
-    user.is_email_verified = True
+    user.email_verified_at = utc_now()
     sess.commit()
     return user
 
@@ -84,7 +85,7 @@ def instructor_user(app: Flask, setup_roles: dict[str, Role]) -> User:
         assigned_by_user_id=user.id,
         session=sess,
     )
-    user.is_email_verified = True
+    user.email_verified_at = utc_now()
     sess.commit()
     return user
 
@@ -99,7 +100,7 @@ def student_user(app: Flask, setup_roles: dict[str, Role]) -> User:
         display_name="Student Security",
         session=sess,
     )
-    user.is_email_verified = True
+    user.email_verified_at = utc_now()
     sess.commit()
     return user
 

@@ -1,5 +1,7 @@
 # PWD301 — Intelligent Enterprise Learning & Assessment Management Platform
 
+> Workflow authority (2026-10-15): [approved replacement contract](docs/system/PWD301_SYSTEM_SPECIFICATION/implementation/WORKFLOW_SUPERSESSION.md). Historical task completion is not proof of current implementation.
+
 > **VPS readiness (2026-10-10): Chưa DEPLOY_READY.** Ba bảng playback mới đưa DDL lên 77 bảng. Kết quả release phải xem [VPS_READINESS_REPORT.md](docs/deployment/VPS_READINESS_REPORT.md); các số PASS/lịch sử bên dưới không thay thế nghiệm thu staging và bản tích hợp TASK-089/090.
 
 

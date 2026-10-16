@@ -207,10 +207,6 @@ def test_student_can_fetch_drm_playlist_and_key(
 
     admin = register_user("drm_admin2@example.com", "Password@123", "DRM Admin 2")
     admin = assign_role_to_user(admin.id, "ADMIN")
-    change_course_status(instructor_user, course_sample.id, "SUBMITTED_FOR_REVIEW")
-    change_course_status(admin, course_sample.id, "APPROVED")
-    change_course_status(instructor_user, course_sample.id, "PUBLISHED")
-
     if not shutil.which("ffmpeg"):
         pytest.skip("ffmpeg not found on system PATH")
 
@@ -293,6 +289,9 @@ def test_student_can_fetch_drm_playlist_and_key(
         )
     )
     sess.flush()
+    change_course_status(instructor_user, course_sample.id, "SUBMITTED_FOR_REVIEW")
+    change_course_status(admin, course_sample.id, "APPROVED")
+    change_course_status(instructor_user, course_sample.id, "PUBLISHED")
     hls_dir = get_asset_hls_directory(lesson, asset, revision)
     transcode_to_encrypted_hls(
         input_path=test_mp4,

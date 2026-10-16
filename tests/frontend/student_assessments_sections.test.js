@@ -39,19 +39,8 @@ test('categorization partitions assessments into 3 non-overlapping sections', ()
     { id: '5', title: 'Exam 5', is_open: true, is_closed: false, is_attempt_limit_reached: true, course_code: 'CS3' },
   ];
 
-  const active = [];
-  const upcoming = [];
-  const completed = [];
-
-  items.forEach(a => {
-    if (a.is_closed || a.is_attempt_limit_reached) {
-      completed.push(a);
-    } else if (!a.is_open) {
-      upcomingList = upcoming.push(a);
-    } else {
-      active.push(a);
-    }
-  });
+  const result = window.StudentView.partitionAssessments(items);
+  const active = result.active, upcoming = result.upcoming, completed = result.completed;
 
   assert.equal(active.length, 1);
   assert.equal(active[0].id, '1');

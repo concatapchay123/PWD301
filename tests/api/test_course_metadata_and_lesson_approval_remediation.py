@@ -16,11 +16,13 @@ from pwd301.extensions import db
 from pwd301.models.course import Course, CourseChangeRequest, Lesson
 from pwd301.models.identity import Role, User
 from pwd301.services.course_service import change_course_status, create_course
+from pwd301.services.course_workflow_service import review_version
 from pwd301.services.lesson_service import (
     create_learning_unit,
     create_lesson,
     create_lesson_change_request,
     discard_lesson_working_draft,
+    submit_course_changeset,
 )
 from pwd301.services.user_service import assign_role_to_user, register_user
 from tests.conftest import login_web_user
@@ -71,7 +73,7 @@ def test_published_course_metadata_update_creates_change_request(
     instructor_user: User,
     admin_user: User,
 ) -> None:
-    """Published course metadata edits must return 202 pending_approval and not mutate DB directly."""
+    """Published course metadata edits save one DRAFT aggregate and not mutate DB directly."""
     sess: Session = db.session
     course = create_course(
         instructor_user,
@@ -107,9 +109,10 @@ def test_published_course_metadata_update_creates_change_request(
         json={"title": "Updated Proposed Title", "description": "Updated proposed description."},
     )
 
-    assert resp.status_code == 202
+    assert resp.status_code == 200
     body = resp.get_json()
-    assert body["status"] == "pending_approval"
+    assert body["is_draft"] is True
+    assert body["pending_approval"] is False
     assert "change_request_id" in body
 
     sess.expire_all()
@@ -118,10 +121,10 @@ def test_published_course_metadata_update_creates_change_request(
 
     req = sess.get(CourseChangeRequest, body["change_request_id"])
     assert req is not None
-    assert req.change_type == "COURSE_METADATA"
-    assert req.status == "PENDING"
+    assert req.change_type == "COURSE_VERSION_CHANGESET"
+    assert req.status == "DRAFT"
     payload = json.loads(req.proposed_payload_json)
-    assert payload["title"] == "Updated Proposed Title"
+    assert payload["course_metadata"]["title"] == "Updated Proposed Title"
 
 
 def test_admin_change_requests_diff_payload_and_original_data(
@@ -165,7 +168,9 @@ def test_admin_change_requests_diff_payload_and_original_data(
         f"/instructor/courses/{course.public_id}",
         json={"title": "Proposed New Diff Title"},
     )
-    assert resp_edit.status_code == 202
+    assert resp_edit.status_code == 200
+    submit_course_changeset(instructor_user, course.id, {}, session=sess)
+    sess.commit()
 
     login_web_user(client, admin_user)
     with client.session_transaction() as session_ctx:
@@ -178,8 +183,11 @@ def test_admin_change_requests_diff_payload_and_original_data(
         (item for item in items if str(item.get("course_id")) == str(course.public_id)), None
     )
     assert course_req is not None
-    assert course_req["original_data"]["title"] == "Course Diff Test"
-    assert course_req["proposed_payload"]["title"] == "Proposed New Diff Title"
+    assert (
+        course_req["proposed_payload"]["baseline_snapshot"]["course_metadata"]["title"]
+        == "Course Diff Test"
+    )
+    assert course_req["proposed_payload"]["course_metadata"]["title"] == "Proposed New Diff Title"
 
 
 def test_admin_approves_course_metadata_change_request(
@@ -223,7 +231,10 @@ def test_admin_approves_course_metadata_change_request(
         f"/instructor/courses/{course.public_id}",
         json={"title": "After Approval Title", "description": "After description."},
     )
-    change_req_id = resp_edit.get_json()["change_request_id"]
+    request = submit_course_changeset(instructor_user, course.id, {}, session=sess)
+    sess.commit()
+    change_req_id = request.id
+    displayed_version = review_version(request)
 
     login_web_user(client, admin_user)
     with client.session_transaction() as session_ctx:
@@ -231,7 +242,12 @@ def test_admin_approves_course_metadata_change_request(
 
     resp_approve = client.post(
         f"/admin/change-requests/{change_req_id}/review",
-        json={"decision": "APPROVED", "reason": "Looks great, approved."},
+        json={
+            "decision": "APPROVED",
+            "reason": "Looks great, approved.",
+            "request_id": change_req_id,
+            "review_version": displayed_version,
+        },
     )
     assert resp_approve.status_code == 200
 
@@ -298,8 +314,11 @@ def test_published_course_create_lesson_approval_and_order_shift(
             "position": 1,
         },
     )
-    assert resp_create.status_code == 202
-    req_id = resp_create.get_json()["change_request_id"]
+    assert resp_create.status_code == 201
+    request = submit_course_changeset(instructor_user, course.id, {}, session=sess)
+    sess.commit()
+    req_id = request.id
+    displayed_version = review_version(request)
 
     login_web_user(client, admin_user)
     with client.session_transaction() as session_ctx:
@@ -307,7 +326,7 @@ def test_published_course_create_lesson_approval_and_order_shift(
 
     resp_approve = client.post(
         f"/admin/change-requests/{req_id}/review",
-        json={"decision": "APPROVED"},
+        json={"decision": "APPROVED", "request_id": req_id, "review_version": displayed_version},
     )
     assert resp_approve.status_code == 200
 
@@ -332,7 +351,7 @@ def test_published_course_lesson_autosave_deduplication(
     instructor_user: User,
     admin_user: User,
 ) -> None:
-    """Repeated autosaves update the existing pending request without creating duplicates."""
+    """Repeated autosaves update the existing working aggregate without creating duplicates."""
     sess: Session = db.session
     course = create_course(
         instructor_user,
@@ -371,11 +390,15 @@ def test_published_course_lesson_autosave_deduplication(
 
     assert req1.id == req2.id
     total_pending = (
-        sess.query(CourseChangeRequest).filter_by(course_id=course.id, status="PENDING").count()
+        sess.query(CourseChangeRequest).filter_by(course_id=course.id, status="DRAFT").count()
     )
     assert total_pending == 1
-    stored_payload = json.loads(req2.proposed_payload_json)
-    assert stored_payload["title"] == "L1 Autosave 2"
+    staged = (
+        sess.query(Lesson)
+        .filter_by(previous_lesson_id=l1.id, change_request_id=req2.id, status="DRAFT")
+        .one()
+    )
+    assert staged.title == "L1 Autosave 2"
 
 
 def test_discard_lesson_working_draft_with_target_id(
@@ -383,7 +406,7 @@ def test_discard_lesson_working_draft_with_target_id(
     instructor_user: User,
     admin_user: User,
 ) -> None:
-    """Discarding a lesson working draft by lesson_id cancels pending request cleanly."""
+    """Discarding a lesson working draft by lesson_id removes only the targeted proposal."""
     sess: Session = db.session
     course = create_course(
         instructor_user,
@@ -420,12 +443,16 @@ def test_discard_lesson_working_draft_with_target_id(
         session=sess,
     )
     sess.commit()
-    assert req.status == "PENDING"
+    assert req.status == "DRAFT"
 
     discard_lesson_working_draft(instructor_user, l1.id, session=sess)
     sess.commit()
 
     sess.expire_all()
     reloaded_req = sess.get(CourseChangeRequest, req.id)
-    assert reloaded_req.status == "CANCELLED"
-    assert "Discarded by instructor" in (reloaded_req.review_reason or "")
+    assert reloaded_req.status == "DRAFT"
+    assert (
+        not sess.query(Lesson)
+        .filter_by(change_request_id=req.id, status="DRAFT", deleted_at=None)
+        .all()
+    )

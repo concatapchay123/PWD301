@@ -50,7 +50,7 @@ This file expands the relevant entries from the endpoint catalog. Authorization 
 
 `POST /admin/course-changes/{change_request_id}/approve` and `POST /admin/courses/{course_id}/changeset/approve` apply consolidated course version changesets. The request must have `change_type=COURSE_VERSION_CHANGESET` or a JSON object with `action=COURSE_VERSION_CHANGESET`. The endpoint locks and refreshes the request before validating its pending state and type. Other request types return `400 VALIDATION_ERROR` and retain their pending state; no successful decision or audit may be recorded without applying their intended action.
 
-Resource attachment/detachment and other individual change requests use `POST /admin/change-requests/{change_request_id}/review` with `action=approve` or `action=reject` plus `reason`. They must not be submitted to the dedicated course version approval endpoint.
+The former per-resource/per-lesson approval workflow is superseded. Compatibility review routes must identify and act on the same sealed aggregate, or return a clear error for historical fragmented requests. They cannot create or independently apply a new fragment. Every update decision includes the displayed `request_id` and `review_version`.
 
 ### Exact session change-request detail
 
@@ -68,3 +68,7 @@ Resource attachment/detachment and other individual change requests use `POST /a
 - **Purpose:** List courses for administrative management, review, and teaching assignments.
 - **Authentication:** Admin session
 - **Authorization:** Permitted for Admins with `COURSE_REVIEW` OR `TEACHING_ASSIGNMENT` permission.
+
+## Version-bound aggregate review
+
+Course and aggregate review decisions supply the displayed `request_id` (for updates) and opaque `review_version`. Missing/stale context returns 409. Approval applies only sealed submitted members and rechecks asset safety and prerequisite cycles. Queue totals count actual submissions; no unmerged sibling is hidden. See [replacement contract](../implementation/WORKFLOW_SUPERSESSION.md).

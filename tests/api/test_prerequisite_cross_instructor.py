@@ -5,7 +5,7 @@ from flask import Flask
 from flask.testing import FlaskClient
 
 from pwd301.extensions import db
-from pwd301.models.course import Course, CoursePrerequisite
+from pwd301.models.course import Course, CourseChangeRequest, CoursePrerequisite
 from pwd301.models.identity import Role, User
 from pwd301.models.types import utc_now
 from pwd301.services.user_service import assign_role_to_user, register_user
@@ -87,11 +87,10 @@ def test_prerequisite_same_instructor_adds_directly(client: FlaskClient, instruc
     assert link is not None
 
 
-def test_prerequisite_cross_instructor_creates_request_and_owner_approves(
+def test_prerequisite_cross_instructor_uses_course_admin_aggregate(
     client: FlaskClient, instructor_user: User
 ):
-    """When different instructors own the courses, a request is staged and must be
-    reviewed by prereq owner."""
+    """Published prerequisites join the same aggregate for one administrator review."""
     sess = db.session
     u2 = register_user(
         f"instructor2_{uuid.uuid4().hex[:8]}@example.com", "Password@123", "Instructor Two"
@@ -128,42 +127,38 @@ def test_prerequisite_cross_instructor_creates_request_and_owner_approves(
         f"/instructor/courses/{c_target.id}/prerequisites",
         json={"prerequisite_course_id": c_prereq.id, "reason": "Academic requirement"},
     )
-    assert res.status_code == 202
+    assert res.status_code == 200, res.get_json()
     data = res.get_json()
-    assert data["status"] == "pending_approval"
-    assert data["direct"] is False
-    change_req_id = data["change_request_id"]
+    assert data["is_draft"] is True
+    assert data["pending_approval"] is False
+    request = sess.get(CourseChangeRequest, data["change_request_id"])
+    assert request.change_type == "COURSE_VERSION_CHANGESET" and request.status == "DRAFT"
+    assert sess.query(CoursePrerequisite).filter_by(course_id=c_target.id).count() == 0
 
-    # Link should NOT be in course_prerequisites yet
+    login_web_user(client, inst2)
+    incoming = client.get("/instructor/prerequisite-requests")
+    assert incoming.status_code == 200
+    assert incoming.get_json()["incoming"] == []
+    forbidden_alias = client.post(
+        f"/instructor/prerequisite-requests/{request.id}/review", json={"action": "approve"}
+    )
+    assert forbidden_alias.status_code == 404
+
+    from pwd301.services.lesson_service import (
+        approve_course_change_request,
+        submit_course_changeset,
+    )
+
+    admin = register_user(
+        f"prereq_admin_{uuid.uuid4().hex[:6]}@example.com", "Password@123", "Prerequisite Reviewer"
+    )
+    admin = assign_role_to_user(admin.id, "ADMIN")
+    submitted = submit_course_changeset(instructor_user, c_target.id, {}, session=sess)
+    approve_course_change_request(admin, submitted.id, session=sess)
+    sess.commit()
     link = (
         sess.query(CoursePrerequisite)
         .filter_by(course_id=c_target.id, prerequisite_course_id=c_prereq.id)
-        .first()
+        .one()
     )
-    assert link is None
-
-    # Instructor 2 logs in and checks incoming requests
-    login_web_user(client, inst2)
-
-    list_res = client.get("/instructor/prerequisite-requests")
-    assert list_res.status_code == 200
-    list_data = list_res.get_json()
-    assert len(list_data["incoming"]) >= 1
-    assert any(r["id"] == change_req_id for r in list_data["incoming"])
-
-    # Instructor 2 approves the request
-    rev_res = client.post(
-        f"/instructor/prerequisite-requests/{change_req_id}/review",
-        json={"action": "approve", "reason": "Approved by instructor 2"},
-    )
-    assert rev_res.status_code == 200
-    assert rev_res.get_json()["status"] == "APPROVED"
-
-    # Now the prerequisite link exists in DB!
-    sess.expire_all()
-    link_after = (
-        sess.query(CoursePrerequisite)
-        .filter_by(course_id=c_target.id, prerequisite_course_id=c_prereq.id)
-        .first()
-    )
-    assert link_after is not None
+    assert link.approval_status == "APPROVED"

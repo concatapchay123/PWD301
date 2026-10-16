@@ -76,6 +76,49 @@ function parseGroupedAttemptChoices(question) {
 }
 
 class StudentView {
+  static partitionAssessments(items) {
+    const sections = { active: [], upcoming: [], completed: [] };
+    items.forEach(item => {
+      if (item.can_resume) sections.active.push(item);
+      else if (item.is_closed || item.is_attempt_limit_reached) sections.completed.push(item);
+      else if (!item.is_open) sections.upcoming.push(item);
+      else sections.active.push(item);
+    });
+    return sections;
+  }
+
+  static getAssessmentScoreLabel(data) {
+    const score = data?.display_score;
+    if (!score) return 'Chưa có điểm';
+    if (!score.is_released) return 'Chưa công bố';
+    const value = Number(score.score_out_of_10);
+    return Number.isFinite(value) && score.score_out_of_10 != null ? `${value} / 10` : 'Chưa có điểm';
+  }
+
+  static renderMatchingBoard({ pairs, rights, attributes = '', selectClass = 'interactive-slot-select', questionIndex = '' }) {
+    const esc = UI.escapeHtml;
+    return `<div class="matching-challenge-board cisco-quiz-matching-board relative rounded-2xl border border-slate-700 bg-slate-900 p-4 text-slate-100 my-3" ${attributes}>
+      <div class="flex items-center justify-between gap-3 mb-3 text-xs">
+        <span class="font-semibold">Nối các mục tương ứng</span>
+        <span class="matching-board-counter text-slate-300">0/${pairs.length} đã nối</span>
+      </div>
+      <div class="h-1 bg-slate-800 rounded mb-4 overflow-hidden"><div class="matching-board-progress h-full bg-sky-400 w-0"></div></div>
+      <svg class="matching-board-svg absolute inset-0 w-full h-full pointer-events-none overflow-visible" aria-hidden="true"></svg>
+      <div class="hidden">${pairs.map(pair => `<select class="${selectClass}" data-group-index="${esc(pair.key)}" data-pidx="${esc(pair.key)}" data-qidx="${esc(questionIndex)}" aria-label="Đáp án mục ${esc(pair.left)}">
+        <option value=""></option>${pair.options.map(option => `<option value="${esc(option.key)}" data-answer-text="${esc(option.text)}" ${String(pair.selectedKey ?? '') === String(option.key) ? 'selected' : ''}>${esc(option.text)}</option>`).join('')}
+      </select>`).join('')}</div>
+      <div class="grid grid-cols-2 gap-4 sm:gap-8 relative">
+        <div class="space-y-3">${pairs.map((pair, index) => `<button type="button" class="matching-card-left w-full min-h-12 rounded-xl border border-slate-700/80 bg-slate-800 p-3 text-left flex items-center justify-between gap-2" data-left-key="${esc(pair.key)}" aria-pressed="false">
+          <span class="text-xs">${index + 1}. ${esc(pair.left)}</span><span class="port-dot w-4 h-4 rounded-full border-2 border-slate-500 shrink-0" data-port="left-${esc(pair.key)}"></span>
+        </button>`).join('')}</div>
+        <div class="space-y-3">${rights.map((right, index) => `<button type="button" class="matching-card-right w-full min-h-12 rounded-xl border border-slate-700/80 bg-slate-800 p-3 text-right flex items-center justify-between gap-2" data-right-pos="${index}" data-right-text="${esc(right.text)}" aria-pressed="false">
+          <span class="port-dot w-4 h-4 rounded-full border-2 border-slate-500 shrink-0" data-port="right-${index}"></span><span class="text-xs">${esc(right.text)}</span>
+        </button>`).join('')}</div>
+      </div>
+      <div class="mt-4 flex items-center justify-between gap-3 text-xs text-slate-300"><span>Chọn một mục bên trái, sau đó chọn mục bên phải.</span><button type="button" class="btn-clear-matches px-4 py-2 underline">Xóa đường nối</button></div>
+    </div>`;
+  }
+
   static setupMatchingBoard(board, onChange) {
     if (!board) return;
     const svg = board.querySelector('.matching-board-svg');
@@ -91,8 +134,11 @@ class StudentView {
       const lKey = sel.dataset.groupIndex || sel.dataset.pidx;
       const val = sel.value;
       if (val) {
+        const option = Array.from(sel.options || []).find(item => item.value === val);
+        const text = option?.dataset.answerText || option?.textContent || val;
         const rCard = Array.from(board.querySelectorAll('.matching-card-right')).find(c =>
-          c.dataset.rightKey === val || c.dataset.rightText === val
+          !Array.from(activeMatches.values()).includes(String(c.dataset.rightPos)) &&
+          (c.dataset.rightKey === val || c.dataset.rightText === text)
         );
         if (rCard) {
           activeMatches.set(String(lKey), String(rCard.dataset.rightPos));
@@ -119,8 +165,7 @@ class StudentView {
 
         const isEvaluation = board._matchResults !== null && board._matchResults !== undefined;
         const isOk = isEvaluation ? Boolean(board._matchResults[lKey]) : true;
-        const strokeColor = isEvaluation ? (isOk ? '#10b981' : '#f43f5e') : '#10b981';
-        const shadowColor = isEvaluation ? (isOk ? 'rgba(16, 185, 129, 0.7)' : 'rgba(244, 63, 94, 0.7)') : 'rgba(16, 185, 129, 0.7)';
+        const strokeColor = isEvaluation ? (isOk ? '#10b981' : '#f43f5e') : '#38bdf8';
 
         const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         path.setAttribute('d', d);
@@ -128,7 +173,6 @@ class StudentView {
         path.setAttribute('stroke', strokeColor);
         path.setAttribute('stroke-width', '3');
         path.setAttribute('stroke-linecap', 'round');
-        path.setAttribute('style', `filter: drop-shadow(0 0 6px ${shadowColor});`);
         svg.appendChild(path);
       });
 
@@ -137,7 +181,7 @@ class StudentView {
         dot.className = 'port-dot w-4 h-4 rounded-full border-2 border-slate-500 bg-slate-800 shrink-0 transition-all';
       });
       board.querySelectorAll('.matching-card-left, .matching-card-right').forEach(c => {
-        c.classList.remove('border-emerald-500', 'bg-slate-800/90', 'ring-2', 'ring-teal-400', 'border-rose-500', 'bg-emerald-950/30', 'bg-rose-950/30');
+        c.classList.remove('border-sky-400', 'border-teal-400', 'border-emerald-500', 'bg-slate-800/90', 'ring-2', 'ring-teal-400', 'border-rose-500', 'bg-emerald-950/30', 'bg-rose-950/30');
         c.classList.add('border-slate-700/80');
       });
 
@@ -161,7 +205,7 @@ class StudentView {
           if (isEvaluation) {
             lCard.classList.add(isOk ? 'border-emerald-500' : 'border-rose-500', isOk ? 'bg-emerald-950/30' : 'bg-rose-950/30');
           } else {
-            lCard.classList.add('border-emerald-500/60');
+            lCard.classList.add('border-sky-400');
           }
         }
         if (rCard) {
@@ -169,18 +213,18 @@ class StudentView {
           if (isEvaluation) {
             rCard.classList.add(isOk ? 'border-emerald-500' : 'border-rose-500', isOk ? 'bg-emerald-950/30' : 'bg-rose-950/30');
           } else {
-            rCard.classList.add('border-emerald-500/60');
+            rCard.classList.add('border-sky-400');
           }
         }
         if (lDot) {
           lDot.className = isEvaluation
             ? (isOk ? 'port-dot w-4 h-4 rounded-full border-2 border-emerald-400 bg-emerald-500 ring-2 ring-emerald-400/30 shrink-0 transition-all' : 'port-dot w-4 h-4 rounded-full border-2 border-rose-400 bg-rose-500 ring-2 ring-rose-400/30 shrink-0 transition-all')
-            : 'port-dot w-4 h-4 rounded-full border-2 border-emerald-400 bg-emerald-500 ring-2 ring-emerald-400/30 shrink-0 transition-all';
+            : 'port-dot w-4 h-4 rounded-full border-2 border-sky-400 bg-sky-400 shrink-0 transition-all';
         }
         if (rDot) {
           rDot.className = isEvaluation
             ? (isOk ? 'port-dot w-4 h-4 rounded-full border-2 border-emerald-400 bg-emerald-500 ring-2 ring-emerald-400/30 shrink-0 transition-all' : 'port-dot w-4 h-4 rounded-full border-2 border-rose-400 bg-rose-500 ring-2 ring-rose-400/30 shrink-0 transition-all')
-            : 'port-dot w-4 h-4 rounded-full border-2 border-emerald-400 bg-emerald-500 ring-2 ring-emerald-400/30 shrink-0 transition-all';
+            : 'port-dot w-4 h-4 rounded-full border-2 border-sky-400 bg-sky-400 shrink-0 transition-all';
         }
       });
 
@@ -209,7 +253,7 @@ class StudentView {
             }
           }
           activeMatches.set(selectedLeftKey, rPos);
-          if (typeof onChange === 'function') onChange(selectedLeftKey, rVal);
+          if (typeof onChange === 'function') onChange(selectedLeftKey, rVal, rPos);
           selectedLeftKey = null;
           redraw();
         } else {
@@ -236,7 +280,10 @@ class StudentView {
       };
     }
 
-    window.addEventListener('resize', redraw);
+    if (!StudentView._matchingResizeBound) {
+      window.addEventListener('resize', () => document.querySelectorAll('.matching-challenge-board').forEach(item => item._redrawMatches?.()));
+      StudentView._matchingResizeBound = true;
+    }
     requestAnimationFrame(redraw);
     board._redrawMatches = redraw;
     board._setMatchResults = (resultsMap) => {
@@ -2268,7 +2315,7 @@ class StudentView {
         });
 
         mod.assessments.forEach((asm, aIdx) => {
-          const isAsmDone = (asm.attempts_count > 0 && asm.is_attempt_limit_reached) || asm.passed;
+          const isAsmDone = asm.is_completed === true || asm.completion_status === 'COMPLETED';
           asm._isCompleted = isAsmDone;
           const chapterLessonsAllDone = (mod.lessons.length === 0) || (modCompletedLessons >= mod.lessons.length);
           asm._isUnlocked = canBypassLock || chapterLessonsAllDone;
@@ -2304,7 +2351,7 @@ class StudentView {
         const now = new Date();
 
         rootExams.forEach((asm, rIdx) => {
-          const isAsmDone = (asm.attempts_count > 0 && asm.is_attempt_limit_reached) || asm.passed;
+          const isAsmDone = asm.is_completed === true || asm.completion_status === 'COMPLETED';
           asm._isCompleted = isAsmDone;
 
           const openTime = asm.open_at || asm.opens_at ? new Date(asm.open_at || asm.opens_at) : null;
@@ -2386,7 +2433,7 @@ class StudentView {
           mod._isCompleted = mod._totalCount > 0 && modCompletedLessons === mod._totalCount;
 
           (mod.assessments || []).forEach((asm) => {
-            const isAsmDone = Boolean((asm.attempts_count > 0 && asm.is_attempt_limit_reached) || asm.passed || asm._isCompleted);
+            const isAsmDone = Boolean(asm.is_completed === true || asm.completion_status === 'COMPLETED' || asm._isCompleted);
             asm._isCompleted = isAsmDone;
             const chapterLessonsAllDone = (mod._totalCount === 0) || (modCompletedLessons >= mod._totalCount);
             asm._isUnlocked = canBypassLock || chapterLessonsAllDone;
@@ -2408,7 +2455,7 @@ class StudentView {
           const allCourseLessonsCompleted = totalCourseLessons === 0 || totalCompletedLessons >= totalCourseLessons;
 
           rootExams.forEach((asm) => {
-            const isAsmDone = Boolean((asm.attempts_count > 0 && asm.is_attempt_limit_reached) || asm.passed || asm._isCompleted);
+            const isAsmDone = Boolean(asm.is_completed === true || asm.completion_status === 'COMPLETED' || asm._isCompleted);
             asm._isCompleted = isAsmDone;
             asm._isUnlocked = canBypassLock || allCourseLessonsCompleted;
             asm._lockReason = asm._isUnlocked ? '' : `Bạn cần hoàn thành tất cả các bài học trong toàn bộ khóa học (${totalCompletedLessons}/${totalCourseLessons} bài) trước khi làm Final Test.`;
@@ -3365,7 +3412,7 @@ class StudentView {
                       </span>
                       <div class="min-w-0">
                         <h4 class="text-xs font-bold text-slate-900 dark:text-white truncate">${UI.escapeHtml(fe.title)}</h4>
-                        <p class="text-[10px] text-purple-600 dark:text-purple-400">${fe.duration_minutes || 45} phút • ${fe.question_count || fe.total_questions || 30} câu hỏi</p>
+                        <p class="text-[10px] text-purple-600 dark:text-purple-400">${fe.duration_minutes || 45} phút • ${fe.questions_count ?? fe.question_count ?? 'Chưa tải'} câu hỏi</p>
                       </div>
                     </div>
                     <span class="px-2 py-0.5 rounded ${isDone ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/60 dark:text-purple-300'} text-[10px] font-bold shrink-0">
@@ -3952,10 +3999,10 @@ class StudentView {
 
           try {
             const asmData = await ApiClient.getStudentAssessment(activeItem.id).catch(() => activeItem.data);
-            const asm = asmData?.assessment || asmData || activeItem.data;
+            const asm = { ...activeItem.data, ...(asmData?.assessment || {}), ...(asmData || {}) };
             const attemptsCount = asm.attempts_count || 0;
             const attemptLimit = asm.attempt_limit || 'Không giới hạn';
-            const isLimitReached = Boolean(asm.is_attempt_limit_reached);
+            const isLimitReached = Boolean(asm.is_attempt_limit_reached && !asm.can_resume);
             const attemptsHistory = Array.isArray(asm.attempts) ? asm.attempts : [];
 
             contentContainer.innerHTML = `
@@ -3989,11 +4036,11 @@ class StudentView {
                     </div>
                     <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
                       <span class="text-slate-400 block text-[11px]">Số lượng câu hỏi</span>
-                      <strong class="text-sm font-bold text-slate-900 dark:text-white">${asm.question_count || asm.total_questions || 30} câu</strong>
+                      <strong class="text-sm font-bold text-slate-900 dark:text-white">${asm.questions_count ?? asm.question_count ?? 'Chưa tải'} câu</strong>
                     </div>
                     <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
-                      <span class="text-slate-400 block text-[11px]">Điểm đạt chuẩn</span>
-                      <strong class="text-sm font-bold text-emerald-600">${asm.passing_score || 50}%</strong>
+                      <span class="text-slate-400 block text-[11px]">Điểm</span>
+                      <strong class="text-sm font-bold text-emerald-600">${UI.escapeHtml(StudentView.getAssessmentScoreLabel(asm))}</strong>
                     </div>
                     <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
                       <span class="text-slate-400 block text-[11px]">Lượt đã làm</span>
@@ -4023,7 +4070,7 @@ class StudentView {
                                 <td class="p-3 font-mono font-bold text-slate-900 dark:text-white">${att.score !== null && att.score !== undefined ? `${att.score} / ${att.max_score || 100}` : 'Chờ công bố'}</td>
                                 <td class="p-3">
                                   <span class="px-2 py-0.5 rounded text-[10px] font-bold ${att.passed ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300' : 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300'}">
-                                    ${att.passed ? 'Đạt' : 'Chưa đạt'}
+                                    ${att.passed == null ? 'Chưa công bố' : att.passed ? 'Đạt' : 'Chưa đạt'}
                                   </span>
                                 </td>
                               </tr>
@@ -4058,7 +4105,7 @@ class StudentView {
                           class="px-6 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm inline-flex items-center gap-2 cursor-pointer"
                         >
                           <span class="material-symbols-outlined text-[16px]">play_arrow</span>
-                          <span>Bắt đầu làm bài thi</span>
+                          <span>${asm.can_resume ? 'Tiếp tục làm bài thi' : asm.can_start ? 'Bắt đầu làm bài thi' : 'Xem bài kiểm tra'}</span>
                         </a>
                       `}
                     </div>
@@ -4109,15 +4156,6 @@ class StudentView {
             }
           }
           lesson.video_url = activeVideoUrl;
-
-          const currentUser = (window.app && window.app.currentUser) ||
-                              (window.router && window.router.currentUser) ||
-                              (typeof AuthState !== 'undefined' ? AuthState.getUser() : null) || {};
-          const isEmailVerified = currentUser.role !== 'STUDENT' || Boolean(
-            currentUser.is_email_verified === true ||
-            currentUser.email_verified === true ||
-            (currentUser.email_verified_at && currentUser.email_verified_at !== null)
-          );
 
           const cachedLes = allLessons.find(l => String(l.lesson_id || l.id) === String(activeItem.id));
           const hasVideo = Boolean(lesson.video_url && typeof lesson.video_url === 'string' && lesson.video_url.trim() !== '' && lesson.video_url.trim() !== 'null');
@@ -4210,25 +4248,7 @@ class StudentView {
 
               <!-- Media Player / Video Block -->
               ${lesson.video_url ? (
-                !isEmailVerified && !isPreview ? `
-                <div class="rounded-2xl border border-amber-300 dark:border-amber-800 bg-amber-50/90 dark:bg-amber-950/40 p-6 sm:p-8 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                  <div class="flex items-start gap-4">
-                    <div class="w-12 h-12 rounded-xl bg-amber-100 dark:bg-amber-900/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-                      <span class="material-symbols-outlined text-2xl">mark_email_unread</span>
-                    </div>
-                    <div class="space-y-1">
-                      <h3 class="text-sm sm:text-base font-bold text-amber-950 dark:text-amber-200">Yêu cầu xác thực Email để xem video</h3>
-                      <p class="text-xs sm:text-sm text-amber-800/90 dark:text-amber-300/90 leading-relaxed">
-                        Tài khoản của bạn chưa hoàn tất xác thực email. Để bảo vệ bản quyền bài giảng và truy cập video học tập, vui lòng kiểm tra hòm thư và hoàn tất xác thực tài khoản.
-                      </p>
-                    </div>
-                  </div>
-                  <a href="#/profile" class="shrink-0 px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer">
-                    <span class="material-symbols-outlined text-[16px]">verified_user</span>
-                    <span>Xác thực ngay</span>
-                  </a>
-                </div>
-                ` : `
+                `
                 <div class="bg-black rounded-2xl overflow-hidden shadow-lg border border-slate-800">
                   <div class="w-full bg-slate-950 relative">
                     ${StudentView._getEmbedVideoHtml(lesson.video_url, 'cisco-stream-player', isCompleted)}
@@ -4492,19 +4512,18 @@ class StudentView {
           const checkAndUnlockLesson = async () => {
             renderBottomNav();
             if (isCompleted) return true;
-            if (isLessonRequirementsMet()) {
+            if (!isLessonRequirementsMet()) return false;
+            if (isPreview) return true;
+            try {
+              const result = await ApiClient.recordLessonProgress(trackedLessonId, 0, 0, false);
+              if (!result?.is_completed && !result?.progress?.is_completed) return false;
               setLessonCompleted();
-              if (!isPreview) {
-                try {
-                  await ApiClient.recordLessonProgress(trackedLessonId, 30, 1.0, true);
-                  UI.showToast('Chúc mừng bạn đã hoàn thành bài học! Nút "Tiếp theo" đã được mở khóa.', 'success');
-                } catch (e) {
-                  console.warn('Auto record lesson progress failed:', e);
-                }
-              }
+              UI.showToast('Bạn đã hoàn thành bài học. Có thể chuyển sang bài tiếp theo.', 'success');
               return true;
+            } catch (error) {
+              console.warn('Could not confirm lesson completion:', error);
+              return false;
             }
-            return false;
           };
 
           const curIdx = flatNavList.findIndex(i => i.type === activeItem.type && String(i.id) === String(activeItem.id));
@@ -4648,7 +4667,7 @@ class StudentView {
           };
 
           const playerContainer = document.getElementById('cisco-stream-player-container');
-          if ((playerContainer || videoEl) && (isEmailVerified || isPreview)) {
+          if (playerContainer || videoEl) {
             activeCustomPlayerCtrl = StudentView.setupCustomVideoPlayer('cisco-stream-player', {
               streamUrl: lesson.video_url, lessonId: trackedLessonId, mediaId: mediaFor(lesson.video_url),
               clientIp: lesson.client_ip, preview: isPreview, isCompleted,
@@ -4665,7 +4684,7 @@ class StudentView {
             });
           }
 
-          if (isEmailVerified || isPreview) {
+          {
             (lesson.video_urls || []).filter(url => url !== lesson.video_url).forEach((url, idx) => {
               let ctrl;
               ctrl = StudentView.setupCustomVideoPlayer(`cisco-extra-video-${idx}`, {
@@ -4849,40 +4868,12 @@ class StudentView {
                           </div>
                         ` : ''}
 
-                        ${qType === 'MATCHING' ? `
-                          <div class="space-y-3 cisco-modal-quiz-matching">
-                            <p class="text-xs text-slate-500 dark:text-slate-400 italic">Kéo thả hoặc nhấp chọn để nối cặp chính xác:</p>
-                            <div class="cisco-quiz-matching-board border border-slate-700/80 rounded-xl p-3 sm:p-4 bg-slate-950 text-slate-100" data-cisco-quiz-qidx="${qIdx}">
-                              <div class="hidden">
-                                ${(q.pairs || []).map((p, pIdx) => `
-                                  <input type="hidden" class="cisco-quiz-matching-select" data-qidx="${qIdx}" data-pidx="${pIdx}" value="" />
-                                `).join('')}
-                              </div>
-                              <div class="grid grid-cols-2 gap-3 sm:gap-6 relative">
-                                <div class="space-y-2 left-col">
-                                  ${(q.pairs || []).map((p, pIdx) => `
-                                    <div class="matching-card-left p-3 rounded-lg bg-slate-900 border border-slate-700/80 hover:border-teal-400 text-xs font-semibold cursor-pointer select-none transition-all flex items-center justify-between" data-key="${pIdx}">
-                                      <span>${UI.escapeHtml(p.left)}</span>
-                                      <span class="w-2.5 h-2.5 rounded-full bg-slate-600 dot-indicator"></span>
-                                    </div>
-                                  `).join('')}
-                                </div>
-                                <div class="space-y-2 right-col">
-                                  ${(q.shuffled_rights || (q.pairs || []).map(p => p.right)).map((rVal, rIdx) => `
-                                    <div class="matching-card-right p-3 rounded-lg bg-slate-900 border border-slate-700/80 hover:border-teal-400 text-xs font-semibold cursor-pointer select-none transition-all flex items-center justify-between" data-val="${UI.escapeHtml(rVal)}">
-                                      <span class="w-2.5 h-2.5 rounded-full bg-slate-600 dot-indicator"></span>
-                                      <span>${UI.escapeHtml(rVal)}</span>
-                                    </div>
-                                  `).join('')}
-                                </div>
-                              </div>
-                              <div class="mt-3 pt-2 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
-                                <span>Nhấp 1 ô bên trái rồi nhấp 1 ô bên phải để nối</span>
-                                <button type="button" class="btn-clear-matches text-xs text-rose-400 hover:text-rose-300 font-semibold underline cursor-pointer">Xóa các đường nối</button>
-                              </div>
-                            </div>
-                          </div>
-                        ` : ''}
+                        ${qType === 'MATCHING' ? StudentView.renderMatchingBoard({
+                          pairs: (q.pairs || []).map((pair, index) => ({ key: String(index), left: pair.left,
+                            options: (q.shuffled_rights || (q.pairs || []).map(item => item.right)).map(text => ({ key: text, text })) })),
+                          rights: (q.shuffled_rights || (q.pairs || []).map(item => item.right)).map(text => ({ text })),
+                          attributes: 'data-cisco-quiz-qidx="' + qIdx + '"', selectClass: 'cisco-quiz-matching-select', questionIndex: qIdx
+                        }) : ''}
 
                         ${qType === 'TRUE_FALSE' ? `
                           <div class="grid grid-cols-2 gap-3 cisco-modal-quiz-tf">
@@ -5374,7 +5365,7 @@ class StudentView {
                   if (typeof board._setMatchResults === 'function') board._setMatchResults(null);
                   board.querySelectorAll('.btn-clear-matches').forEach(btn => btn.click());
                   board.querySelectorAll('.matching-card-left, .matching-card-right').forEach(c => {
-                    c.classList.remove('border-emerald-500', 'bg-emerald-950/30', 'border-rose-500', 'bg-rose-950/30', 'border-emerald-500/60', 'ring-2', 'ring-teal-400', 'border-teal-400');
+                    c.classList.remove('border-sky-400', 'border-teal-400', 'border-emerald-500', 'bg-emerald-950/30', 'border-rose-500', 'bg-rose-950/30', 'border-emerald-500/60', 'ring-2', 'ring-teal-400', 'border-teal-400');
                     c.classList.add('border-slate-700/80');
                   });
                 });
@@ -5537,7 +5528,8 @@ class StudentView {
           <span class="material-symbols-outlined text-[34px] ml-0.5 pointer-events-none">play_arrow</span>
         </button>
 
-        <p id="${playerId}-status" role="status" class="absolute top-2 left-2 text-xs text-amber-300"></p>
+        <p id="${playerId}-status" role="status" class="absolute top-2 left-2 right-2 z-30 text-xs text-amber-300"></p>
+        <button type="button" id="${playerId}-retry" class="hidden absolute top-10 left-2 z-30 px-4 py-2 rounded-lg bg-slate-800 text-slate-100 text-xs">Thử Lại Video</button>
         <!-- Custom Control Bar -->
         <div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-slate-950/95 via-slate-950/70 to-transparent p-3 pt-6 flex flex-col gap-2 z-20 transition-opacity duration-200" id="${playerId}-controls">
           <!-- Scrubber Track -->
@@ -5663,8 +5655,11 @@ class StudentView {
     const youtube = container.getAttribute('data-player-type') === 'youtube';
     const get = suffix => document.getElementById(`${playerId}-${suffix}`);
     const video = youtube ? null : document.getElementById(playerId);
+    const youtubeHost = youtube ? get('yt')?.parentElement : null;
+    const sourceUrl = options.streamUrl || video?.getAttribute('data-hls-src') || video?.src || '';
     const listeners = [], buttons = [];
     let driver = null, hls = null, armor = null, tracker = null, disposed = false, playing = false;
+    let initialization = 0, nativeBound = false;
     let frontier = 0, unlocked = !!options.isCompleted, duration = 0, resumed = false, verifiedIp = options.clientIp || '';
     let observedPosition = 0, observedAt = Date.now(), confirmedRate = 1, changingRate = false;
     const listen = (element, name, handler) => { if (element) { element.addEventListener(name, handler); listeners.push([element, name, handler]); } };
@@ -5800,43 +5795,89 @@ class StudentView {
         onSecurityViolation: (reason, details) => { pause(); transition('paused'); ApiClient.recordTelemetry?.('VIDEO_SECURITY_VIOLATION', { reason, ...details }); }
       });
     }
+    const failPlayback = message => {
+      pause(); transition('paused'); status(message);
+      get('retry')?.classList.remove('hidden');
+    };
     const initialize = async () => {
+      const generation = ++initialization;
+      status('Đang kết nối video...');
       if (youtube) {
         try {
           const YT = await StudentView.ensureYouTubeAPI();
-          if (disposed) return;
+          if (disposed || generation !== initialization) return;
+          if (!get('yt') && youtubeHost) {
+            const mount = document.createElement('div');
+            mount.id = `${playerId}-yt`; mount.className = 'w-full h-full';
+            youtubeHost.appendChild(mount);
+          }
           driver = new YT.Player(`${playerId}-yt`, {
             videoId: container.getAttribute('data-yt-id'),
             playerVars: { controls: 0, rel: 0, playsinline: 1, enablejsapi: 1, origin: window.location.origin },
             events: {
-              onReady: () => { if (!disposed) { if (!options.supplementary) startTracker(); paint(); } },
-              onStateChange: event => { if (!disposed) transition(event.data === 1 ? 'playing' : event.data === 0 ? 'ended' : 'paused'); },
-              onPlaybackRateChange: () => { void handleRateChange(); },
-              onError: () => { if (!disposed) { transition('paused'); status('Video không khả dụng hoặc không cho phép nhúng. Hãy thử lại.'); get('retry')?.classList.remove('hidden'); } }
+              onReady: () => { if (!disposed && generation === initialization) { status(''); get('retry')?.classList.add('hidden'); if (!options.supplementary) startTracker(); paint(); } },
+              onStateChange: event => { if (!disposed && generation === initialization) transition(event.data === 1 ? 'playing' : event.data === 0 ? 'ended' : 'paused'); },
+              onPlaybackRateChange: () => { if (!disposed && generation === initialization) void handleRateChange(); },
+              onError: event => {
+                if (disposed || generation !== initialization) return;
+                const code = Number(event?.data) || 0;
+                const reason = code === 153 ? 'Không thể xác nhận nguồn trang phát video.' :
+                  [101, 150].includes(code) ? 'Chủ sở hữu không cho phép phát video trên trang này.' :
+                  code === 100 ? 'Video đã bị gỡ hoặc được đặt ở chế độ riêng tư.' : 'Video không khả dụng.';
+                failPlayback(`${reason} (YouTube ${code || 'không xác định'}). Hãy thử lại.`);
+              }
             }
           });
-        } catch (error) { reportError(error); get('retry')?.classList.remove('hidden'); }
+        } catch (error) { if (!disposed && generation === initialization) failPlayback(error.message || 'Không thể kết nối YouTube. Hãy thử lại.'); }
       } else if (video) {
         driver = video;
-        const src = options.streamUrl || video.getAttribute('data-hls-src') || video.src || '';
-        if (src.includes('.m3u8') || src.includes('/video/playlist')) {
+        if (sourceUrl.includes('.m3u8') || sourceUrl.includes('/video/playlist')) {
           if (typeof Hls !== 'undefined' && Hls.isSupported()) {
-            hls = new Hls({ xhrSetup: xhr => { xhr.withCredentials = true; } });
-            hls.loadSource(src); hls.attachMedia(video);
-          } else if (video.canPlayType?.('application/vnd.apple.mpegurl')) video.src = src;
-          else status('Trình duyệt chưa hỗ trợ video này.');
+            const engine = new Hls({ xhrSetup: xhr => { xhr.withCredentials = true; } });
+            hls = engine;
+            let decodeRecoveries = 0;
+            engine.on(Hls.Events?.ERROR || 'hlsError', (_event, data) => {
+              if (disposed || generation !== initialization || hls !== engine || !data?.fatal) return;
+              if (data.type === (Hls.ErrorTypes?.MEDIA_ERROR || 'mediaError') && decodeRecoveries++ === 0) {
+                transition('paused'); status('Đang khôi phục bộ giải mã video...'); engine.recoverMediaError(); return;
+              }
+              const code = Number(data.response?.code || data.networkDetails?.status) || 0;
+              const reason = [401, 403].includes(code) ? 'Phiên đăng nhập đã hết hạn hoặc bạn không còn quyền xem video. Hãy tải lại trang.' :
+                code === 404 ? 'Không tìm thấy video trên máy chủ.' :
+                  code >= 500 ? 'Máy chủ chưa thể chuẩn bị video. Vui lòng thử lại sau.' : 'Không thể tải hoặc giải mã video.';
+              failPlayback(`${reason} Hãy thử lại video.`);
+              engine.destroy(); hls = null;
+            });
+            engine.loadSource(sourceUrl); engine.attachMedia(video);
+          } else if (video.canPlayType?.('application/vnd.apple.mpegurl')) { video.src = sourceUrl; video.load?.(); }
+          else failPlayback('Trình duyệt chưa hỗ trợ video này hoặc thư viện phát video chưa tải được. Hãy thử lại.');
+        } else {
+          video.src = sourceUrl; video.load?.();
         }
-        listen(video, 'playing', () => transition('playing'));
-        for (const event of ['pause', 'waiting', 'ended']) listen(video, event, () => transition(event === 'ended' ? 'ended' : 'paused'));
-        listen(video, 'error', () => { transition('paused'); status('Không thể tải video. Kiểm tra kết nối và thử lại.'); });
-        listen(video, 'seeking', () => { if (!unlocked && position() > frontier) seek(frontier); });
-        listen(video, 'loadedmetadata', () => { if (!tracker && !options.supplementary) startTracker(); });
+        if (!nativeBound) {
+          nativeBound = true;
+          listen(video, 'playing', () => { status(''); get('retry')?.classList.add('hidden'); transition('playing'); });
+          for (const event of ['pause', 'waiting', 'ended']) listen(video, event, () => transition(event === 'ended' ? 'ended' : 'paused'));
+          listen(video, 'error', () => failPlayback(video.error?.code === 4 ? 'Không thể tải video: định dạng hoặc bộ mã hóa không được hỗ trợ. Hãy thử lại.' : 'Không thể tải video. Kiểm tra kết nối và thử lại.'));
+          listen(video, 'seeking', () => { if (!unlocked && position() > frontier) seek(frontier); });
+          listen(video, 'loadedmetadata', () => { status(''); get('retry')?.classList.add('hidden'); if (!tracker && !options.supplementary) startTracker(); });
+          listen(video, 'ratechange', () => { void handleRateChange(); });
+        }
         if (video.readyState >= 1 && !options.supplementary) startTracker();
-        listen(video, 'ratechange', () => { void handleRateChange(); });
       }
     };
-    click('retry', () => { driver?.destroy?.(); driver = null; get('retry')?.classList.add('hidden'); void initialize(); });
-    void initialize();
+    const initializeSafely = () => {
+      void initialize().catch(() => {
+        if (!disposed) failPlayback('Không thể khởi tạo video. Hãy thử lại hoặc tải lại trang.');
+      });
+    };
+    click('retry', () => {
+      if (disposed) return;
+      pause(true); playing = false; resumed = false;
+      hls?.destroy(); hls = null; driver?.destroy?.(); driver = null;
+      get('retry')?.classList.add('hidden'); initializeSafely();
+    });
+    initializeSafely();
     const ticker = setInterval(paint, 250);
     const controller = {
       armor, get hls() { return hls; }, pause,
@@ -5846,7 +5887,7 @@ class StudentView {
         pause(); playing = false;
         tracker?.update('paused', position(), rate());
         void tracker?.flush(); tracker?.destroy();
-        disposed = true; clearInterval(ticker);
+        disposed = true; initialization++; clearInterval(ticker);
         listeners.forEach(([element, event, handler]) => element.removeEventListener(event, handler));
         buttons.forEach(element => { element.onclick = null; });
         delete container._customPlayer;
@@ -5870,10 +5911,10 @@ class StudentView {
   // 6. Assessments Suite: Waiting Room (UTC Countdown)
   // =========================================================================
   static getWaitingRoomState(data) {
-    if (data.is_locked || data.can_start === false) return 'LOCKED_PREREQUISITE';
-    if (data.active_attempt_id) return 'RESUME';
-    if (data.is_closed) return 'CLOSED';
-    if (data.is_attempt_limit_reached) return 'EXHAUSTED';
+    if (data.can_resume || (data.active_attempt_id && data.can_resume !== false)) return 'RESUME';
+    if (data.start_block_reason === 'CLOSED' || data.is_closed) return 'CLOSED';
+    if (data.start_block_reason === 'EXHAUSTED' || data.is_attempt_limit_reached) return 'EXHAUSTED';
+    if (data.start_block_reason === 'PREREQUISITE' || data.is_locked) return 'LOCKED_PREREQUISITE';
     if (data.is_waiting_room_open === false) return 'WAITING_ROOM_LOCKED';
     if (!data.is_open) return 'UPCOMING';
     return data.can_start ? 'READY' : 'UNAVAILABLE';
@@ -5922,8 +5963,8 @@ class StudentView {
 
       const candidateName = data.student_name || 'Thí sinh PWD301';
       const candidateEmail = data.student_email || 'student@pwd301.edu.vn';
-      const questionsCount = data.questions_count || assessment.question_count || 'Theo đề';
-      const passScore = assessment.pass_score != null ? assessment.pass_score : '5.0';
+      const questionsCount = data.questions_count ?? assessment.questions_count ?? 'Chưa tải';
+      const earnedScore = StudentView.getAssessmentScoreLabel(data);
 
       container.innerHTML = `
         <main class="min-h-full bg-slate-50 dark:bg-slate-950 px-4 py-8 sm:py-10 text-slate-800 dark:text-slate-100 font-sans">
@@ -5935,7 +5976,7 @@ class StudentView {
                 <span class="material-symbols-outlined text-base">arrow_back</span>
                 <span>Quay lại danh sách bài thi</span>
               </a>
-              <span class="text-xs font-mono text-slate-400">Mã bài: #${UI.escapeHtml(assessmentId).slice(0, 8)}</span>
+
             </div>
 
             <!-- Exam Hero Header Card -->
@@ -5987,9 +6028,9 @@ class StudentView {
                 <div class="rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-3.5 space-y-1">
                   <div class="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
                     <span class="material-symbols-outlined text-base text-emerald-500">check_circle</span>
-                    Điểm đạt yêu cầu
+                    Điểm
                   </div>
-                  <div class="text-lg sm:text-xl font-bold font-mono text-slate-900 dark:text-white">${passScore} <span class="text-xs font-normal text-slate-500">/ 10</span></div>
+                  <div class="text-lg sm:text-xl font-bold font-mono text-slate-900 dark:text-white">${UI.escapeHtml(earnedScore)}</div>
                 </div>
 
                 <div class="rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-3.5 space-y-1">
@@ -6624,79 +6665,13 @@ class StudentView {
                           return hashA - hashB;
                         });
 
-                        const leftLetter = (i) => String(i + 1).padStart(2, '0');
-                        const rightLetter = (i) => String.fromCharCode(65 + i);
-
-                        return `
-                          <div class="matching-challenge-board bg-slate-900 border border-slate-800 text-slate-100 rounded-2xl p-5 select-none relative overflow-hidden my-3" data-exam-matching-qidx="${idx}">
-                            <div class="flex items-center justify-between gap-3 mb-2">
-                              <span class="text-emerald-400 font-bold text-[11px] uppercase tracking-wider">Thử thách ghép đôi</span>
-                              <span class="px-3 py-0.5 rounded-full text-xs font-bold bg-emerald-950/80 text-emerald-400 border border-emerald-500/40 matching-board-counter">0/${pairs.length} đã nối</span>
-                            </div>
-                            <h4 class="text-sm font-bold text-white mb-1">${UI.escapeHtml(questionText)}</h4>
-                            <p class="text-xs text-slate-400 mb-3">Chọn một mục bên trái, sau đó chọn chức năng đúng ở bên phải để nối.</p>
-                            <div class="h-1 w-full bg-slate-800 rounded-full mb-5 overflow-hidden">
-                              <div class="h-full bg-emerald-500 transition-all duration-300 w-0 matching-board-progress"></div>
-                            </div>
-
-                            <svg class="absolute inset-0 w-full h-full pointer-events-none z-20 overflow-visible matching-board-svg"></svg>
-
-                            <!-- Hidden Selects for auto-save sync -->
-                            <div class="hidden">
-                              ${pairs.map(p => `
-                                <select class="interactive-slot-select" data-group-index="${p.groupIndex}">
-                                  <option value="">--</option>
-                                  ${p.choices.map(c => {
-                                    const key = String(c.choice_key || c.choice_id || c.id);
-                                    return `<option value="${UI.escapeHtml(key)}" data-answer-text="${UI.escapeHtml(c.answerText)}" ${p.selectedChoiceKey === key ? 'selected' : ''}>${UI.escapeHtml(c.answerText)}</option>`;
-                                  }).join('')}
-                                </select>
-                              `).join('')}
-                            </div>
-
-                            <div class="grid grid-cols-2 gap-8 md:gap-14 relative z-10">
-                              <div class="space-y-3">
-                                <div class="flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1 px-1">
-                                  <span>Cột A · Khái niệm</span>
-                                  <span>${pairs.length} mục</span>
-                                </div>
-                                ${pairs.map((p, lIdx) => `
-                                  <div class="matching-card-left p-3 rounded-xl border border-slate-700/80 bg-slate-800/80 hover:border-slate-600 flex items-center justify-between gap-2.5 cursor-pointer transition-all" data-left-key="${p.groupIndex}">
-                                    <div class="flex items-center gap-2 min-w-0">
-                                      <span class="w-7 h-7 rounded-lg bg-slate-700 text-slate-300 font-bold text-xs flex items-center justify-center shrink-0">${leftLetter(lIdx)}</span>
-                                      <span class="font-semibold text-xs text-slate-200 truncate">${UI.escapeHtml(p.left)}</span>
-                                    </div>
-                                    <span class="port-dot w-4 h-4 rounded-full border-2 border-slate-500 bg-slate-800 shrink-0 transition-all" data-port="left-${p.groupIndex}"></span>
-                                  </div>
-                                `).join('')}
-                              </div>
-
-                              <div class="space-y-3">
-                                <div class="flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1 px-1">
-                                  <span>Cột B · Ý nghĩa</span>
-                                  <span>${pairs.length} mục</span>
-                                </div>
-                                ${shuffledRight.map((r, rPos) => `
-                                  <div class="matching-card-right p-3 rounded-xl border border-slate-700/80 bg-slate-800/80 hover:border-slate-600 flex items-center justify-between gap-2.5 cursor-pointer transition-all" data-right-text="${UI.escapeHtml(r.text)}" data-right-pos="${rPos}">
-                                    <span class="port-dot w-4 h-4 rounded-full border-2 border-slate-500 bg-slate-800 shrink-0 transition-all" data-port="right-${rPos}"></span>
-                                    <div class="flex items-center gap-2 min-w-0 flex-1 justify-end">
-                                      <span class="font-medium text-xs text-slate-200 text-right truncate">${UI.escapeHtml(r.text)}</span>
-                                      <span class="w-7 h-7 rounded-lg bg-slate-700 text-slate-300 font-bold text-xs flex items-center justify-center shrink-0">${rightLetter(rPos)}</span>
-                                    </div>
-                                  </div>
-                                `).join('')}
-                              </div>
-                            </div>
-
-                            <div class="mt-5 pt-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
-                              <button type="button" class="btn-clear-matches inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 hover:text-white transition-colors">
-                                <span class="material-symbols-outlined text-[14px]">restart_alt</span>
-                                <span>Xóa lựa chọn</span>
-                              </button>
-                              <span class="text-[11px] text-slate-500">Bấm một mục trái rồi bấm một mục phải để nối</span>
-                            </div>
-                          </div>
-                        `;
+                        return StudentView.renderMatchingBoard({
+                          pairs: pairs.map(pair => ({ key: String(pair.groupIndex), left: pair.left,
+                            selectedKey: pair.selectedChoiceKey,
+                            options: pair.choices.map(choice => ({ key: String(choice.choice_key || choice.choice_id || choice.id), text: choice.answerText })) })),
+                          rights: shuffledRight,
+                          attributes: 'data-exam-matching-qidx="' + idx + '"'
+                        });
                       }
 
                       // DRAG AND DROP: Clean slots without dropdowns!
@@ -7690,28 +7665,9 @@ class StudentView {
       ]);
       if (!data) return;
 
-      if (data.score_status === 'RESULTS_HIDDEN' || data.allow_student_view_results === false) {
-        container.innerHTML = `
-          <div class="py-16 px-4 max-w-xl mx-auto text-center space-y-4 animate-fade-in font-sans">
-            <div class="w-16 h-16 mx-auto rounded-2xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shadow-xs">
-              <span class="material-symbols-outlined text-3xl">task_alt</span>
-            </div>
-            <h1 class="text-2xl font-black text-slate-900 dark:text-white">Đã ghi nhận bài nộp thành công</h1>
-            <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed max-w-md mx-auto">
-              Hệ thống đã lưu nhận bài thi của bạn an toàn. Giảng viên phụ trách đã cài đặt không công bố chi tiết đáp án và điểm số cho bài kiểm tra này.
-            </p>
-            <div class="pt-4 flex items-center justify-center gap-3">
-              <a href="#/student/assessments" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-sm">
-                Danh sách bài kiểm tra
-              </a>
-              <a href="/student/attempt/${encodeURIComponent(attemptId)}/result.pdf" target="_blank" class="px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all flex items-center gap-1.5">
-                <span class="material-symbols-outlined text-[16px]">picture_as_pdf</span>
-                <span>Tải xác nhận bài nộp (PDF)</span>
-              </a>
-            </div>
-          </div>
-        `;
-        return;
+      if (data.allow_student_view_results === false || data.answer_visibility_policy === 'NEVER') {
+        data.questions = [];
+        data.answers_visible = false;
       }
 
       const scoreState = StudentView.getAttemptScoreState(data);
@@ -8603,19 +8559,10 @@ class StudentView {
       }
 
       // 1. Phân loại 3 danh sách độc lập:
-      const activeList = [];
-      const upcomingList = [];
-      const completedList = [];
-
-      items.forEach(a => {
-        if (a.is_closed || a.is_attempt_limit_reached) {
-          completedList.push(a);
-        } else if (!a.is_open) {
-          upcomingList.push(a);
-        } else {
-          activeList.push(a);
-        }
-      });
+      const sections = StudentView.partitionAssessments(items);
+      const activeList = sections.active;
+      const upcomingList = sections.upcoming;
+      const completedList = sections.completed;
 
       // 2. Helper nhóm theo Môn học
       const groupByCourse = (assessmentList) => {
@@ -8639,7 +8586,7 @@ class StudentView {
 
       // Đếm tổng số môn học duy nhất trên toàn bộ bài thi
       const uniqueCourses = new Set(items.map(a => a.course_id || a.course_code || 'CRS'));
-      const completedExamsCount = items.filter(a => a.is_attempt_limit_reached || a.attempts_count > 0).length;
+      const completedExamsCount = items.filter(a => a.is_completed === true || a.completion_status === 'COMPLETED').length;
 
       // Render top overview stats badges
       if (statsBox) {

@@ -12,6 +12,8 @@ CREATE TABLE questions (
     public_id UNIQUEIDENTIFIER NOT NULL DEFAULT (NEWSEQUENTIALID()),
     course_id BIGINT NOT NULL,
     lesson_id BIGINT NULL,
+    change_request_id BIGINT NULL,
+    previous_question_id BIGINT NULL,
     creator_user_id BIGINT NULL,
     difficulty VARCHAR(20) NOT NULL,
     learning_objective NVARCHAR(500) NULL,
@@ -34,7 +36,9 @@ CREATE TABLE questions (
     CONSTRAINT fk_questions_course_id FOREIGN KEY (course_id) REFERENCES courses (id),
     CONSTRAINT fk_questions_lesson_id FOREIGN KEY (lesson_id) REFERENCES lessons (id) ON DELETE SET NULL,
     CONSTRAINT fk_questions_creator_user_id FOREIGN KEY (creator_user_id) REFERENCES users (id),
-    CONSTRAINT fk_questions_deleted_by_user_id FOREIGN KEY (deleted_by_user_id) REFERENCES users (id)
+    CONSTRAINT fk_questions_deleted_by_user_id FOREIGN KEY (deleted_by_user_id) REFERENCES users (id),
+    CONSTRAINT fk_questions_change_request_id FOREIGN KEY (change_request_id) REFERENCES course_change_requests (id),
+    CONSTRAINT fk_questions_previous_question_id FOREIGN KEY (previous_question_id) REFERENCES questions (id)
 );
 GO
 

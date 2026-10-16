@@ -74,13 +74,13 @@ test('late lesson GET cannot replace the newest selected route', async () => {
 });
 
 test('video URL blur refreshes preview without replacing the clicked editor controls', () => {
-  const input = {};
+  const input = { value: 'https://youtu.be/dQw4w9WgXcQ' };
   const preview = { innerHTML: '' };
   let editorReplacements = 0;
   const context = {
-    card: { querySelector: selector => selector === '.block-video-url' ? input : preview },
-    bIdx: 0,
-    activeBlocks: [{ type: 'video', url: 'https://youtu.be/dQw4w9WgXcQ' }],
+    card: { querySelector: selector => selector === '.block-video-url' ? input : preview, querySelectorAll: () => [] },
+    bIdx: 0, cardBlockId: 'video-block',
+    activeBlocks: [{ id: 'video-block', type: 'video', url: 'https://youtu.be/dQw4w9WgXcQ' }],
     isEditorDirty: false,
     scrapeBlocksFromDom() {},
     renderEditor() { editorReplacements++; },

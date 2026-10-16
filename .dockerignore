@@ -11,7 +11,9 @@ env/
 
 # Node Modules & Frontend Dev Dependencies
 node_modules/
+**/node_modules/
 package-lock.json
+!tools/pdf-math/package-lock.json
 
 # Python caches and bytecode
 __pycache__/

@@ -63,6 +63,10 @@ from pwd301.services.lesson_service import (
 
 
 def _serialize_course(c: Course) -> dict[str, Any]:
+    from pwd301.services.course_workflow_service import effective_course
+
+    actor = get_authenticated_actor()
+    c = effective_course(c, actor, db.session)
     thumbnail = get_course_thumbnail_asset(c)
     lo_data = None
     if c.learning_objectives:
@@ -88,7 +92,13 @@ def _serialize_course(c: Course) -> dict[str, Any]:
         "difficulty": c.difficulty,
         "capacity": c.capacity,
         "status": c.status,
-        "thumbnail_url": f"/api/courses/{c.public_id}/thumbnail" if thumbnail else None,
+        "thumbnail_url": (
+            f"/api/files/{thumbnail.public_id}/download?disposition=inline"
+            if actor and (actor.is_admin or actor.id == c.owner_instructor_id)
+            else f"/api/courses/{c.public_id}/thumbnail"
+        )
+        if thumbnail
+        else None,
         "owner_instructor_id": (str(c.owner_instructor.public_id) if c.owner_instructor else None),
         "published_at": c.published_at.isoformat() if c.published_at else None,
         "created_at": c.created_at.isoformat(),
@@ -365,7 +375,12 @@ def get_course_prerequisites_api(course_id: str) -> tuple[Response, int] | Respo
     is_manager = bool(
         actor and (getattr(actor, "is_admin", False) or course.owner_instructor_id == actor.id)
     )
-    prereqs = get_course_prerequisites(course, only_approved=not is_manager, session=db.session)
+    if is_manager:
+        from pwd301.services.course_workflow_service import effective_prerequisites
+
+        prereqs = effective_prerequisites(course, actor, db.session)
+    else:
+        prereqs = get_course_prerequisites(course, session=db.session)
     return jsonify({"prerequisites": [_serialize_prerequisite_api(c) for c in prereqs]}), 200
 
 
@@ -391,6 +406,12 @@ def add_course_prerequisite_api(course_id: str) -> tuple[Response, int] | Respon
     prereq_course = link.prerequisite_course or _resolve_course(
         prerequisite_course_id, session=db.session
     )
+    if target_course is None or prereq_course is None:
+        raise CourseValidationError("Prerequisite courses must exist.")
+    db.session.commit()
+    from pwd301.services.course_workflow_service import active_changeset
+
+    record = active_changeset(target_course.id, db.session)
     return (
         jsonify(
             {
@@ -398,7 +419,14 @@ def add_course_prerequisite_api(course_id: str) -> tuple[Response, int] | Respon
                 "prerequisite_course_id": (
                     str(prereq_course.public_id) if prereq_course else str(prerequisite_course_id)
                 ),
-                "created_at": link.created_at.isoformat(),
+                "created_at": link.created_at.isoformat()
+                if link.created_at
+                else record.created_at.isoformat()
+                if record
+                else None,
+                "is_draft": bool(record),
+                "pending_approval": False,
+                "change_request_id": record.id if record else None,
             }
         ),
         201,
@@ -420,7 +448,11 @@ def remove_course_prerequisite_api(
         prerequisite_course_id=prereq_id,
         session=db.session,
     )
-    return jsonify({"removed": removed}), 200
+    from pwd301.blueprints.api_lessons.routes import _lesson_authoring_response
+
+    course = require_course_manager(actor, course_id, session=db.session)
+    db.session.commit()
+    return _lesson_authoring_response(course, {"removed": removed}), 200
 
 
 @api_course_bp.route("/<course_id>/enrollments", methods=["GET"])
@@ -459,19 +491,9 @@ def get_course_enrollments_api(course_id: str) -> tuple[Response, int] | Respons
 
 
 def _serialize_completion_rule_api(course: Course, rule: Any) -> dict[str, Any]:
-    return {
-        "course_id": str(course.public_id),
-        "course_code": course.course_code,
-        "title": course.title,
-        "require_all_required_lessons": bool(rule.require_all_required_lessons),
-        "require_required_assessments": bool(rule.require_required_assessments),
-        "minimum_progress_percent": (
-            float(rule.minimum_progress_percent)
-            if rule.minimum_progress_percent is not None
-            else None
-        ),
-        "updated_at": rule.updated_at.isoformat() if rule.updated_at else None,
-    }
+    from pwd301.blueprints.instructor.routes import _serialize_completion_rule
+
+    return _serialize_completion_rule(course, rule)
 
 
 @api_course_bp.route("/<course_id>/completion-rules", methods=["GET"])
@@ -501,7 +523,10 @@ def set_course_completion_rules_api(course_id: str) -> tuple[Response, int] | Re
         payload=payload,
         session=db.session,
     )
-    return jsonify(_serialize_completion_rule_api(course, rule)), 200
+    from pwd301.blueprints.api_lessons.routes import _lesson_authoring_response
+
+    db.session.commit()
+    return _lesson_authoring_response(course, _serialize_completion_rule_api(course, rule)), 200
 
 
 @api_course_bp.route("/<course_id>/progress", methods=["GET"])
@@ -820,7 +845,10 @@ def create_course_lesson_api(course_id: str) -> tuple[Response, int] | Response:
     actor = require_authenticated_actor()
     payload = request.get_json(silent=True) or {}
     lesson = create_lesson(actor, course_id, payload, session=db.session)
-    return jsonify(_serialize_lesson(lesson)), 201
+    from pwd301.blueprints.api_lessons.routes import _lesson_authoring_response
+
+    db.session.commit()
+    return _lesson_authoring_response(lesson.course, _serialize_lesson(lesson)), 201
 
 
 @api_course_bp.route("/<course_id>/lessons/reorder", methods=["POST"])
@@ -834,12 +862,17 @@ def reorder_course_lessons_api(course_id: str) -> tuple[Response, int] | Respons
     payload = request.get_json(silent=True) or {}
     ordered_ids = payload.get("ordered_lesson_ids") or payload.get("lesson_ids") or []
     lessons = reorder_lessons(actor, course_id, ordered_ids, session=db.session)
+    from pwd301.blueprints.api_lessons.routes import _lesson_authoring_response
+
+    course = require_course_manager(actor, course_id, session=db.session)
+    db.session.commit()
     return (
-        jsonify(
+        _lesson_authoring_response(
+            course,
             {
                 "message": "Lessons reordered successfully.",
                 "lessons": [_serialize_lesson(les, include_content=False) for les in lessons],
-            }
+            },
         ),
         200,
     )
@@ -879,6 +912,20 @@ def submit_course_changeset_api(course_id: str) -> tuple[Response, int] | Respon
         ),
         202,
     )
+
+
+@api_course_bp.route("/<course_id>/changeset/retract", methods=["POST"])
+@jwt_required
+@instructor_required
+def retract_course_changeset_api(course_id: str):
+    from pwd301.services.lesson_service import retract_course_changeset
+
+    actor = require_authenticated_actor()
+    record = retract_course_changeset(
+        actor, course_id, session=db.session, expected_identity=request.get_json(silent=True) or {}
+    )
+    db.session.commit()
+    return jsonify({"status": record.status, "change_request_id": record.id}), 200
 
 
 @api_course_bp.route("/<course_id>/changeset/discard", methods=["POST"])

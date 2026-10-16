@@ -20,6 +20,8 @@ DRAFT → PUBLISHED; open/closed được derive từ server time + open_at/clos
 | `public_id` | `UNIQUEIDENTIFIER` | No | `NEWSEQUENTIALID()` | ID công khai dùng trong URL/API; không thay thế kiểm tra quyền |
 | `course_id` | `BIGINT` | No |  | Course |
 | `creator_user_id` | `BIGINT` | Yes |  | Instructor/Admin |
+| `change_request_id` | `BIGINT` | Yes |  | Working/pending course aggregate owning an isolated DRAFT assessment; FK course_change_requests(id), NO ACTION |
+| `previous_assessment_id` | `BIGINT` | Yes |  | Approved assessment being revised; self FK assessments(id), NO ACTION; original public identity and attempts are retained |
 | `title` | `NVARCHAR(200)` | No |  | Tên Assessment |
 | `description` | `NVARCHAR(MAX)` | Yes |  | Mô tả |
 | `assessment_type` | `VARCHAR(20)` | No |  | PRACTICE/QUIZ/MIDTERM/FINAL/PLACEMENT |

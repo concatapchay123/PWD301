@@ -1537,9 +1537,10 @@ class AdminView {
       container.querySelector('#admin-review-load-error')?.remove();
       const pendingCourses = (pendingCoursesRes.status === 'fulfilled' && pendingCoursesRes.value) ? (pendingCoursesRes.value.courses || []) : [];
       const rawChangeRequests = (changeReqsRes.status === 'fulfilled' && changeReqsRes.value) ? (changeReqsRes.value.change_requests || []) : [];
-      // Clean queue contract: Mọi yêu cầu khi được Admin xét duyệt xong (dù duyệt chấp thuận hay từ chối) hoặc hủy
-      // đều tự động biến mất hoàn toàn khỏi hàng đợi, biến mất luôn cả ở tab "Tất cả". Hàng đợi chỉ chứa yêu cầu chờ duyệt.
+      // Keep the active queue separate from explicitly requested processed history.
       const changeRequests = rawChangeRequests.filter(r => r.status === 'PENDING');
+      const reviewStatusLabels = { PENDING: 'Chờ duyệt', APPROVED: 'Đã duyệt', REJECTED: 'Từ chối', CANCELLED: 'Đã hủy', APPLIED: 'Đã áp dụng' };
+      let historyRecords = [], historySequence = 0;
 
       // Update badge
       const totalPending = pendingCourses.length + changeRequests.length;
@@ -1603,9 +1604,12 @@ class AdminView {
               </h3>
               <p class="text-xs text-slate-500 dark:text-slate-300 mt-0.5">So sánh nội dung hiện tại và đề xuất trước khi duyệt.</p>
             </div>
-            <div class="flex items-center gap-1.5" id="cr-status-filter-group">
-              <button type="button" class="cr-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-primary text-white" data-status="PENDING">Chờ duyệt (<span id="cr-badge-pending">${changeRequests.length}</span>)</button>
-              <button type="button" class="cr-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200" data-status="ALL">Tất cả (<span id="cr-badge-all">${changeRequests.length}</span>)</button>
+            <div class="space-y-2" id="cr-status-filter-group">
+              <button type="button" class="cr-filter-btn px-4 py-2 rounded-lg text-xs font-bold bg-primary text-slate-50" data-status="PENDING">Chờ duyệt (<span id="cr-badge-pending">${changeRequests.length}</span>)</button>
+              <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Lịch Sử Xét Duyệt">
+                <span class="text-xs font-semibold text-slate-600 dark:text-slate-300">Lịch Sử Xét Duyệt:</span>
+                ${['APPROVED', 'REJECTED', 'CANCELLED', 'APPLIED'].map(status => `<button type="button" class="cr-filter-btn px-4 py-2 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200" data-status="${status}">${reviewStatusLabels[status]}</button>`).join('')}
+              </div>
             </div>
           </div>
 
@@ -1645,10 +1649,8 @@ class AdminView {
         const pCount = changeRequests.filter(r => r.status === 'PENDING').length;
 
         const badgeP = document.getElementById('cr-badge-pending');
-        const badgeAll = document.getElementById('cr-badge-all');
 
         if (badgeP) badgeP.textContent = String(pCount);
-        if (badgeAll) badgeAll.textContent = String(pCount);
 
         const totalP = pendingCourses.length + pCount;
         if (window.app && typeof window.app.updateAdminNavBadges === 'function') {
@@ -1661,19 +1663,19 @@ class AdminView {
       };
 
       // Filter change requests
-      const renderChangeRequestRows = (_statusFilter = 'PENDING') => {
+      const renderChangeRequestRows = (statusFilter = 'PENDING') => {
         const tbody = document.getElementById('change-requests-tbody');
         if (!tbody) return;
 
-        const filtered = changeRequests.filter(r => r.status === 'PENDING');
+        const filtered = (statusFilter === 'PENDING' ? changeRequests : historyRecords).filter(r => r.status === statusFilter);
 
         if (filtered.length === 0) {
           tbody.innerHTML = `
             <tr>
               <td colspan="7" class="py-12 text-center text-slate-400 text-xs">
                 <span class="material-symbols-outlined text-emerald-500 text-3xl mb-2 block">task_alt</span>
-                <p class="font-bold text-slate-700 dark:text-slate-300">Không có yêu cầu thay đổi nào đang chờ duyệt.</p>
-                <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Các yêu cầu sau khi được admin xét duyệt xong sẽ tự động hoàn tất và rời khỏi hàng đợi.</p>
+                <p class="font-bold text-slate-700 dark:text-slate-300">${statusFilter === 'PENDING' ? 'Không có yêu cầu thay đổi nào đang chờ duyệt.' : `Không có yêu cầu trong lịch sử ${reviewStatusLabels[statusFilter].toLowerCase()}.`}</p>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Các yêu cầu đã xử lý được giữ trong Lịch Sử Xét Duyệt.</p>
               </td>
             </tr>
           `;
@@ -1711,6 +1713,8 @@ class AdminView {
           let statusBadge = 'bg-amber-50 text-amber-700 border-amber-200';
           if (r.status === 'APPROVED') statusBadge = 'bg-emerald-50 text-emerald-700 border-emerald-200';
           if (r.status === 'REJECTED') statusBadge = 'bg-rose-50 text-rose-700 border-rose-200';
+          if (r.status === 'APPLIED') statusBadge = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+          if (r.status === 'CANCELLED') statusBadge = 'bg-slate-100 text-slate-700 border-slate-200';
 
           return `
             <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
@@ -1751,7 +1755,7 @@ class AdminView {
               </td>
               <td class="px-3.5 py-3.5 whitespace-nowrap align-middle">
                 <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${statusBadge}">
-                  ${r.status === 'PENDING' ? 'Chờ duyệt' : (r.status === 'APPROVED' ? 'Đã duyệt' : 'Từ chối')}
+                  ${reviewStatusLabels[r.status] || UI.escapeHtml(r.status)}
                 </span>
               </td>
               <td class="px-3.5 py-3.5 text-xs text-slate-400 font-mono whitespace-nowrap align-middle">
@@ -1788,12 +1792,14 @@ class AdminView {
               btn.disabled = true;
               const isChangeset = targetReq.change_type === 'COURSE_VERSION_CHANGESET' || (targetReq.proposed_payload && targetReq.proposed_payload.action === 'COURSE_VERSION_CHANGESET');
               if (isChangeset) {
-                await ApiClient.approveCourseChangeset(targetReq.id, 'Phê duyệt đợt cập nhật giáo trình.');
+                await ApiClient.approveCourseChangeset(targetReq.request_id ?? targetReq.id, 'Phê duyệt đợt cập nhật giáo trình.', targetReq.review_version);
               } else {
-                await ApiClient.reviewAdminChangeRequest(targetReq.id, { action: 'approve' });
+                await ApiClient.reviewAdminChangeRequest(targetReq.request_id ?? targetReq.id, {
+                  action: 'approve', request_id: targetReq.request_id ?? targetReq.id, review_version: targetReq.review_version
+                });
               }
 
-              // Remove directly from changeRequests array so it disappears from ALL tabs (including 'Tất cả')
+              // Remove only the completed row from this pending snapshot; history stays queryable.
               const reqIdx = changeRequests.findIndex(item => String(item.id) === String(reqId));
               if (reqIdx !== -1) {
                 changeRequests.splice(reqIdx, 1);
@@ -1818,8 +1824,8 @@ class AdminView {
               window.app?.refreshNotificationBadge?.(true);
               window.app?.fetchAdminPendingCounts?.();
             } catch (err) {
-              btn.disabled = false;
-              UI.showToast(err.message || 'Lỗi phê duyệt yêu cầu.', 'error');
+              btn.disabled = err.status === 409;
+              UI.showToast(AdminView.reviewErrorMessage(err, 'Lỗi phê duyệt yêu cầu.'), err.status === 409 ? 'warning' : 'error');
             }
           };
         });
@@ -1832,8 +1838,26 @@ class AdminView {
 
       };
 
-      const activeFilter = AdminView._activeCrFilter || 'PENDING';
-      renderChangeRequestRows(activeFilter);
+      const activeFilter = Object.hasOwn(reviewStatusLabels, AdminView._activeCrFilter) ? AdminView._activeCrFilter : 'PENDING';
+      const selectReviewFilter = async status => {
+        AdminView._activeCrFilter = status;
+        const sequence = ++historySequence;
+        if (status === 'PENDING') { renderChangeRequestRows(status); return; }
+        const tbody = document.getElementById('change-requests-tbody');
+        if (!tbody) return;
+        tbody.innerHTML = '<tr><td colspan="7" role="status" class="p-6 text-slate-600 dark:text-slate-300">Đang tải lịch sử xét duyệt...</td></tr>';
+        try {
+          const result = await ApiClient.getAdminChangeRequests(status);
+          if (sequence !== historySequence || document.getElementById('change-requests-tbody') !== tbody) return;
+          historyRecords = result.change_requests || [];
+          renderChangeRequestRows(status);
+        } catch (error) {
+          if (sequence === historySequence && document.getElementById('change-requests-tbody') === tbody) {
+            tbody.innerHTML = `<tr><td colspan="7" role="alert" class="p-6 text-amber-800 dark:text-amber-300">${UI.escapeHtml(error.message || 'Không tải được lịch sử. Bấm lại trạng thái để thử lại.')}</td></tr>`;
+          }
+        }
+      };
+      await selectReviewFilter(activeFilter);
 
       const crFilterBtns = box.querySelectorAll('.cr-filter-btn');
       crFilterBtns.forEach(btn => {
@@ -1842,13 +1866,12 @@ class AdminView {
         } else {
           btn.className = 'cr-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200';
         }
-        btn.onclick = () => {
-          AdminView._activeCrFilter = btn.dataset.status;
+        btn.onclick = async () => {
           crFilterBtns.forEach(b => {
             b.className = 'cr-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200';
           });
           btn.className = 'cr-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-primary text-white';
-          renderChangeRequestRows(btn.dataset.status);
+          await selectReviewFilter(btn.dataset.status);
         };
       });
 
@@ -1887,6 +1910,10 @@ class AdminView {
   // =========================================================================
   // Full-page change review reuses the queue's authorized API response.
   // =========================================================================
+  static reviewErrorMessage(error, fallback) {
+    return error.status === 409 ? 'Yêu cầu đã thay đổi hoặc đã được xử lý. Hãy tải lại trang và kiểm tra nội dung trước khi xét duyệt.' : error.message || fallback;
+  }
+
   static async renderChangeRequestReviewPage(container, requestId) {
     container.innerHTML = '<div class="p-8 text-sm text-slate-600 dark:text-slate-300">Đang tải yêu cầu thay đổi...</div>';
     try {
@@ -2221,28 +2248,31 @@ class AdminView {
 
     const chapterTitle = r.learning_unit_title || orig.learning_unit_title || prop.learning_unit_title;
 
-    const thumbUrl = prop.thumbnail_url || (prop.course_metadata && prop.course_metadata.thumbnail_url) || orig.thumbnail_url || r.thumbnail_url || (r.course_id ? `/api/courses/${r.course_id}/thumbnail` : null);
+    const currentCoverUrl = Object.hasOwn(r, 'current_cover_url') ? r.current_cover_url :
+      orig.thumbnail_url || r.thumbnail_url || (r.course_id ? `/api/courses/${r.course_id}/thumbnail` : null);
+    const hasProposedCover = Object.hasOwn(r, 'proposed_cover_url');
+    const proposedCoverUrl = hasProposedCover ? r.proposed_cover_url :
+      prop.thumbnail_url || prop.course_metadata?.thumbnail_url || currentCoverUrl;
+    const coverEntries = hasProposedCover && proposedCoverUrl !== currentCoverUrl ? [
+      { label: 'Ảnh bìa hiện tại', url: currentCoverUrl },
+      { label: 'Ảnh bìa đề xuất', url: proposedCoverUrl }
+    ] : [{ label: 'Ảnh bìa khóa học', url: proposedCoverUrl }];
 
     const body = `
       <div class="space-y-5 text-xs">
-        ${(isCourse || thumbUrl) ? `
-          <div class="relative w-full aspect-video max-h-52 rounded-xl overflow-hidden bg-slate-900 border border-slate-200/80 dark:border-slate-700/80 flex items-center justify-center mb-1">
-            ${thumbUrl ? `
-              <img
-                src="${UI.escapeHtml(thumbUrl)}"
-                alt="${UI.escapeHtml(r.target_title || orig.title || 'Ảnh bìa khóa học')}"
-                class="w-full h-full object-cover"
-                onerror="this.parentElement.innerHTML='<div class=\\'flex flex-col items-center justify-center text-slate-400 gap-1.5\\'><span class=\\'material-symbols-outlined text-3xl\\'>image_not_supported</span><span class=\\'text-xs\\'>Không tải được ảnh bìa</span></div>';"
-              />
-            ` : `
-              <div class="flex flex-col items-center justify-center text-slate-400 gap-1.5 p-4 text-center">
-                <span class="material-symbols-outlined text-4xl text-slate-500">image</span>
-                <span class="text-xs font-medium text-slate-400">Khóa học chưa thiết lập ảnh bìa 16:9</span>
-              </div>
-            `}
-            <div class="absolute top-3 right-3">
-              <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50/90 text-amber-700 border border-amber-200 shadow-xs backdrop-blur-xs">Ảnh bìa khóa học</span>
-            </div>
+        ${(isCourse || currentCoverUrl || proposedCoverUrl) ? `
+          <div class="grid gap-4 ${coverEntries.length > 1 ? 'lg:grid-cols-2' : ''}">
+            ${coverEntries.map(cover => `
+              <figure class="space-y-2 min-w-0">
+                <figcaption class="font-semibold text-slate-700 dark:text-slate-200">${cover.label}</figcaption>
+                <div class="relative w-full aspect-video rounded-xl overflow-hidden bg-slate-900 border border-slate-200/80 dark:border-slate-700/80 flex items-center justify-center">
+                  ${cover.url ? `
+                    <img src="${UI.escapeHtml(cover.url)}" alt="${UI.escapeHtml(cover.label)}" class="absolute inset-0 w-full h-full object-cover object-center" onerror="this.hidden=true;this.nextElementSibling.classList.remove('hidden')" />
+                    <div class="hidden p-4 text-slate-300 text-center">Không tải được ảnh bìa. Hãy tải lại để kiểm tra quyền truy cập.</div>
+                  ` : '<div class="p-4 text-slate-300 text-center">Không có ảnh bìa</div>'}
+                </div>
+              </figure>
+            `).join('')}
           </div>
         ` : ''}
 
@@ -2632,9 +2662,11 @@ class AdminView {
         if (!confirmed) return;
         try {
           if (r.change_type === 'COURSE_VERSION_CHANGESET') {
-            await ApiClient.approveCourseChangeset(r.id, 'Phê duyệt đợt cập nhật giáo trình.');
+            await ApiClient.approveCourseChangeset(r.request_id ?? r.id, 'Phê duyệt đợt cập nhật giáo trình.', r.review_version);
           } else {
-            await ApiClient.reviewAdminChangeRequest(r.id, { action: 'approve' });
+            await ApiClient.reviewAdminChangeRequest(r.request_id ?? r.id, {
+              action: 'approve', request_id: r.request_id ?? r.id, review_version: r.review_version
+            });
           }
           UI.showToast(`Đã phê duyệt và áp dụng bản sửa đổi #${r.id} thành công!`, 'success');
           AdminView._activeCrFilter = 'PENDING';
@@ -2643,7 +2675,11 @@ class AdminView {
           window.location.hash = '#/admin/governance?tab=courses';
           UI.refreshCurrentRoute();
         } catch (e) {
-          UI.showToast(e.message || 'Lỗi phê duyệt yêu cầu.', 'error');
+          if (e.status === 409) {
+            document.getElementById('diff-approve-btn').disabled = true;
+            document.getElementById('diff-reject-btn').disabled = true;
+          }
+          UI.showToast(AdminView.reviewErrorMessage(e, 'Lỗi phê duyệt yêu cầu.'), e.status === 409 ? 'warning' : 'error');
         }
       };
 
@@ -2667,9 +2703,11 @@ class AdminView {
         if (!confirmed) return;
         try {
           if (r.change_type === 'COURSE_VERSION_CHANGESET') {
-            await ApiClient.rejectCourseChangeset(r.id, reason);
+            await ApiClient.rejectCourseChangeset(r.request_id ?? r.id, reason, r.review_version);
           } else {
-            await ApiClient.reviewAdminChangeRequest(r.id, { action: 'reject', reason });
+            await ApiClient.reviewAdminChangeRequest(r.request_id ?? r.id, {
+              action: 'reject', reason, request_id: r.request_id ?? r.id, review_version: r.review_version
+            });
           }
           UI.showToast(`Đã từ chối yêu cầu #${r.id}.`, 'info');
           AdminView._activeCrFilter = 'PENDING';
@@ -2678,7 +2716,11 @@ class AdminView {
           window.location.hash = '#/admin/governance?tab=courses';
           UI.refreshCurrentRoute();
         } catch (e) {
-          UI.showToast(e.message || 'Lỗi từ chối yêu cầu.', 'error');
+          if (e.status === 409) {
+            document.getElementById('diff-approve-btn').disabled = true;
+            document.getElementById('diff-reject-btn').disabled = true;
+          }
+          UI.showToast(AdminView.reviewErrorMessage(e, 'Lỗi từ chối yêu cầu.'), e.status === 409 ? 'warning' : 'error');
         }
       };
     }
@@ -2920,12 +2962,12 @@ class AdminView {
         <div class="space-y-4 text-xs">
           <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-3">
             <!-- 16:9 Thumbnail Cover -->
-            <div class="relative w-full aspect-video max-h-56 rounded-xl overflow-hidden bg-slate-900 border border-slate-200/80 dark:border-slate-700/80 flex items-center justify-center">
+            <div class="relative w-full aspect-video rounded-xl overflow-hidden bg-slate-900 border border-slate-200/80 dark:border-slate-700/80 flex items-center justify-center">
               ${(course.thumbnail_url || course.cover_url) ? `
                 <img
                   src="${UI.escapeHtml(course.thumbnail_url || course.cover_url)}"
                   alt="${UI.escapeHtml(course.title)}"
-                  class="w-full h-full object-cover"
+                  class="absolute inset-0 w-full h-full object-cover object-center"
                   onerror="this.parentElement.innerHTML='<div class=\\'flex flex-col items-center justify-center text-slate-400 gap-1.5\\'><span class=\\'material-symbols-outlined text-3xl\\'>image_not_supported</span><span class=\\'text-xs\\'>Không tải được ảnh bìa</span></div>';"
                 />
               ` : `
@@ -3212,11 +3254,12 @@ class AdminView {
             const conf = await UI.confirm('Duyệt khóa học', `Bạn muốn duyệt khóa học "${course.title}"?`, 'Duyệt Khóa Học');
             if (!conf) return;
             try {
-              await ApiClient.reviewCourse(course.course_id, 'approve', 'Đã kiểm tra nội dung và duyệt khóa học');
+              await ApiClient.reviewCourse(course.course_id, 'approve', 'Đã kiểm tra nội dung và duyệt khóa học', course.review_version);
               UI.showToast(`Đã duyệt khóa học "${course.title}".`, 'success');
               window.location.hash = '#/admin/governance?tab=courses';
             } catch (e) {
-              UI.showToast(e.message || 'Lỗi duyệt khóa học.', 'error');
+              if (e.status === 409) approveBtn.disabled = true;
+              UI.showToast(AdminView.reviewErrorMessage(e, 'Lỗi duyệt khóa học.'), e.status === 409 ? 'warning' : 'error');
             }
           };
         }
@@ -3234,11 +3277,12 @@ class AdminView {
             );
             if (!note) return;
             try {
-              await ApiClient.reviewCourse(course.course_id, 'reject', note);
+              await ApiClient.reviewCourse(course.course_id, 'reject', note, course.review_version);
               UI.showToast(`Đã gửi phản hồi yêu cầu chỉnh sửa cho khóa học "${course.title}".`, 'info');
               window.location.hash = '#/admin/governance?tab=courses';
             } catch (e) {
-              UI.showToast(e.message || 'Không gửi được yêu cầu chỉnh sửa khóa học.', 'error');
+              if (e.status === 409) rejectBtn.disabled = true;
+              UI.showToast(AdminView.reviewErrorMessage(e, 'Không gửi được yêu cầu chỉnh sửa khóa học.'), e.status === 409 ? 'warning' : 'error');
             }
           };
         }

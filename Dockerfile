@@ -12,6 +12,8 @@ WORKDIR /build
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    pkg-config \
+    libcairo2-dev \
     curl \
     gnupg \
     unixodbc-dev \
@@ -21,6 +23,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.lock .
 RUN pip install --upgrade pip setuptools wheel \
     && pip wheel --no-cache-dir --wheel-dir /build/wheels --require-hashes -r requirements.lock
+
+# Fixed complete MathJax fonts render TeX without network access at request time.
+FROM node:24.16.0-bookworm-slim AS math-builder
+WORKDIR /math
+COPY tools/pdf-math/package.json tools/pdf-math/package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 
 # ==============================================================================
 # Stage 2: Final runtime stage (minimal footprint, non-root user)
@@ -44,6 +52,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     ffmpeg \
     fonts-dejavu-core \
+    libcairo2 \
+    libfreetype6 \
     && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
     && curl -fsSL https://packages.microsoft.com/config/debian/12/prod.list > /etc/apt/sources.list.d/mssql-release.list \
     && apt-get update \
@@ -53,6 +63,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy pre-compiled wheels from builder stage and install
 COPY --from=builder /build/wheels /wheels
 RUN pip install --no-cache-dir /wheels/* && rm -rf /wheels
+COPY --from=math-builder /usr/local/bin/node /usr/local/bin/node
+COPY --from=math-builder /math/node_modules /app/tools/pdf-math/node_modules
 
 # Security Invariant: Create non-root system user and group (UID 10001)
 RUN groupadd -g 10001 appgroup && \

@@ -185,3 +185,83 @@ test('confirmed playback rate change flushes old motion before resetting the new
   assert.ok(calls.some(call => call.state === 'paused' && call.playback_rate === 2));
   assert.equal(calls.at(-1).state, 'playing'); assert.equal(calls.at(-1).playback_rate, 2);
 });
+
+function nativeHlsHarness() {
+  const dom = fakePlayerDOM('native');
+  const instances = [];
+  let loads = 0;
+  const video = {
+    tagName: 'VIDEO', src: '/protected/playlist.m3u8', currentTime: 0, playbackRate: 1,
+    duration: 60, readyState: 0, paused: true, style: {}, error: { code: 4 },
+    getAttribute: () => '', canPlayType: () => '', pause() {}, load() { loads++; },
+    addEventListener(name, fn) { dom.events.set(`video:${name}`, fn); },
+    removeEventListener(name) { dom.events.delete(`video:${name}`); },
+  };
+  dom.elements.set('p', video);
+  class Hls {
+    static Events = { ERROR: 'hlsError', MANIFEST_PARSED: 'manifestParsed' };
+    static ErrorTypes = { NETWORK_ERROR: 'networkError', MEDIA_ERROR: 'mediaError' };
+    static isSupported() { return true; }
+    constructor() { this.callbacks = {}; this.destroyed = false; this.recoveries = 0; instances.push(this); }
+    loadSource(source) { this.source = source; }
+    attachMedia(media) { this.media = media; }
+    on(event, callback) { this.callbacks[event] = callback; }
+    recoverMediaError() { this.recoveries++; }
+    destroy() { this.destroyed = true; }
+  }
+  const { view } = load({ ...dom, Hls });
+  return { ...dom, view, Hls, instances, video, get loads() { return loads; } };
+}
+
+test('fatal HLS authorization failure reports access recovery and explicit retry replaces the old engine', t => {
+  const h = nativeHlsHarness();
+  const ctrl = h.view.setupCustomVideoPlayer('p', { preview: true }); t.after(() => ctrl.destroy());
+  const first = h.instances[0];
+  assert.equal(typeof first.callbacks.hlsError, 'function');
+  first.callbacks.hlsError('hlsError', { fatal: true, type: 'networkError', response: { code: 403 } });
+  assert.match(h.elements.get('p-status').textContent, /phiên|quyền/i);
+  h.elements.get('p-retry').onclick({ stopPropagation() {} });
+  assert.equal(first.destroyed, true);
+  assert.equal(h.instances.length, 2);
+  assert.equal(h.instances[1].source, '/protected/playlist.m3u8');
+  ctrl.destroy();
+  assert.equal(h.instances[1].destroyed, true);
+  assert.equal(h.events.size, 0);
+});
+
+test('HLS decode recovery is bounded and a second fatal error requires user retry', t => {
+  const h = nativeHlsHarness();
+  const ctrl = h.view.setupCustomVideoPlayer('p', { preview: true }); t.after(() => ctrl.destroy());
+  const engine = h.instances[0];
+  assert.equal(typeof engine.callbacks.hlsError, 'function');
+  engine.callbacks.hlsError('hlsError', { fatal: true, type: 'mediaError' });
+  assert.equal(engine.recoveries, 1);
+  engine.callbacks.hlsError('hlsError', { fatal: true, type: 'mediaError' });
+  assert.equal(engine.recoveries, 1);
+  assert.equal(engine.destroyed, true);
+  assert.match(h.elements.get('p-status').textContent, /thử lại|Thử Lại/i);
+});
+
+test('YouTube retains the provider error code and retry ignores a superseded pending initialization', async t => {
+  const dom = fakePlayerDOM();
+  const { view } = load(dom);
+  const pending = [];
+  const callbacks = [];
+  view.ensureYouTubeAPI = () => new Promise(resolve => pending.push(resolve));
+  const ctrl = view.setupCustomVideoPlayer('p', { preview: true }); t.after(() => ctrl.destroy());
+  dom.elements.get('p-retry').onclick({ stopPropagation() {} });
+  const api = { Player: class { constructor(_, options) { callbacks.push(options.events); return { destroy() {} }; } } };
+  pending[0](api); pending[1](api);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(callbacks.length, 1);
+  callbacks[0].onError({ data: 153 });
+  assert.match(dom.elements.get('p-status').textContent, /153/);
+});
+
+test('native engine initialization failure remains recoverable instead of rejecting silently', async t => {
+  const h = nativeHlsHarness();
+  h.Hls.prototype.loadSource = () => { throw new Error('Media initialization failed'); };
+  const ctrl = h.view.setupCustomVideoPlayer('p', { preview: true }); t.after(() => ctrl.destroy());
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(h.elements.get('p-status').textContent, /khởi tạo|thử lại/i);
+});

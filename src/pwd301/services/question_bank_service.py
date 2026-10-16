@@ -53,6 +53,17 @@ from pwd301.services.authorization_service import (
     require_course_manager,
     require_question_manager,
 )
+from pwd301.services.course_question_workflow import (
+    apply_course_question_operation as apply_course_question_operation,
+)
+from pwd301.services.course_question_workflow import (
+    commit_question_mutation,
+    course_question_mutation,
+    effective_question,
+    effective_question_query,
+    question_display_status,
+    question_status_expression,
+)
 from pwd301.services.exceptions import (
     LessonNotFoundError,
     QuestionImmutableError,
@@ -237,10 +248,10 @@ def _serialize_question_revision(
         "question_type": rev.question_type,
         "content": rev.content,
         "stem": rev.content,
-        "explanation": rev.explanation,
+        "explanation": rev.explanation if include_answers else None,
         "short_answer_match_mode": rev.short_answer_match_mode,
         "change_type": rev.change_type,
-        "change_reason": rev.change_reason,
+        "change_reason": rev.change_reason if include_answers else None,
         "status": status_str,
         "was_student_exposed": bool(rev.was_student_exposed),
         "was_used_for_grading": bool(rev.was_used_for_grading),
@@ -347,12 +358,12 @@ def _serialize_question(
         "lesson_id": str(question.lesson.public_id) if question.lesson else None,
         "difficulty": question.difficulty,
         "learning_objective": question.learning_objective,
-        "status": question.status,
+        "status": question_display_status(question, sess),
         "usage_count": question.usage_count,
         "default_points": 1.0,
         "content": rev.content if rev else None,
         "stem": rev.content if rev else None,
-        "explanation": rev.explanation if rev else None,
+        "explanation": rev.explanation if rev and include_answers else None,
         "question_type": rev.question_type if rev else None,
         "choices": choices_data,
         "accepted_answers": accepted_answers_data,
@@ -378,6 +389,7 @@ def _serialize_question(
     }
 
 
+@course_question_mutation
 def create_question(
     actor: User,
     course_id: int | uuid.UUID | str,
@@ -755,7 +767,7 @@ def create_question(
 
     if commit:
         try:
-            sess.commit()
+            commit_question_mutation(sess)
         except Exception:
             sess.rollback()
             raise
@@ -808,14 +820,17 @@ def list_course_questions(
         .filter(Question.course_id == course.id)
     )
 
+    query = effective_question_query(query, course.id, sess)
+    status_expression = question_status_expression(course.id, sess)
+
     # 1. Filter by Status
     status_filter = flt.get("status")
     if status_filter:
         s_upper = str(status_filter).strip().upper()
-        query = query.filter(Question.status == s_upper)
+        query = query.filter(status_expression == s_upper)
     else:
         # Default: exclude TRASH questions unless explicitly asked
-        query = query.filter(Question.status != "TRASH")
+        query = query.filter(status_expression != "TRASH")
 
     # 2. Filter by Difficulty
     diff_filter = flt.get("difficulty")
@@ -886,9 +901,10 @@ def get_question_detail(
     """
     sess = session if session is not None else db.session
     question = require_question_manager(actor, question_id, session=sess)
-    return _serialize_question(question)
+    return _serialize_question(effective_question(actor, question, sess))
 
 
+@course_question_mutation
 def trash_question(
     actor: User,
     question_id: int | uuid.UUID | str,
@@ -920,10 +936,11 @@ def trash_question(
     now = utc_now()
 
     # Check if question has been used for grading (T-QB-05 / QBANK-005)
+    grading_question_id = question.previous_question_id or question.id
     was_used_for_grading = (
         sess.query(QuestionRevision.id)
         .filter(
-            QuestionRevision.question_id == question.id,
+            QuestionRevision.question_id == grading_question_id,
             QuestionRevision.was_used_for_grading == True,
         )
         .first()
@@ -938,7 +955,7 @@ def trash_question(
                 AttemptQuestionGrade,
                 AttemptQuestionGrade.attempt_question_id == AttemptQuestion.id,
             )
-            .filter(AttemptQuestion.source_question_id == question.id)
+            .filter(AttemptQuestion.source_question_id == grading_question_id)
             .first()
             is not None
         )
@@ -962,7 +979,7 @@ def trash_question(
         sess.flush()
         if session is None:
             try:
-                sess.commit()
+                commit_question_mutation(sess)
             except Exception:
                 sess.rollback()
                 raise
@@ -986,7 +1003,7 @@ def trash_question(
     sess.flush()
 
     try:
-        sess.commit()
+        commit_question_mutation(sess)
     except Exception:
         sess.rollback()
         raise
@@ -994,6 +1011,7 @@ def trash_question(
     return question
 
 
+@course_question_mutation
 def restore_question(
     actor: User,
     question_id: int | uuid.UUID | str,
@@ -1047,7 +1065,7 @@ def restore_question(
     sess.flush()
 
     try:
-        sess.commit()
+        commit_question_mutation(sess)
     except Exception:
         sess.rollback()
         raise
@@ -1082,6 +1100,9 @@ def is_question_in_use(
     question = _resolve_question(question_or_id, session=sess)
     if question is None:
         raise QuestionNotFoundError("Question not found.")
+
+    if question.previous_question_id is not None and question.change_request_id is not None:
+        return is_question_in_use(question.previous_question_id, session=sess)
 
     # 1. Check if question appeared in any attempt
     has_attempt = (
@@ -1147,6 +1168,7 @@ def is_question_in_use(
     return bool(has_exposed_revision)
 
 
+@course_question_mutation
 def create_question_revision(
     actor: User,
     question_id: int | uuid.UUID | str,
@@ -1544,14 +1566,19 @@ def create_question_revision(
 
     # 15. Create QuestionCorrection if question was in-use and change requires correction
     correction_record: QuestionCorrection | None = None
-    if in_use and change_type in {
-        "ANSWER_CHANGE",
-        "CONTENT_CHANGE",
-        "ANSWER_ONLY",
-        "CONTENT_OR_CHOICES",
-        "TYPO_FIX",
-        "REVOCATION",
-    }:
+    if (
+        in_use
+        and question.change_request_id is None
+        and change_type
+        in {
+            "ANSWER_CHANGE",
+            "CONTENT_CHANGE",
+            "ANSWER_ONLY",
+            "CONTENT_OR_CHOICES",
+            "TYPO_FIX",
+            "REVOCATION",
+        }
+    ):
         raw_corr_type = payload.get("correction_type")
         if raw_corr_type:
             corr_upper = str(raw_corr_type).strip().upper()
@@ -1633,7 +1660,7 @@ def create_question_revision(
 
     if commit:
         try:
-            sess.commit()
+            commit_question_mutation(sess)
         except Exception:
             sess.rollback()
             raise
@@ -1641,6 +1668,7 @@ def create_question_revision(
     return new_revision, correction_record
 
 
+@course_question_mutation
 def update_question(
     actor: User,
     question_id: int | uuid.UUID | str,
@@ -1917,7 +1945,7 @@ def update_question(
 
     if commit:
         try:
-            sess.commit()
+            commit_question_mutation(sess)
         except Exception:
             sess.rollback()
             raise

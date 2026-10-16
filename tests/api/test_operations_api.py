@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
 from pwd301.models.identity import Role, User
+from pwd301.models.types import utc_now
 from pwd301.services.jwt_auth_service import create_token_pair
 from pwd301.services.user_service import assign_role_to_user, register_user
 from tests.conftest import login_web_user
@@ -64,7 +65,7 @@ def admin_user(app: Flask, setup_roles: dict[str, Role]) -> User:
     for link in user.user_role_links:
         if link.role.code == "ADMIN":
             link.assignment_reason = "SUB_ROLE:ADMIN_PRIMARY | Primary test admin"
-    user.is_email_verified = True
+    user.email_verified_at = utc_now()
     sess.commit()
     return user
 
@@ -79,7 +80,7 @@ def student_user(app: Flask, setup_roles: dict[str, Role]) -> User:
         display_name="Student API",
         session=sess,
     )
-    user.is_email_verified = True
+    user.email_verified_at = utc_now()
     sess.commit()
     return user
 

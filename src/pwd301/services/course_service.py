@@ -72,11 +72,12 @@ def get_course_thumbnail_asset(
     if (
         asset is None
         or asset.course_id != course.id
-        or asset.asset_type != "COURSE_IMAGE"
+        or asset.asset_type not in {"COURSE_IMAGE", "RESOURCE"}
         or asset.deleted_at is not None
         or asset.virus_scan_status != "CLEAN"
         or not asset.has_passed_malware_scan
-        or asset.mime_type.lower() not in {"image/jpeg", "image/png", "image/webp"}
+        or (asset.mime_type or "").lower().split(";")[0].strip()
+        not in {"image/jpeg", "image/jpg", "image/pjpeg", "image/png", "image/webp"}
     ):
         return None
     return asset
@@ -553,6 +554,11 @@ def update_course(
     if course.deleted_at is not None and not actor.is_admin:
         raise ForbiddenError("Cannot update a soft-deleted course.")
 
+    from pwd301.services.course_workflow_service import ensure_course_authoring, should_stage
+
+    if not is_approved_review:
+        course = ensure_course_authoring(actor, course, session=sess)
+
     if course.status == "SUBMITTED_FOR_REVIEW" and not actor.is_admin and not is_approved_review:
         msg = (
             "Khóa học đang trong quá trình xét duyệt của Quản trị viên. "
@@ -560,7 +566,7 @@ def update_course(
         )
         raise CourseStateViolationError(msg)
 
-    if course.status in ("PUBLISHED", "ARCHIVED") and not is_approved_review and not actor.is_admin:
+    if not is_approved_review and should_stage(actor, course, sess):
         return queue_course_metadata_review(actor, course, data, session=sess)
 
     admin_override = bool(
@@ -696,11 +702,9 @@ def update_course(
                     asset_uuid = uuid.UUID(str(thumb))
                     asset = sess.query(FileAsset).filter(FileAsset.public_id == asset_uuid).first()
                 except (ValueError, TypeError, AttributeError) as exc:
-                    if not is_approved_review:
-                        raise CourseValidationError(
-                            "A valid cover image asset ID is required."
-                        ) from exc
-                    asset = None
+                    raise CourseValidationError(
+                        "A valid cover image asset ID is required."
+                    ) from exc
             clean_mime = (
                 asset.mime_type.lower().split(";")[0].strip() if asset and asset.mime_type else ""
             )
@@ -720,9 +724,7 @@ def update_course(
                 or not asset.has_passed_malware_scan
                 or not is_valid_image_mime
             ):
-                if not is_approved_review:
-                    raise CourseValidationError("Choose a clean image uploaded for this course.")
-                course.thumbnail_file_asset_id = asset.id if asset else None
+                raise CourseValidationError("Choose a clean image uploaded for this course.")
             else:
                 course.thumbnail_file_asset_id = asset.id
         else:
@@ -867,8 +869,8 @@ def queue_course_metadata_review(
         if cap is not None:
             try:
                 cap_int = int(cap)
-                if cap_int < 0:
-                    raise CourseValidationError("capacity cannot be negative.")
+                if cap_int <= 0:
+                    raise CourseValidationError("capacity must be positive.")
                 proposed["capacity"] = cap_int
             except (ValueError, TypeError):
                 raise CourseValidationError("capacity must be an integer.") from None
@@ -880,8 +882,8 @@ def queue_course_metadata_review(
         if quota is not None:
             try:
                 quota_int = int(quota)
-                if quota_int < 0:
-                    raise CourseValidationError("storage_quota_bytes cannot be negative.")
+                if quota_int <= 0:
+                    raise CourseValidationError("storage_quota_bytes must be positive.")
                 proposed["storage_quota_bytes"] = quota_int
             except (ValueError, TypeError):
                 raise CourseValidationError(
@@ -909,7 +911,7 @@ def queue_course_metadata_review(
             if (
                 asset is None
                 or asset.course_id != course.id
-                or asset.asset_type != "COURSE_IMAGE"
+                or asset.asset_type not in {"COURSE_IMAGE", "RESOURCE"}
                 or asset.deleted_at is not None
                 or asset.virus_scan_status != "CLEAN"
                 or not asset.has_passed_malware_scan
@@ -921,83 +923,38 @@ def queue_course_metadata_review(
         else:
             proposed["thumbnail_file_asset_id"] = None
 
-    # Filter out fields that are identical to current course values
-    actual_diff = {}
-    for k, v in proposed.items():
-        curr_val = getattr(course, k, None)
-        if isinstance(v, str) and isinstance(curr_val, str):
-            if v.strip() != curr_val.strip():
-                actual_diff[k] = v
-        elif v != curr_val:
-            actual_diff[k] = v
+    from pwd301.services.course_workflow_service import (
+        active_changeset,
+        payload_for,
+        working_changeset,
+        write_payload,
+    )
 
-    if not actual_diff:
-        # No actual differences between proposed metadata and live course: auto-skip
+    existing = active_changeset(course.id, sess)
+    if not proposed and existing is None:
         return course
-    proposed = actual_diff
-
-    # Unified Staging Draft vs Standard Metadata Review Request
-    is_draft_requested = bool(
-        data.get("as_draft") or data.get("changeset") or data.get("in_changeset")
-    )
-    existing_req = (
-        sess.query(CourseChangeRequest)
-        .filter_by(
-            course_id=course.id,
-            requested_by_user_id=actor.id,
-            change_type="COURSE_VERSION_CHANGESET" if is_draft_requested else "COURSE_METADATA",
-            status="DRAFT" if is_draft_requested else "PENDING",
+    if existing is None and all(
+        getattr(course, key, None) == value for key, value in proposed.items()
+    ):
+        return course
+    req = working_changeset(actor, course, sess)
+    payload = payload_for(req)
+    metadata = dict(payload.get("course_metadata") or {})
+    for key, value in proposed.items():
+        current = getattr(course, key, None)
+        equal = (
+            value.strip() == current.strip()
+            if isinstance(value, str) and isinstance(current, str)
+            else value == current
         )
-        .first()
-    )
-    now = utc_now()
-    if existing_req is not None:
-        try:
-            curr_payload = json.loads(existing_req.proposed_payload_json or "{}")
-        except Exception:
-            curr_payload = {}
-        if is_draft_requested:
-            curr_meta = curr_payload.get("course_metadata") or {}
-            curr_meta.update(proposed)
-            curr_payload["course_metadata"] = curr_meta
-            curr_payload["action"] = "COURSE_VERSION_CHANGESET"
+        if equal:
+            metadata.pop(key, None)
         else:
-            curr_payload.update(proposed)
-        existing_req.proposed_payload_json = json.dumps(
-            curr_payload, ensure_ascii=False, default=str
-        )
-        existing_req.created_at = now
-        sess.flush()
-        req = existing_req
-    else:
-        req = CourseChangeRequest(
-            course_id=course.id,
-            requested_by_user_id=actor.id,
-            change_type="COURSE_VERSION_CHANGESET" if is_draft_requested else "COURSE_METADATA",
-            target_type="COURSE",
-            target_id=course.id,
-            proposed_payload_json=json.dumps(
-                (
-                    {
-                        "action": "COURSE_VERSION_CHANGESET",
-                        "version_title": "Bản nháp cập nhật",
-                        "course_metadata": proposed,
-                    }
-                    if is_draft_requested
-                    else proposed
-                ),
-                ensure_ascii=False,
-                default=str,
-            ),
-            status="DRAFT" if is_draft_requested else "PENDING",
-            created_at=now,
-        )
-        sess.add(req)
-        sess.flush()
-
+            metadata[key] = value
+    payload["course_metadata"] = metadata
+    write_payload(req, payload, sess)
     if session is None:
         sess.commit()
-
     return req
 
 
@@ -1202,6 +1159,14 @@ def change_course_status(
                 "Không thể gửi duyệt khóa học do ảnh đại diện khóa học chưa được xác thực an toàn."
             )
 
+    if target_status in ("SUBMITTED_FOR_REVIEW", "APPROVED"):
+        from pwd301.services.course_workflow_service import (
+            course_asset_manifest,
+            validate_submitted_assets,
+        )
+
+        validate_submitted_assets(course, course_asset_manifest(course, sess, lock=True), sess)
+
     before_state = {"status": current_status}
     now = utc_now()
 
@@ -1228,6 +1193,7 @@ def change_course_status(
             .filter(
                 Lesson.course_id == course.id,
                 Lesson.status == "DRAFT",
+                Lesson.change_request_id.is_(None),
                 Lesson.deleted_at.is_(None),
             )
             .all()

@@ -6,6 +6,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+SUPERSEDED_WORKFLOW_PLANS = (
+    "2026-10-07-curriculum-authoring-approval-and-quiz-remediation.md",
+    "2026-10-07-curriculum-tree-exams-and-coursera-quizzes.md",
+    "2026-10-09-admin-review-diff-and-pdf-export.md",
+    "2026-10-09-comprehensive-assessment-review-pdf-and-course-approval-system.md",
+    "2026-10-14-course-changeset-and-ui-remediation.md",
+    "2026-10-14-system-enhancements-and-remediation.md",
+)
+
 REQUIRED = [
     ROOT / "README.md",
     ROOT / "AGENTS.md",
@@ -76,6 +85,38 @@ def check_secrets() -> None:
     print("[PASS] Environment template exists")
 
 
+def check_workflow_authority() -> None:
+    specification = ROOT / "docs/system/PWD301_SYSTEM_SPECIFICATION"
+    authority = specification / "implementation/WORKFLOW_SUPERSESSION.md"
+    entrypoints = (
+        ROOT / "AGENTS.md",
+        ROOT / "README.md",
+        ROOT / "tasks/CURRENT.md",
+        specification / "CODING_AGENT_START_HERE.md",
+    )
+    for entry in entrypoints:
+        if not entry.exists() or "WORKFLOW_SUPERSESSION.md" not in entry.read_text(
+            encoding="utf-8"
+        ):
+            fail(f"Missing workflow authority pointer: {entry.relative_to(ROOT)}")
+    if not authority.exists():
+        fail("Workflow authority is missing")
+    contract = authority.read_text(encoding="utf-8")
+    if not all(f"WF{number:02d}" in contract for number in range(1, 11)):
+        fail("Workflow replacement register is incomplete")
+    for name in SUPERSEDED_WORKFLOW_PLANS:
+        path = ROOT / "docs/superpowers/plans" / name
+        text = path.read_text(encoding="utf-8") if path.exists() else ""
+        if (
+            "SUPERSEDED" not in text
+            or "WORKFLOW_SUPERSESSION.md" not in text
+            or "### Task" in text
+            or "Step 1:" in text
+        ):
+            fail(f"Retired workflow plan is actionable or unlinked: {name}")
+    print("[PASS] Workflow authority and retired-plan supersession gates")
+
+
 def main() -> int:
     print(f"PWD301 repository check: {ROOT}")
     check_required()
@@ -83,6 +124,7 @@ def main() -> int:
     check_sql_tables()
     check_markdown_fences()
     check_secrets()
+    check_workflow_authority()
     print("[PASS] Repository contract check complete")
     return 0
 

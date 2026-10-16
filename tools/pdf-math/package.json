@@ -1,0 +1,12 @@
+{
+  "name": "pwd301-offline-pdf-math",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Offline, self-contained vector math for the existing ReportLab transcript",
+  "dependencies": {
+    "mathjax-full": "3.2.2"
+  },
+  "overrides": {
+    "@xmldom/xmldom": "0.9.12"
+  }
+}

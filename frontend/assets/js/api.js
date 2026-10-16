@@ -361,11 +361,7 @@ class ApiClient {
     }
     const isInstructorRoute = window.location.hash.startsWith('#/instructor');
     if (isInstructorRoute) {
-      try {
-        return await ApiClient.request(`/instructor/courses/${courseId}`);
-      } catch {
-        // Fall back to general endpoint
-      }
+      return await ApiClient.request(`/instructor/courses/${courseId}`);
     }
     const isStudentRoute = window.location.hash.startsWith('#/student');
     if (isStudentRoute) {
@@ -694,9 +690,10 @@ class ApiClient {
     return await ApiClient.request(`/instructor/courses/${courseId}/publish-checklist`);
   }
 
-  static async cancelSubmitCourse(courseId) {
+  static async cancelSubmitCourse(courseId, reviewVersion = '') {
     return await ApiClient.request(`/instructor/courses/${courseId}/cancel-submit`, {
-      method: 'POST'
+      method: 'POST',
+      body: { review_version: reviewVersion }
     });
   }
 
@@ -797,9 +794,10 @@ class ApiClient {
     });
   }
 
-  static async retractCourseChangeset(courseId) {
+  static async retractCourseChangeset(courseId, identity = {}) {
     return await ApiClient.request(`/instructor/courses/${courseId}/changeset/retract`, {
-      method: 'POST'
+      method: 'POST',
+      body: { request_id: identity.request_id, review_version: identity.review_version }
     });
   }
 
@@ -1138,10 +1136,10 @@ class ApiClient {
     return await ApiClient.request('/admin/courses/pending');
   }
 
-  static async reviewCourse(courseId, action, reason = '') {
+  static async reviewCourse(courseId, action, reason = '', reviewVersion = '') {
     return await ApiClient.request(`/admin/courses/${courseId}/review`, {
       method: 'POST',
-      body: { action, reason }
+      body: { action, reason, review_version: reviewVersion }
     });
   }
 
@@ -1172,17 +1170,17 @@ class ApiClient {
     return await ApiClient.request(`/admin/course-changes/${changeRequestId}/diff`);
   }
 
-  static async approveCourseChangeset(changeRequestId, reason = '') {
+  static async approveCourseChangeset(changeRequestId, reason = '', reviewVersion = '') {
     return await ApiClient.request(`/admin/course-changes/${changeRequestId}/approve`, {
       method: 'POST',
-      body: { reason }
+      body: { reason, request_id: changeRequestId, review_version: reviewVersion }
     });
   }
 
-  static async rejectCourseChangeset(changeRequestId, reason = '') {
+  static async rejectCourseChangeset(changeRequestId, reason = '', reviewVersion = '') {
     return await ApiClient.request(`/admin/course-changes/${changeRequestId}/reject`, {
       method: 'POST',
-      body: { reason }
+      body: { reason, request_id: changeRequestId, review_version: reviewVersion }
     });
   }
 

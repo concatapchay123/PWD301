@@ -20,6 +20,8 @@ DRAFT → ACTIVE; có thể RETIRED/TRASH. Unused có thể hard-delete sau reco
 | `public_id` | `UNIQUEIDENTIFIER` | No | `NEWSEQUENTIALID()` | ID công khai dùng trong URL/API; không thay thế kiểm tra quyền |
 | `course_id` | `BIGINT` | No |  | Course |
 | `lesson_id` | `BIGINT` | Yes |  | Lesson tùy chọn |
+| `change_request_id` | `BIGINT` | Yes |  | Bản nháp câu hỏi thuộc đúng một bản tổng hợp xét duyệt khóa học; sinh viên không dùng hàng DRAFT này |
+| `previous_question_id` | `BIGINT` | Yes |  | Bản nháp sao chép từ câu hỏi gốc; duyệt tạo revision mới trên định danh gốc, giữ lịch sử |
 | `creator_user_id` | `BIGINT` | Yes |  | Người tạo |
 | `difficulty` | `VARCHAR(20)` | No |  | REMEMBER/UNDERSTAND/APPLY hoặc mức tương đương |
 | `learning_objective` | `NVARCHAR(500)` | Yes |  | Mục tiêu học tập |
@@ -45,12 +47,15 @@ DRAFT → ACTIVE; có thể RETIRED/TRASH. Unused có thể hard-delete sau reco
 |---|---|---|---|
 | `course_id` | `courses(id)` | `NO ACTION` |  |
 | `lesson_id` | `lessons(id)` | `SET NULL` |  |
+| `change_request_id` | `course_change_requests(id)` | `NO ACTION` | Giữ quan hệ với hồ sơ xét duyệt bất biến. |
+| `previous_question_id` | `questions(id)` | `NO ACTION` | Giữ định danh và revision gốc của câu hỏi đã dùng. |
 | `creator_user_id` | `users(id)` | `NO ACTION` | Preserve creator linkage; User is anonymized in place when required. |
 | `deleted_by_user_id` | `users(id)` | `NO ACTION` | Preserve deletion actor linkage. |
 
 ### Unique Constraints
 
 - `UNIQUE (public_id)`
+- `ux_questions_working_revision(change_request_id, previous_question_id)` là unique filtered index khi cả hai cột khác NULL; mỗi câu hỏi gốc có một bản soạn trong một đợt xét duyệt.
 
 ### Check Constraints
 

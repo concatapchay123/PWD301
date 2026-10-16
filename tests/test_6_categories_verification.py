@@ -24,7 +24,6 @@ from pwd301.services.attempt_service import (
 )
 from pwd301.services.enrollment_service import enroll_student
 from pwd301.services.result_pdf_service import (
-    _render_math_and_plain,
     build_attempt_result_pdf,
 )
 
@@ -56,20 +55,19 @@ def test_user_email_verified_property():
 # Category 2: LaTeX Math Rendering & allow_student_view_results Toggle
 # ===========================================================================
 def test_latex_math_clean_rendering():
-    """Verify LaTeX math expressions are converted into readable ReportLab XML/Unicode markup in PDF."""
-    sample_latex = r"Tính $x^2 + y_1$ và $\frac{a+b}{c}$ cùng $\sqrt{16}$ và $\int f(x) dx$"
-    rendered = _render_math_and_plain(sample_latex)
-    assert "x<sup>2</sup>" in rendered
-    assert "y<sub>1</sub>" in rendered
-    assert "(a+b)/(c)" in rendered
-    assert "√(16)" in rendered
-    assert "∫" in rendered
-    # Must NOT have raw dollar tags
-    assert "$" not in rendered
+    """Actual vector formulas cover nested limits and matrices without raw TeX output."""
+    from pwd301.services.pdf_math_service import render_math_svg
+
+    rendered = render_math_svg(
+        r"\lim_{x\to0}\frac{\sin(x)}{x}+\begin{pmatrix}1&2\\3&4\end{pmatrix}"
+    )
+    assert b"<path" in rendered
+    assert b"data-mml-node" in rendered
+    assert b"merror" not in rendered
 
 
 def test_pdf_with_allow_student_view_results_false():
-    """Verify when allow_student_view_results is False, score and selected answers are masked in PDF."""
+    """Missing total scores stay unknown while selected answer details remain blank."""
     attempt_payload = {
         "candidate_name": "Nguyễn Văn A",
         "candidate_email": "nguyenvana@fpt.edu.vn",
@@ -95,7 +93,7 @@ def test_pdf_with_allow_student_view_results_false():
     # Header and student name should exist
     assert "Nguyễn Văn A" in text
     assert "nguyenvana@fpt.edu.vn" in text
-    assert "ĐÃ GHI NHẬN BÀI NỘP" in text
+    assert "CHƯA CÓ KẾT LUẬN" in text
 
     # Answers and scores should be masked with '-' or hidden
     assert "9 (Bạn đã chọn)" not in text

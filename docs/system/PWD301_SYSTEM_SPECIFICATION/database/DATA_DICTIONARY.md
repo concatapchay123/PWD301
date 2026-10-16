@@ -870,90 +870,9 @@ Instructor owner/Admin.
 
 ## `course_change_requests`
 
-**Purpose**
+This system-facing section is superseded by the [canonical course dictionary](../../../database/PWD301_DATABASE_ARCHITECTURE/05_DATA_DICTIONARY_COURSE.md#course_change_requests) and [workflow replacement contract](../implementation/WORKFLOW_SUPERSESSION.md).
 
-Staging hợp nhất cho toàn bộ đợt cập nhật (COURSE_VERSION_CHANGESET) của Course đã published để Admin thẩm định tập trung 1 lần trước khi áp dụng nguyên tử. Nghiêm cấm phân mảnh hoặc duyệt lắt nhắt từng bài giảng lẻ tẻ.
-
-**Lifecycle**
-
-PENDING → APPROVED (áp dụng nguyên tử toàn bộ thay đổi)/REJECTED (mở khóa cho giảng viên chỉnh sửa tiếp kèm lý do)/CANCELLED (rút lại/hủy bỏ); APPROVED → APPLIED trong transaction.
-
-### Columns
-
-| Column | Type | Nullable | Default / Computed | Description |
-|---|---|---:|---|---|
-| `id` | `BIGINT` | No | IDENTITY(1,1) | Khóa chính nội bộ |
-| `course_id` | `BIGINT` | No |  | Course |
-| `requested_by_user_id` | `BIGINT` | No |  | Instructor/Admin tạo |
-| `change_type` | `VARCHAR(32)` | No |  | COURSE_METADATA/LESSON_STRUCTURE/LESSON_CONTENT/COMPLETION_RULE/PREREQUISITE/OTHER |
-| `target_type` | `VARCHAR(32)` | No |  | COURSE/LESSON/RULE/PREREQUISITE |
-| `target_id` | `BIGINT` | Yes |  | ID target nếu có |
-| `proposed_payload_json` | `NVARCHAR(MAX)` | No |  | Patch/proposed data; chỉ dùng staging, source of truth vẫn ở bảng chuẩn hóa |
-| `status` | `VARCHAR(20)` | No | `'PENDING'` | PENDING/APPROVED/REJECTED/CANCELLED/APPLIED |
-| `reviewed_by_user_id` | `BIGINT` | Yes |  | Admin |
-| `review_reason` | `NVARCHAR(1000)` | Yes |  | Lý do |
-| `created_at` | `DATETIME2(3)` | No | `SYSUTCDATETIME()` | Thời điểm tạo (UTC) |
-| `reviewed_at` | `DATETIME2(3)` | Yes |  | UTC |
-| `applied_at` | `DATETIME2(3)` | Yes |  | UTC |
-| `row_version` | `ROWVERSION` | No |  | Token lạc quan phát hiện ghi đè đồng thời |
-
-### Primary Key
-
-`id`
-
-### Foreign Keys
-
-| Columns | References | ON DELETE | Notes |
-|---|---|---|---|
-| `course_id` | `courses(id)` | `NO ACTION` |  |
-| `requested_by_user_id` | `users(id)` | `NO ACTION` |  |
-| `reviewed_by_user_id` | `users(id)` | `SET NULL` |  |
-
-### Unique Constraints
-
-_None._
-
-### Check Constraints
-
-- `change_type IN ('COURSE_METADATA','LESSON_STRUCTURE','LESSON_CONTENT','COMPLETION_RULE','PREREQUISITE','OTHER')`
-- `target_type IN ('COURSE','LESSON','RULE','PREREQUISITE')`
-- `status IN ('PENDING','APPROVED','REJECTED','CANCELLED','APPLIED')`
-- `ISJSON(proposed_payload_json)=1`
-
-### Indexes
-
-| Index | Columns | Unique | Filter | Purpose |
-|---|---|---:|---|---|
-| `ix_course_changes_pending` | `status, created_at` | No | `status='PENDING'` | Hỗ trợ truy vấn/filter/pagination chính của table. |
-| `ix_course_changes_course` | `course_id, created_at` | No | `` | Hỗ trợ truy vấn/filter/pagination chính của table. |
-
-### Relationships
-
-- Quan hệ được xác định bởi các FK ở trên; hướng 1-N/N-N xem `03_ERD.md`.
-- Các cross-domain pointer được tạo sau bằng DDL riêng để tránh vòng phụ thuộc lúc bootstrap.
-
-### Delete behavior
-
-Giữ tối thiểu trong audit retention; không dùng làm historical content snapshot dài hạn.
-
-### Audit behavior
-
-Review/apply bắt buộc audit.
-
-### Concurrency
-
-row_version + conditional transition.
-
-### Security / PII classification
-
-Payload có thể chứa nội dung học liệu; chỉ owner/Admin.
-
-### Important invariants
-
-- Không áp dụng material change vào published data trước APPROVED
-- Minor edit không cần row này nhưng vẫn audit khi quan trọng
-
----
+Use the existing `COURSE_VERSION_CHANGESET` / `DRAFT` aggregate after first approval, with one active aggregate per course. Submission seals its full proposal; approval applies it atomically. Reject/withdraw preserves history and the editable proposal. Legacy per-target types remain historical records and cannot define new authoring behavior. The former duplicated column/CHECK/index definitions have been removed from this section to prevent stale schema guidance; database edits belong only in the canonical architecture and new migrations.
 
 ## `lessons`
 

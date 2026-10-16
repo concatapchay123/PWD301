@@ -51,6 +51,12 @@ from pwd301.services.authorization_service import (
     can_manage_course,
     require_course_manager,
 )
+from pwd301.services.course_assessment_workflow import (
+    apply_assessment_revision,
+    commit_assessment_mutation,
+    course_assessment_mutation,
+    effective_assessment,
+)
 from pwd301.services.course_service import _resolve_course
 from pwd301.services.exceptions import (
     AssessmentLockedError,
@@ -66,6 +72,11 @@ from pwd301.services.exceptions import (
     ResourceNotFoundError,
 )
 from pwd301.services.question_bank_service import _serialize_question
+
+
+def apply_course_assessment_operation(actor, course_id, operation, session):
+    return apply_assessment_revision(actor, course_id, operation, session)
+
 
 ALLOWED_ASSESSMENT_TYPES = {"PRACTICE", "QUIZ", "MIDTERM", "FINAL", "PLACEMENT"}
 ASSESSMENT_TYPE_ALIASES = {
@@ -664,6 +675,7 @@ def _validate_learning_unit(
     return str(unit.public_id)
 
 
+@course_assessment_mutation
 def create_assessment(
     actor: User,
     course_id: Course | int | uuid.UUID | str,
@@ -800,7 +812,7 @@ def create_assessment(
     )
 
     try:
-        sess.commit()
+        commit_assessment_mutation(sess)
     except Exception:
         sess.rollback()
         raise
@@ -808,6 +820,7 @@ def create_assessment(
     return assessment
 
 
+@course_assessment_mutation
 def update_assessment(
     actor: User,
     assessment_id: Assessment | int | uuid.UUID | str,
@@ -1068,7 +1081,7 @@ def update_assessment(
 
     if commit:
         try:
-            sess.commit()
+            commit_assessment_mutation(sess)
         except Exception:
             sess.rollback()
             raise
@@ -1096,6 +1109,8 @@ def get_assessment_detail(
     ):
         raise AssessmentNotFoundError("Assessment not found.")
 
+    if is_manager:
+        assessment = effective_assessment(actor, assessment, sess)
     effective_include_answers = is_manager if include_answers is None else include_answers
     return _serialize_assessment(
         assessment,
@@ -1144,6 +1159,14 @@ def list_course_assessments(
     if req_type:
         query = query.filter(Assessment.assessment_type == req_type.upper())
 
+    if is_manager:
+        active = db.session.query(Assessment.previous_assessment_id).filter(
+            Assessment.course_id == course.id,
+            Assessment.change_request_id.is_not(None),
+            Assessment.previous_assessment_id.is_not(None),
+            Assessment.deleted_at.is_(None),
+        )
+        query = query.filter(Assessment.id.notin_(active))
     total = query.count()
 
     p = max(1, page)
@@ -1156,6 +1179,7 @@ def list_course_assessments(
     return items, total, p, pp, total_pages
 
 
+@course_assessment_mutation
 def publish_assessment(
     actor: User,
     assessment_id: Assessment | int | uuid.UUID | str,
@@ -1247,6 +1271,11 @@ def publish_assessment(
             continue
         has_blueprint_rules = True
         for rule in sorted(bp.rules, key=lambda r: r.position):
+            from pwd301.services.course_question_workflow import (
+                effective_question_query,
+                question_status_expression,
+            )
+
             cand_query = (
                 sess.query(Question.id)
                 .join(
@@ -1258,9 +1287,12 @@ def publish_assessment(
                 )
                 .filter(
                     Question.course_id == assessment.course_id,
-                    Question.status == "ACTIVE",
                     Question.deleted_at.is_(None),
                 )
+            )
+            cand_query = effective_question_query(cand_query, assessment.course_id, sess)
+            cand_query = cand_query.filter(
+                question_status_expression(assessment.course_id, sess) == "ACTIVE"
             )
             if rule.lesson_id is not None:
                 cand_query = cand_query.filter(Question.lesson_id == rule.lesson_id)
@@ -1341,7 +1373,7 @@ def publish_assessment(
     )
 
     try:
-        sess.commit()
+        commit_assessment_mutation(sess)
     except Exception:
         sess.rollback()
         raise
@@ -1349,6 +1381,7 @@ def publish_assessment(
     return assessment
 
 
+@course_assessment_mutation
 def cancel_assessment(
     actor: User,
     assessment_id: Assessment | int | uuid.UUID | str,
@@ -1387,7 +1420,7 @@ def cancel_assessment(
     )
 
     try:
-        sess.commit()
+        commit_assessment_mutation(sess)
     except Exception:
         sess.rollback()
         raise
@@ -1395,6 +1428,7 @@ def cancel_assessment(
     return assessment
 
 
+@course_assessment_mutation
 def trash_assessment(
     actor: User,
     assessment_id: Assessment | int | uuid.UUID | str,
@@ -1430,7 +1464,7 @@ def trash_assessment(
     )
 
     try:
-        sess.commit()
+        commit_assessment_mutation(sess)
     except Exception:
         sess.rollback()
         raise
@@ -1438,6 +1472,7 @@ def trash_assessment(
     return assessment
 
 
+@course_assessment_mutation
 def restore_assessment(
     actor: User,
     assessment_id: Assessment | int | uuid.UUID | str,
@@ -1482,7 +1517,7 @@ def restore_assessment(
     )
 
     try:
-        sess.commit()
+        commit_assessment_mutation(sess)
     except Exception:
         sess.rollback()
         raise
@@ -1495,6 +1530,7 @@ def restore_assessment(
 # ============================================================================
 
 
+@course_assessment_mutation
 def create_section(
     actor: User,
     assessment_id: Assessment | int | uuid.UUID | str,
@@ -1543,7 +1579,7 @@ def create_section(
     sess.flush()
 
     try:
-        sess.commit()
+        commit_assessment_mutation(sess)
     except Exception:
         sess.rollback()
         raise
@@ -1551,6 +1587,7 @@ def create_section(
     return section
 
 
+@course_assessment_mutation
 def delete_section(
     actor: User,
     assessment_id: Assessment | int | uuid.UUID | str,
@@ -1588,7 +1625,7 @@ def delete_section(
 
     sess.flush()
     try:
-        sess.commit()
+        commit_assessment_mutation(sess)
     except Exception:
         sess.rollback()
         raise
@@ -1600,6 +1637,7 @@ def delete_section(
 # ============================================================================
 
 
+@course_assessment_mutation
 def assign_question(
     actor: User,
     assessment_id: Assessment | int | uuid.UUID | str,
@@ -1705,13 +1743,14 @@ def assign_question(
     sess.flush()
     if commit:
         try:
-            sess.commit()
+            commit_assessment_mutation(sess)
         except Exception:
             sess.rollback()
             raise
     return assignment
 
 
+@course_assessment_mutation
 def remove_question_assignment(
     actor: User,
     assessment_id: Assessment | int | uuid.UUID | str,
@@ -1761,13 +1800,14 @@ def remove_question_assignment(
     sess.flush()
     if commit:
         try:
-            sess.commit()
+            commit_assessment_mutation(sess)
         except Exception:
             sess.rollback()
             raise
     return True
 
 
+@course_assessment_mutation
 def update_question_assignment(
     actor: User,
     assessment_id: Assessment | int | uuid.UUID | str,
@@ -1850,7 +1890,7 @@ def update_question_assignment(
     sess.flush()
     if commit:
         try:
-            sess.commit()
+            commit_assessment_mutation(sess)
         except Exception:
             sess.rollback()
             raise
@@ -1858,6 +1898,7 @@ def update_question_assignment(
     return assignment
 
 
+@course_assessment_mutation
 def reorder_assessment_questions(
     actor: User,
     assessment_id: Assessment | int | uuid.UUID | str,
@@ -1936,7 +1977,7 @@ def reorder_assessment_questions(
 
     if commit:
         try:
-            sess.commit()
+            commit_assessment_mutation(sess)
         except Exception:
             sess.rollback()
             raise
@@ -1952,6 +1993,7 @@ def reorder_assessment_questions(
 # ============================================================================
 
 
+@course_assessment_mutation
 def configure_blueprint(
     actor: User,
     assessment_id: Assessment | int | uuid.UUID | str,
@@ -2087,13 +2129,14 @@ def configure_blueprint(
 
     sess.flush()
     try:
-        sess.commit()
+        commit_assessment_mutation(sess)
     except Exception:
         sess.rollback()
         raise
     return blueprint
 
 
+@course_assessment_mutation
 def materialize_blueprint_pool(
     actor: User,
     assessment_id: Assessment | int | uuid.UUID | str,
@@ -2134,6 +2177,11 @@ def materialize_blueprint_pool(
     new_pool_entries: list[tuple[AssessmentBlueprintRule, Question]] = []
 
     for rule in sorted(blueprint.rules, key=lambda r: r.position):
+        from pwd301.services.course_question_workflow import (
+            effective_question_query,
+            question_status_expression,
+        )
+
         cand_query = (
             sess.query(Question)
             .join(
@@ -2145,9 +2193,12 @@ def materialize_blueprint_pool(
             )
             .filter(
                 Question.course_id == assessment.course_id,
-                Question.status == "ACTIVE",
                 Question.deleted_at.is_(None),
             )
+        )
+        cand_query = effective_question_query(cand_query, assessment.course_id, sess)
+        cand_query = cand_query.filter(
+            question_status_expression(assessment.course_id, sess) == "ACTIVE"
         )
         if rule.lesson_id is not None:
             cand_query = cand_query.filter(Question.lesson_id == rule.lesson_id)
@@ -2206,7 +2257,7 @@ def materialize_blueprint_pool(
     sess.flush()
     if commit:
         try:
-            sess.commit()
+            commit_assessment_mutation(sess)
         except Exception:
             sess.rollback()
             raise
@@ -2262,7 +2313,7 @@ def release_assessment_scores(
     )
 
     try:
-        sess.commit()
+        commit_assessment_mutation(sess)
     except Exception:
         sess.rollback()
         raise

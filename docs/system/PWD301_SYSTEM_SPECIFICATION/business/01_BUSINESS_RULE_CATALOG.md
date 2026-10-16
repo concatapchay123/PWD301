@@ -24,7 +24,7 @@ This matrix is the implementation bridge. A backend change that touches a rule s
 | `ENROLL-003` | Prior completed Course vẫn thỏa prerequisite | `Enrollment` | course_completion_summaries | UNIQUE user+course | prereq service reads summary | — | — | `T-ENROLL-04` |
 | `ENROLL-004` | Legacy leave retention rule (superseded by ENROLL-005) | `Retention` | enrollment_periods; attempts; completion summaries | retention index | purge transaction | cleanup | EnrollmentEvent | `T-RET-01..03` |
 | `ENROLL-005` | Strict Lifetime Enrollment: khóa học ghi danh trọn đời, cấm tự rút (leave disabled), instructor không thể xóa | `Enrollment` | enrollments | status lock | leave blocked 403, no instructor delete | — | audit | `T-ENROLL-05` |
-| `COURSE-008` | Unified Staging Draft: mọi chỉnh sửa khóa học PUBLISHED gom vào 1 bản nháp, gửi duyệt 1 lần | `Course` | courses; course_version_changesets | status check | staging payload aggregation | — | audit | `T-COURSE-09` |
+| `COURSE-008` | Trước lần duyệt đầu: soạn trực tiếp; sau lần duyệt đầu: mọi sửa đổi hợp lệ vào một COURSE_VERSION_CHANGESET/DRAFT; chờ duyệt khóa sửa, thu hồi để sửa tiếp | `Course` | courses; course_change_requests | unique active aggregate + status CHECK | mandatory staging, sealed version, atomic apply | — | audit | `T-COURSE-09`; TASK-095 |
 | `LESSON-001` | Lesson reorder không mất completion | `Lesson` | lessons; lesson_progress | UNIQUE course+position | reorder transaction | — | audit | `T-LESSON-01` |
 | `LESSON-002` | Lesson completion cần min time + viewed most | `Lesson` | lessons; lesson_progress | range CHECK | bounded heartbeat + compute | — | — | `T-LESSON-02` |
 | `LESSON-003` | Lesson mới là Xem thêm cho existing period | `Lesson` | lessons; enrollment_periods | effective timestamp | progress computation compares start time | — | — | `T-LESSON-03` |
@@ -85,3 +85,7 @@ This matrix is the implementation bridge. A backend change that touches a rule s
 ## Traceability rule
 
 A rule may require multiple enforcement layers. A blank SQL CHECK does not mean the rule is optional; it means the rule depends on transaction/authorization/worker context that ordinary relational constraints cannot safely express.
+
+## Authoritative workflow replacement
+
+For course authoring/review, prerequisite configuration, media access, matching, assessment summary and PDF disclosure use [WORKFLOW_SUPERSESSION](../implementation/WORKFLOW_SUPERSESSION.md). Its WF01-WF10 register replaces contrary historical workflow claims while retaining the safety rules above.

@@ -1,5 +1,7 @@
 # AGENTS.md — PWD301 Coding-Agent Operating Contract
 
+> Workflow authority (2026-10-15): [approved replacement contract](docs/system/PWD301_SYSTEM_SPECIFICATION/implementation/WORKFLOW_SUPERSESSION.md). Historical task completion is not proof of current implementation.
+
 This file is the canonical operating contract for coding agents working in this repository.
 It does **not** redefine product/business rules. Those rules remain canonical in the System Specification and Database Architecture.
 
@@ -72,7 +74,7 @@ Never silently violate these rules:
 - Database restore must never automatically overwrite the live database; explicit Admin confirmation is required.
 - Video protection: internal HLS retains dynamic watermark and fail-closed streaming. YouTube uses the official IFrame API without obscuring overlays; PWD301 controls and identity stay outside the iframe. Completion requires server-clock pacing; client signals cannot prove attention.
 - Strict Lifetime Enrollment: Course enrollments are permanent. Self-unenrollment (leave course) is locked (POST `/student/courses/<id>/leave` returns HTTP 403). Instructors cannot remove students.
-- Unified Staging Draft: All instructor changes to published courses save into a single staging draft (`STAGING_DRAFT` / `CourseVersionChangeset`), submitted once for atomic all-or-nothing Admin review. Piecemeal change requests are forbidden.
+- Unified Staging Draft: After first approval all legal instructor changes save into one existing `COURSE_VERSION_CHANGESET`/`DRAFT` aggregate (semantic `STAGING_DRAFT`), submitted once for atomic all-or-nothing Admin review. Piecemeal change requests are forbidden.
 - Anti-Leak Exam Security & Dynamic Progress: No right/wrong indicators during active exams; slots remain neutral; post-submission review renders granular green/red indicators with target answers. Course progress in student navigation is computed dynamically from actual completed lessons.
 - Two-Tier Broadcast Notification RBAC: Only Primary Admin may broadcast any category; System Monitoring Admin is strictly locked to `SYSTEM` broadcasts only (backend 403 on other categories); all other sub-admins have broadcast UI hidden and API blocked.
 
@@ -200,7 +202,7 @@ Dựa trên toàn bộ lịch sử 304 cuộc trò chuyện và 271 chỉ đạo
 - Giảng viên hoàn toàn không có quyền xóa học viên ra khỏi khóa học. Chỉ duy nhất Admin chính có thẩm quyền đình chỉ hoặc xử lý kỷ luật học vụ.
 
 ### 10.11. Bất biến Bản nháp Khóa học Tổng hợp Một Lần (Unified Staging Draft & Single Approval)
-- Mọi chỉnh sửa của giảng viên đối với khóa học đã xuất bản (thông tin chung, ảnh bìa, chuẩn đầu ra, đề cương, bài học, tài liệu, quiz) bắt buộc phải tích lũy vào duy nhất 01 bản nháp (`CourseVersionChangeset` ở trạng thái `STAGING_DRAFT`).
+- Mọi chỉnh sửa của giảng viên đối với khóa học đã từng được Admin duyệt, kể cả khóa đã công khai thiếu mốc duyệt (thông tin chung, ảnh bìa, chuẩn đầu ra, đề cương, bài học, tài liệu, quiz) bắt buộc phải tích lũy vào duy nhất 01 bản nháp (`CourseChangeRequest` loại `COURSE_VERSION_CHANGESET`, trạng thái `DRAFT`, tương đương `STAGING_DRAFT`).
 - Nghiêm cấm tạo các yêu cầu phê duyệt phân mảnh (`CourseChangeRequest`) riêng lẻ cho từng bài học gây quá tải cho quản trị viên. Toàn bộ thay đổi được gửi duyệt 01 lần và Admin phê duyệt All-or-Nothing trong 01 giao dịch CSDL nguyên khối.
 
 ### 10.12. Bất biến Bảo mật Phòng thi & Tiến độ Động (Anti-Leak Exam Security & Dynamic Progress)

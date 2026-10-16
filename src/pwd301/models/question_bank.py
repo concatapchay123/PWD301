@@ -97,6 +97,16 @@ class Question(Base):
         sa.ForeignKey("users.id", name="fk_questions_deleted_by_user_id"),
         nullable=True,
     )
+    change_request_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("course_change_requests.id", name="fk_questions_change_request_id"),
+        nullable=True,
+    )
+    previous_question_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("questions.id", name="fk_questions_previous_question_id"),
+        nullable=True,
+    )
 
     __table_args__ = (
         sa.CheckConstraint(
@@ -113,6 +123,18 @@ class Question(Base):
             "id",
         ),
         sa.Index("ix_questions_usage", "course_id", "last_used_at", "usage_count"),
+        sa.Index(
+            "ux_questions_working_revision",
+            "change_request_id",
+            "previous_question_id",
+            unique=True,
+            mssql_where=sa.text(
+                "change_request_id IS NOT NULL AND previous_question_id IS NOT NULL"
+            ),
+            sqlite_where=sa.text(
+                "change_request_id IS NOT NULL AND previous_question_id IS NOT NULL"
+            ),
+        ),
     )
 
     course = relationship("Course", foreign_keys=[course_id], backref="questions")
