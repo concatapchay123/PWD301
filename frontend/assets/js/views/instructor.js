@@ -2916,7 +2916,15 @@ class InstructorView {
               <span class="material-symbols-outlined text-[20px] text-blue-600 shrink-0">lock</span>
               <span>Khóa học đang trong đợt xét duyệt. Chế độ chỉ đọc (Read-only). Vui lòng rút lại yêu cầu hoặc chờ Quản trị viên duyệt xong để chỉnh sửa.</span>
             </div>
-          ` : ''}
+          ` : (course.status === 'PUBLISHED' ? `
+            <div class="rounded-xl border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/40 p-3.5 sm:p-4 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-3 shadow-xs">
+              <span class="material-symbols-outlined text-[20px] text-amber-600 dark:text-amber-400 shrink-0 mt-0.5">edit_note</span>
+              <div class="space-y-0.5">
+                <p class="font-bold">Đang chỉnh sửa bản nháp. Những thay đổi này chưa ảnh hưởng đến khóa học đang xuất bản</p>
+                <p class="text-[11px] text-amber-800/80 dark:text-amber-300/80">Mọi thao tác lưu bài giảng sẽ được tích lũy vào bản nháp tổng hợp. Bấm "Gửi xét duyệt bản nháp" ở thanh tiêu đề khi hoàn tất để Quản trị viên phê duyệt.</p>
+              </div>
+            </div>
+          ` : '')}
 
           <!-- Metadata Card -->
           <div class="bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl p-5 shadow-xs space-y-4">
@@ -4009,6 +4017,23 @@ class InstructorView {
                 </h4>
                 <p class="text-xs text-sky-800 dark:text-sky-300 mt-1">
                   Mọi thao tác chỉnh sửa nội dung bài giảng, chương mục và bài thi tạm thời bị đóng băng. Nếu cần chỉnh sửa thêm, Thầy/Cô vui lòng bấm <strong>"Rút lại xét duyệt"</strong> phía trên.
+                </p>
+              </div>
+            </div>
+          ` : ''}
+
+          <!-- Draft Notice Banner: When editing a published course -->
+          ${course.status === 'PUBLISHED' && !isPending ? `
+            <div class="rounded-2xl border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/40 p-4 sm:p-5 flex items-start gap-4 shadow-xs" id="banner-draft-editing-notice">
+              <div class="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20 mt-0.5">
+                <span class="material-symbols-outlined text-2xl">edit_note</span>
+              </div>
+              <div class="flex-1 min-w-0">
+                <h4 class="text-sm font-bold text-amber-950 dark:text-amber-200 flex items-center gap-2">
+                  <span>Đang chỉnh sửa bản nháp. Những thay đổi này chưa ảnh hưởng đến khóa học đang xuất bản</span>
+                </h4>
+                <p class="text-xs text-amber-900/80 dark:text-amber-300/80 mt-1 leading-relaxed">
+                  Mọi chỉnh sửa giáo trình, đề cương, câu hỏi và tài liệu được lưu an toàn trong bản nháp tổng hợp. Học viên vẫn đang học phiên bản xuất bản chính thức. Hãy bấm <strong>"Gửi xét duyệt bản nháp"</strong> khi Thầy/Cô đã hoàn tất các thay đổi.
                 </p>
               </div>
             </div>
