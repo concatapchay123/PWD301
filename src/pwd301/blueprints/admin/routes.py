@@ -638,7 +638,9 @@ def review_course(course_id: str) -> Any:
     if course_obj is None:
         raise ResourceNotFoundError("Course not found.")
     course_obj = lock_course(course_obj, db.session)
-    if course_obj.status != "SUBMITTED_FOR_REVIEW" or payload.get(
+    if course_obj.status != "SUBMITTED_FOR_REVIEW":
+        raise ConflictError("Khóa học không ở trạng thái chờ xét duyệt.")
+    if payload.get("review_version") and payload.get(
         "review_version"
     ) != course_review_version(course_obj, db.session):
         raise ConflictError("Bản xét duyệt đã thay đổi. Hãy tải lại trước khi duyệt.")

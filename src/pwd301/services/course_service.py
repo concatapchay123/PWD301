@@ -1182,9 +1182,80 @@ def change_course_status(
     if target_status == "APPROVED":
         course.approved_at = now
         course.approved_by_user_id = actor.id
+
+        # BUG-07: Ensure default completion rule is provisioned for legacy courses so publishing/approval succeeds
+        from pwd301.services.completion_service import get_or_create_default_completion_rule
+
+        get_or_create_default_completion_rule(course.id, session=sess)
+
+        # Transition any unattached pending lessons to DRAFT
+        from pwd301.models.course import Lesson
+
+        pending_lessons = (
+            sess.query(Lesson)
+            .filter(
+                Lesson.course_id == course.id,
+                Lesson.status == "PENDING_APPROVAL",
+                Lesson.change_request_id.is_(None),
+                Lesson.deleted_at.is_(None),
+            )
+            .all()
+        )
+        for les in pending_lessons:
+            les.status = "DRAFT"
+            les.updated_at = now
+
+        # BUG-07: Auto-synthesize or handle active COURSE_VERSION_CHANGESET for legacy / submitted courses
+        from pwd301.models.course import CourseChangeRequest
+        from pwd301.services.course_workflow_service import CHANGESET, active_changeset
+        from pwd301.services.lesson_service import record_change_request_review
+
+        active_cr = active_changeset(course.id, sess)
+        if active_cr is not None:
+            if active_cr.status in ("PENDING", "DRAFT"):
+                active_cr.status = "APPROVED"
+                active_cr.reviewed_by_user_id = actor.id
+                active_cr.reviewed_at = now
+                active_cr.applied_at = now
+                active_cr.review_reason = reason or "Đã phê duyệt cùng khóa học."
+                record_change_request_review(sess, actor, active_cr, "APPROVED")
+        else:
+            payload_data = {
+                "action": CHANGESET,
+                "course_id": str(course.public_id),
+                "source": "legacy_course_approval_synthesis",
+                "approved_by": actor.id,
+                "reason": reason or "Phê duyệt khóa học tiền sử (legacy course approval)",
+            }
+            requested_by = course.owner_instructor_id or actor.id
+            synthesized_cr = CourseChangeRequest(
+                course_id=course.id,
+                requested_by_user_id=requested_by,
+                change_type=CHANGESET,
+                target_type="COURSE",
+                target_id=course.id,
+                proposed_payload_json=json.dumps(payload_data, ensure_ascii=False),
+                status="APPROVED",
+                reviewed_by_user_id=actor.id,
+                review_reason=reason or "Phê duyệt khóa học tiền sử (legacy course approval)",
+                created_at=now,
+                reviewed_at=now,
+                applied_at=now,
+            )
+            synthesized_cr.course = course
+            sess.add(synthesized_cr)
+            sess.flush()
+            record_change_request_review(sess, actor, synthesized_cr, "APPROVED")
+
     elif target_status == "PUBLISHED":
         if course.published_at is None:
             course.published_at = now
+
+        # Ensure default completion rule exists
+        from pwd301.services.completion_service import get_or_create_default_completion_rule
+
+        get_or_create_default_completion_rule(course.id, session=sess)
+
         # Invariant: Auto-publish non-deleted draft lessons belonging to this course
         from pwd301.models.course import Lesson
 
@@ -1192,7 +1263,7 @@ def change_course_status(
             sess.query(Lesson)
             .filter(
                 Lesson.course_id == course.id,
-                Lesson.status == "DRAFT",
+                Lesson.status.in_(["DRAFT", "PENDING_APPROVAL"]),
                 Lesson.change_request_id.is_(None),
                 Lesson.deleted_at.is_(None),
             )
@@ -1214,6 +1285,19 @@ def change_course_status(
         course.deleted_at = now
         course.deleted_by_user_id = actor.id
         course.restore_until = now + datetime.timedelta(days=30)
+    elif current_status == "SUBMITTED_FOR_REVIEW" and target_status == "DRAFT" and actor.is_admin:
+        from pwd301.services.course_workflow_service import active_changeset, successor_draft
+        from pwd301.services.lesson_service import record_change_request_review
+
+        active_cr = active_changeset(course.id, sess)
+        if active_cr is not None and active_cr.status == "PENDING":
+            active_cr.status = "REJECTED"
+            active_cr.reviewed_by_user_id = actor.id
+            active_cr.reviewed_at = now
+            active_cr.review_reason = reason
+            record_change_request_review(sess, actor, active_cr, "REJECTED")
+            sess.flush()
+            successor_draft(actor, active_cr, sess)
 
     after_state = {"status": target_status}
 

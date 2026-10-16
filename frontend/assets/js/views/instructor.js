@@ -3115,6 +3115,19 @@ class InstructorView {
           } else {
             UI.showToast(res?.message || 'Đã lưu bài giảng thành công!', 'success');
           }
+
+          // BUG-05 Fix: Refresh changeset status immediately and dynamically update top staging draft action bar & notice banner
+          if (course.status === 'PUBLISHED') {
+            try {
+              const latestCs = await ApiClient.getCourseChangesetStatus(cId);
+              if (latestCs) {
+                changesetStatus = latestCs;
+                InstructorView.updateChangesetActionBar(container, cId, latestCs);
+              }
+            } catch (csErr) {
+              console.warn('Silent changeset refresh failed:', csErr);
+            }
+          }
         } catch (err) {
           UI.showToast(err.message || 'Lỗi khi lưu bài giảng.', 'error');
         } finally {
@@ -4133,102 +4146,11 @@ class InstructorView {
                     <span>Xuất bản ngay</span>
                   </button>
                 ` : ''}
-                ${course.status === 'PUBLISHED' ? (
-                  changesetStatus && changesetStatus.status === 'PENDING' ? `
-                    <button
-                      type="button"
-                      disabled
-                      class="px-4 py-2 rounded-xl bg-amber-500/20 text-amber-700 dark:text-amber-300 text-xs font-bold flex items-center gap-1.5 cursor-not-allowed border border-amber-300 dark:border-amber-700"
-                    >
-                      <span class="material-symbols-outlined text-[16px]">lock_clock</span>
-                      <span>Đợt cập nhật đang chờ duyệt</span>
-                    </button>
-                    <button
-                      type="button"
-                      id="btn-view-changeset-diff"
-                      class="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-[#202020] hover:bg-slate-200 dark:hover:bg-[#282828] text-slate-800 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-[#2E2D2B] transition-colors flex items-center gap-1.5 cursor-pointer"
-                      title="Xem đối chiếu các thay đổi giữa bản gốc và bản nháp"
-                    >
-                      <span class="material-symbols-outlined text-[16px]">difference</span>
-                      <span>Xem thay đổi</span>
-                    </button>
-                    <button
-                      type="button"
-                      id="btn-retract-changeset"
-                      class="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-                      title="Rút lại đợt cập nhật để tiếp tục chỉnh sửa"
-                    >
-                      <span class="material-symbols-outlined text-[16px]">undo</span>
-                      <span>Rút lại yêu cầu</span>
-                    </button>
-                  ` : changesetStatus && changesetStatus.status === 'REJECTED' ? `
-                    <button
-                      type="button"
-                      id="btn-view-changeset-diff"
-                      class="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-[#202020] hover:bg-slate-200 dark:hover:bg-[#282828] text-slate-800 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-[#2E2D2B] transition-colors flex items-center gap-1.5 cursor-pointer"
-                      title="Xem đối chiếu các thay đổi"
-                    >
-                      <span class="material-symbols-outlined text-[16px]">difference</span>
-                      <span>Xem thay đổi</span>
-                    </button>
-                    <button
-                      type="button"
-                      id="btn-submit-changeset-again"
-                      class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-                      title="Gửi đợt cập nhật sau khi hoàn thiện"
-                    >
-                      <span class="material-symbols-outlined text-[16px]">send</span>
-                      <span>Gửi xét duyệt bản nháp</span>
-                    </button>
-                    <button
-                      type="button"
-                      id="btn-discard-changeset-rejected"
-                      class="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
-                      title="Hủy bỏ bản nháp đã bị từ chối"
-                    >
-                      <span class="material-symbols-outlined text-[18px]">delete_sweep</span>
-                    </button>
-                  ` : changesetStatus && (changesetStatus.has_changes || changesetStatus.changes_count > 0) ? `
-                    <button
-                      type="button"
-                      id="btn-view-changeset-diff"
-                      class="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-[#202020] hover:bg-slate-200 dark:hover:bg-[#282828] text-slate-800 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-[#2E2D2B] transition-colors flex items-center gap-1.5 cursor-pointer"
-                      title="Xem đối chiếu các thay đổi giữa bản gốc và bản nháp"
-                    >
-                      <span class="material-symbols-outlined text-[16px] text-primary">difference</span>
-                      <span>Xem thay đổi</span>
-                      <span class="px-1.5 py-0.2 rounded-full text-[10px] bg-primary/10 text-primary font-black">${changesetStatus.changes_count || 1}</span>
-                    </button>
-                    <button
-                      type="button"
-                      id="btn-submit-course-changeset"
-                      class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-                      title="Gộp và gửi xét duyệt toàn bộ cập nhật giáo trình môn học"
-                    >
-                      <span class="material-symbols-outlined text-[16px]">playlist_add_check</span>
-                      <span>Gửi xét duyệt bản nháp</span>
-                    </button>
-                    <button
-                      type="button"
-                      id="btn-discard-changeset"
-                      class="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
-                      title="Hủy bỏ toàn bộ bản nháp"
-                    >
-                      <span class="material-symbols-outlined text-[18px]">delete_sweep</span>
-                    </button>
-                  ` : `
-                    <button
-                      type="button"
-                      id="btn-submit-course-changeset"
-                      class="px-4 py-2 rounded-xl bg-slate-100 dark:bg-[#202020] text-slate-400 dark:text-slate-500 text-xs font-bold border border-slate-200 dark:border-[#2E2D2B] flex items-center gap-1.5 cursor-not-allowed"
-                      disabled
-                      title="Chưa có thay đổi nào trong bản nháp"
-                    >
-                      <span class="material-symbols-outlined text-[16px]">playlist_add_check</span>
-                      <span>Gửi xét duyệt bản nháp</span>
-                    </button>
-                  `
-                ) : ''}
+                ${course.status === 'PUBLISHED' ? `
+                  <div id="course-changeset-actions" class="flex items-center gap-2">
+                    ${InstructorView.renderChangesetActionsHtml(changesetStatus)}
+                  </div>
+                ` : ''}
               </div>
             </div>
 
@@ -4441,174 +4363,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
       }
 
       // Bind Course Changeset Actions
-      const openSubmitChangesetModal = () => {
-        const todayStr = new Date().toLocaleDateString('vi-VN');
-        const defaultTitle = `Đợt cập nhật giáo trình (${todayStr})`;
-        const bodyHtml = `
-          <form id="submit-changeset-form" class="space-y-4">
-            <div class="space-y-1">
-              <label class="block text-xs font-bold uppercase tracking-wider text-[#5C5B57] dark:text-[#9E9D99]">
-                Tên đợt cập nhật <span class="text-rose-500">*</span>
-              </label>
-              <input
-                type="text"
-                name="version_title"
-                value="${UI.escapeHtml(defaultTitle)}"
-                required
-                class="w-full px-3.5 py-2.5 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#202020] text-sm text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-primary"
-              />
-            </div>
-            <div class="space-y-1">
-              <label class="block text-xs font-bold uppercase tracking-wider text-[#5C5B57] dark:text-[#9E9D99]">
-                Tóm tắt thay đổi (Ghi chú cho Quản trị viên)
-              </label>
-              <textarea
-                name="summary"
-                rows="3"
-                placeholder="VD: Bổ sung 2 bài thực hành, sắp xếp lại chương 1..."
-                class="w-full px-3.5 py-2.5 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#202020] text-sm text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-primary resize-none"
-              ></textarea>
-            </div>
-            <p class="text-[11px] text-slate-500 dark:text-slate-400">
-              Hệ thống sẽ gom toàn bộ thay đổi giáo trình (bài học mới, nội dung chỉnh sửa, thứ tự) thành 1 đợt xét duyệt duy nhất.
-            </p>
-          </form>
-        `;
-        const footerHtml = `
-          <button type="button" class="px-4 py-2 rounded-xl text-xs font-semibold text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] transition-colors" onclick="UI.closeModal()">
-            Hủy bỏ
-          </button>
-          <button type="button" id="btn-confirm-submit-changeset" class="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-xs">
-            Gửi Quản trị viên
-          </button>
-        `;
-        UI.openModal({
-          title: 'Gửi duyệt đợt cập nhật',
-          bodyHtml,
-          footerHtml,
-          size: 'md'
-        });
-        document.getElementById('btn-confirm-submit-changeset').onclick = async () => {
-          const form = document.getElementById('submit-changeset-form');
-          if (!form) return;
-          const vTitle = form.version_title.value.trim();
-          const vSummary = form.summary.value.trim();
-          if (!vTitle) {
-            UI.showToast('Vui lòng nhập tên đợt cập nhật.', 'warning');
-            return;
-          }
-          const btn = document.getElementById('btn-confirm-submit-changeset');
-          btn.disabled = true;
-          btn.innerHTML = '⏳ Đang gửi...';
-          try {
-            await ApiClient.submitCourseChangeset(cId, {
-              version_title: vTitle,
-              summary: vSummary
-            });
-            UI.closeModal();
-            UI.showToast('Đã gửi đợt cập nhật giáo trình tới Quản trị viên!', 'success');
-            UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(container, cId, 'curriculum'));
-          } catch (err) {
-            btn.disabled = false;
-            btn.innerHTML = 'Gửi Quản trị viên';
-            UI.showToast(err.message || 'Lỗi gửi đợt cập nhật.', 'error');
-          }
-        };
-      };
-
-      const submitCsBtn = document.getElementById('btn-submit-course-changeset');
-      if (submitCsBtn) submitCsBtn.onclick = openSubmitChangesetModal;
-
-      const submitCsBarBtn = document.getElementById('btn-submit-course-changeset-bar');
-      if (submitCsBarBtn) submitCsBarBtn.onclick = openSubmitChangesetModal;
-
-      const submitCsAgainBtn = document.getElementById('btn-submit-changeset-again');
-      if (submitCsAgainBtn) submitCsAgainBtn.onclick = openSubmitChangesetModal;
-
-      const viewDiffBtn = document.getElementById('btn-view-changeset-diff');
-      if (viewDiffBtn) {
-        viewDiffBtn.onclick = async () => {
-          try {
-            const diff = await ApiClient.getCourseChangesetDiff(cId);
-            const totalChanges = diff.total_changes_count || (
-              (diff.curriculum_structure?.length || 0) +
-              (diff.content_blocks?.length || 0) +
-              (diff.interactive_quizzes?.length || 0) +
-              ((diff.assessments || []).filter(a => a.change_type !== 'UNCHANGED').length) +
-              (diff.governance_rules?.is_changed ? 1 : 0)
-            );
-
-            const bodyHtml = `
-              <div class="space-y-4 text-xs font-sans">
-                <!-- Summary Header -->
-                <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1">
-                  <div class="flex items-center justify-between gap-2">
-                    <span class="font-bold text-sm text-slate-900 dark:text-slate-100">${UI.escapeHtml(diff.version_title || 'Đợt Cập Nhật Giáo Trình')}</span>
-                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary border border-primary/20">
-                      ${totalChanges} thay đổi được ghi nhận
-                    </span>
-                  </div>
-                  <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">${UI.escapeHtml(diff.summary || 'Chi tiết các thay đổi theo 5 phân nhóm học vụ so với giáo trình hiện tại.')}</p>
-                </div>
-
-                <!-- 5-Category Deep Changeset Diff Tree -->
-                <div class="max-h-[520px] overflow-y-auto pr-1">
-                  ${UI.renderCategorizedDiffHtml(diff)}
-                </div>
-              </div>
-            `;
-            UI.openModal({
-              title: 'Đối chiếu thay đổi giáo trình (5 Phân Nhóm Học Vụ)',
-              bodyHtml,
-              size: 'lg'
-            });
-          } catch (err) {
-            UI.showToast(err.message || 'Không tải được bản đối chiếu thay đổi.', 'error');
-          }
-        };
-      }
-
-      const retractCsBtn = document.getElementById('btn-retract-changeset');
-      if (retractCsBtn) {
-        retractCsBtn.onclick = async () => {
-          const conf = await UI.confirm(
-            'Rút lại đợt cập nhật',
-            'Xác nhận rút lại đợt cập nhật đang chờ duyệt? Bạn sẽ có thể tiếp tục chỉnh sửa trước khi gửi lại.',
-            'Rút lại'
-          );
-          if (!conf) return;
-          try {
-            await ApiClient.retractCourseChangeset(cId, { request_id: changesetStatus.request_id, review_version: changesetStatus.review_version });
-            UI.showToast('Đã rút lại đợt cập nhật giáo trình thành công.', 'success');
-            UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(container, cId, 'curriculum'));
-          } catch (err) {
-            UI.showToast(err.message || 'Lỗi rút lại đợt cập nhật.', 'error');
-          }
-        };
-      }
-
-      const bindDiscardBtn = (btnId) => {
-        const discardBtn = document.getElementById(btnId);
-        if (discardBtn) {
-          discardBtn.onclick = async () => {
-            const conf = await UI.confirm(
-              'Hủy bỏ bản nháp cập nhật',
-              'Hành động này sẽ hủy các thay đổi trong bản nháp và giữ giáo trình đã duyệt. Xác nhận hủy bản nháp?',
-              'Hủy bỏ bản nháp'
-            );
-            if (!conf) return;
-            try {
-              await ApiClient.discardCourseChangeset(cId);
-              UI.showToast('Đã hủy bỏ bản nháp cập nhật giáo trình.', 'info');
-              UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(container, cId, 'curriculum'));
-            } catch (err) {
-              UI.showToast(err.message || 'Lỗi hủy bỏ bản nháp.', 'error');
-            }
-          };
-        }
-      };
-      bindDiscardBtn('btn-discard-changeset');
-      bindDiscardBtn('btn-discard-changeset-rejected');
+      InstructorView.bindChangesetActions(container, cId, changesetStatus);
 
       // Auto-poll when changeset is PENDING to reactively update view without manual F5
       if (changesetStatus.status === 'PENDING') {
@@ -4819,6 +4574,337 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
           </div>
         </div>
       `;
+    }
+  }
+
+  // =========================================================================
+  // 2.7b. Course Changeset Actions & Dynamic Action Bar (BUG-05 Remediation)
+  // =========================================================================
+  static renderChangesetActionsHtml(changesetStatus) {
+    if (changesetStatus && changesetStatus.status === 'PENDING') {
+      return `
+        <button
+          type="button"
+          disabled
+          class="px-4 py-2 rounded-xl bg-amber-500/20 text-amber-700 dark:text-amber-300 text-xs font-bold flex items-center gap-1.5 cursor-not-allowed border border-amber-300 dark:border-amber-700"
+        >
+          <span class="material-symbols-outlined text-[16px]">lock_clock</span>
+          <span>Đợt cập nhật đang chờ duyệt</span>
+        </button>
+        <button
+          type="button"
+          id="btn-view-changeset-diff"
+          class="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-[#202020] hover:bg-slate-200 dark:hover:bg-[#282828] text-slate-800 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-[#2E2D2B] transition-colors flex items-center gap-1.5 cursor-pointer"
+          title="Xem đối chiếu các thay đổi giữa bản gốc và bản nháp"
+        >
+          <span class="material-symbols-outlined text-[16px]">difference</span>
+          <span>Xem thay đổi</span>
+        </button>
+        <button
+          type="button"
+          id="btn-retract-changeset"
+          class="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+          title="Rút lại đợt cập nhật để tiếp tục chỉnh sửa"
+        >
+          <span class="material-symbols-outlined text-[16px]">undo</span>
+          <span>Rút lại yêu cầu</span>
+        </button>
+      `;
+    }
+    if (changesetStatus && changesetStatus.status === 'REJECTED') {
+      return `
+        <button
+          type="button"
+          id="btn-view-changeset-diff"
+          class="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-[#202020] hover:bg-slate-200 dark:hover:bg-[#282828] text-slate-800 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-[#2E2D2B] transition-colors flex items-center gap-1.5 cursor-pointer"
+          title="Xem đối chiếu các thay đổi"
+        >
+          <span class="material-symbols-outlined text-[16px]">difference</span>
+          <span>Xem thay đổi</span>
+        </button>
+        <button
+          type="button"
+          id="btn-submit-changeset-again"
+          class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+          title="Gửi đợt cập nhật sau khi hoàn thiện"
+        >
+          <span class="material-symbols-outlined text-[16px]">send</span>
+          <span>Gửi xét duyệt bản nháp</span>
+        </button>
+        <button
+          type="button"
+          id="btn-discard-changeset-rejected"
+          class="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+          title="Hủy bỏ bản nháp đã bị từ chối"
+        >
+          <span class="material-symbols-outlined text-[18px]">delete_sweep</span>
+        </button>
+      `;
+    }
+    if (changesetStatus && (changesetStatus.has_changes || changesetStatus.changes_count > 0)) {
+      return `
+        <button
+          type="button"
+          id="btn-view-changeset-diff"
+          class="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-[#202020] hover:bg-slate-200 dark:hover:bg-[#282828] text-slate-800 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-[#2E2D2B] transition-colors flex items-center gap-1.5 cursor-pointer"
+          title="Xem đối chiếu các thay đổi giữa bản gốc và bản nháp"
+        >
+          <span class="material-symbols-outlined text-[16px] text-primary">difference</span>
+          <span>Xem thay đổi</span>
+          <span class="px-1.5 py-0.2 rounded-full text-[10px] bg-primary/10 text-primary font-black">${changesetStatus.changes_count || 1}</span>
+        </button>
+        <button
+          type="button"
+          id="btn-submit-course-changeset"
+          class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+          title="Gộp và gửi xét duyệt toàn bộ cập nhật giáo trình môn học"
+        >
+          <span class="material-symbols-outlined text-[16px]">playlist_add_check</span>
+          <span>Gửi xét duyệt bản nháp</span>
+        </button>
+        <button
+          type="button"
+          id="btn-discard-changeset"
+          class="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+          title="Hủy bỏ toàn bộ bản nháp"
+        >
+          <span class="material-symbols-outlined text-[18px]">delete_sweep</span>
+        </button>
+      `;
+    }
+    return `
+      <button
+        type="button"
+        id="btn-submit-course-changeset"
+        class="px-4 py-2 rounded-xl bg-slate-100 dark:bg-[#202020] text-slate-400 dark:text-slate-500 text-xs font-bold border border-slate-200 dark:border-[#2E2D2B] flex items-center gap-1.5 cursor-not-allowed"
+        disabled
+        title="Chưa có thay đổi nào trong bản nháp"
+      >
+        <span class="material-symbols-outlined text-[16px]">playlist_add_check</span>
+        <span>Gửi xét duyệt bản nháp</span>
+      </button>
+    `;
+  }
+
+  static openSubmitChangesetModal(cId, container = null) {
+    const todayStr = new Date().toLocaleDateString('vi-VN');
+    const defaultTitle = `Đợt cập nhật giáo trình (${todayStr})`;
+    const bodyHtml = `
+      <form id="submit-changeset-form" class="space-y-4">
+        <div class="space-y-1">
+          <label class="block text-xs font-bold uppercase tracking-wider text-[#5C5B57] dark:text-[#9E9D99]">
+            Tên đợt cập nhật <span class="text-rose-500">*</span>
+          </label>
+          <input
+            type="text"
+            name="version_title"
+            value="${UI.escapeHtml(defaultTitle)}"
+            required
+            class="w-full px-3.5 py-2.5 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#202020] text-sm text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-primary"
+          />
+        </div>
+        <div class="space-y-1">
+          <label class="block text-xs font-bold uppercase tracking-wider text-[#5C5B57] dark:text-[#9E9D99]">
+            Tóm tắt thay đổi (Ghi chú cho Quản trị viên)
+          </label>
+          <textarea
+            name="summary"
+            rows="3"
+            placeholder="VD: Bổ sung 2 bài thực hành, sắp xếp lại chương 1..."
+            class="w-full px-3.5 py-2.5 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#202020] text-sm text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-primary resize-none"
+          ></textarea>
+        </div>
+        <p class="text-[11px] text-slate-500 dark:text-slate-400">
+          Hệ thống sẽ gom toàn bộ thay đổi giáo trình (bài học mới, nội dung chỉnh sửa, thứ tự) thành 1 đợt xét duyệt duy nhất.
+        </p>
+      </form>
+    `;
+    const footerHtml = `
+      <button type="button" class="px-4 py-2 rounded-xl text-xs font-semibold text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] transition-colors" onclick="UI.closeModal()">
+        Hủy bỏ
+      </button>
+      <button type="button" id="btn-confirm-submit-changeset" class="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-xs">
+        Gửi Quản trị viên
+      </button>
+    `;
+    UI.openModal({
+      title: 'Gửi duyệt đợt cập nhật',
+      bodyHtml,
+      footerHtml,
+      size: 'md'
+    });
+    document.getElementById('btn-confirm-submit-changeset').onclick = async () => {
+      const form = document.getElementById('submit-changeset-form');
+      if (!form) return;
+      const vTitle = form.version_title.value.trim();
+      const vSummary = form.summary.value.trim();
+      if (!vTitle) {
+        UI.showToast('Vui lòng nhập tên đợt cập nhật.', 'warning');
+        return;
+      }
+      const btn = document.getElementById('btn-confirm-submit-changeset');
+      btn.disabled = true;
+      btn.innerHTML = '⏳ Đang gửi...';
+      try {
+        await ApiClient.submitCourseChangeset(cId, {
+          version_title: vTitle,
+          summary: vSummary
+        });
+        UI.closeModal();
+        UI.showToast('Đã gửi đợt cập nhật giáo trình tới Quản trị viên!', 'success');
+        const targetContainer = container || document.getElementById('app-viewport') || document.body;
+        UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(targetContainer, cId, 'curriculum'));
+      } catch (err) {
+        btn.disabled = false;
+        btn.innerHTML = 'Gửi Quản trị viên';
+        UI.showToast(err.message || 'Lỗi gửi đợt cập nhật.', 'error');
+      }
+    };
+  }
+
+  static async openChangesetDiffModal(cId) {
+    try {
+      const diff = await ApiClient.getCourseChangesetDiff(cId);
+      const totalChanges = diff.total_changes_count || (
+        (diff.curriculum_structure?.length || 0) +
+        (diff.content_blocks?.length || 0) +
+        (diff.interactive_quizzes?.length || 0) +
+        ((diff.assessments || []).filter(a => a.change_type !== 'UNCHANGED').length) +
+        (diff.governance_rules?.is_changed ? 1 : 0)
+      );
+
+      const bodyHtml = `
+        <div class="space-y-4 text-xs font-sans">
+          <!-- Summary Header -->
+          <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1">
+            <div class="flex items-center justify-between gap-2">
+              <span class="font-bold text-sm text-slate-900 dark:text-slate-100">${UI.escapeHtml(diff.version_title || 'Đợt Cập Nhật Giáo Trình')}</span>
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary border border-primary/20">
+                ${totalChanges} thay đổi được ghi nhận
+              </span>
+            </div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">${UI.escapeHtml(diff.summary || 'Chi tiết các thay đổi theo 5 phân nhóm học vụ so với giáo trình hiện tại.')}</p>
+          </div>
+
+          <!-- 5-Category Deep Changeset Diff Tree -->
+          <div class="max-h-[520px] overflow-y-auto pr-1">
+            ${UI.renderCategorizedDiffHtml(diff)}
+          </div>
+        </div>
+      `;
+      UI.openModal({
+        title: 'Đối chiếu thay đổi giáo trình (5 Phân Nhóm Học Vụ)',
+        bodyHtml,
+        size: 'lg'
+      });
+    } catch (err) {
+      UI.showToast(err.message || 'Không tải được bản đối chiếu thay đổi.', 'error');
+    }
+  }
+
+  static async discardChangeset(cId, container = null) {
+    const conf = await UI.confirm(
+      'Hủy bỏ bản nháp cập nhật',
+      'Hành động này sẽ hủy các thay đổi trong bản nháp và giữ giáo trình đã duyệt. Xác nhận hủy bản nháp?',
+      'Hủy bỏ bản nháp'
+    );
+    if (!conf) return;
+    try {
+      await ApiClient.discardCourseChangeset(cId);
+      UI.showToast('Đã hủy bỏ bản nháp cập nhật giáo trình.', 'info');
+      const targetContainer = container || document.getElementById('app-viewport') || document.body;
+      UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(targetContainer, cId, 'curriculum'));
+    } catch (err) {
+      UI.showToast(err.message || 'Lỗi hủy bỏ bản nháp.', 'error');
+    }
+  }
+
+  static async retractChangeset(cId, container = null, csStatus = null) {
+    const conf = await UI.confirm(
+      'Rút lại đợt cập nhật',
+      'Xác nhận rút lại đợt cập nhật đang chờ duyệt? Bạn sẽ có thể tiếp tục chỉnh sửa trước khi gửi lại.',
+      'Rút lại'
+    );
+    if (!conf) return;
+    try {
+      await ApiClient.retractCourseChangeset(cId, { request_id: csStatus?.request_id, review_version: csStatus?.review_version });
+      UI.showToast('Đã rút lại đợt cập nhật giáo trình thành công.', 'success');
+      const targetContainer = container || document.getElementById('app-viewport') || document.body;
+      UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(targetContainer, cId, 'curriculum'));
+    } catch (err) {
+      UI.showToast(err.message || 'Lỗi rút lại đợt cập nhật.', 'error');
+    }
+  }
+
+  static bindChangesetActions(container, cId, changesetStatus) {
+    const root = container || document;
+    const submitBtn = root.querySelector('#btn-submit-course-changeset') || document.getElementById('btn-submit-course-changeset');
+    if (submitBtn && !submitBtn.disabled) {
+      submitBtn.onclick = () => InstructorView.openSubmitChangesetModal(cId, container);
+    }
+    const submitBarBtn = root.querySelector('#btn-submit-course-changeset-bar') || document.getElementById('btn-submit-course-changeset-bar');
+    if (submitBarBtn) {
+      submitBarBtn.onclick = () => InstructorView.openSubmitChangesetModal(cId, container);
+    }
+    const submitAgainBtn = root.querySelector('#btn-submit-changeset-again') || document.getElementById('btn-submit-changeset-again');
+    if (submitAgainBtn) {
+      submitAgainBtn.onclick = () => InstructorView.openSubmitChangesetModal(cId, container);
+    }
+    const viewDiffBtn = root.querySelector('#btn-view-changeset-diff') || document.getElementById('btn-view-changeset-diff');
+    if (viewDiffBtn) {
+      viewDiffBtn.onclick = () => InstructorView.openChangesetDiffModal(cId);
+    }
+    const discardBtn = root.querySelector('#btn-discard-changeset') || document.getElementById('btn-discard-changeset');
+    if (discardBtn) {
+      discardBtn.onclick = () => InstructorView.discardChangeset(cId, container);
+    }
+    const discardRejBtn = root.querySelector('#btn-discard-changeset-rejected') || document.getElementById('btn-discard-changeset-rejected');
+    if (discardRejBtn) {
+      discardRejBtn.onclick = () => InstructorView.discardChangeset(cId, container);
+    }
+    const retractBtn = root.querySelector('#btn-retract-changeset') || document.getElementById('btn-retract-changeset');
+    if (retractBtn) {
+      retractBtn.onclick = () => InstructorView.retractChangeset(cId, container, changesetStatus);
+    }
+  }
+
+  static updateChangesetActionBar(container, cId, changesetStatus) {
+    const root = container || document;
+    const actionsContainer = root.querySelector('#course-changeset-actions') || document.getElementById('course-changeset-actions');
+    if (actionsContainer) {
+      actionsContainer.innerHTML = InstructorView.renderChangesetActionsHtml(changesetStatus);
+      InstructorView.bindChangesetActions(container, cId, changesetStatus);
+    }
+
+    // Ensure changeset notice banner is visible when there are draft changes
+    let noticeBanner = root.querySelector('#banner-draft-editing-notice') || document.getElementById('banner-draft-editing-notice');
+    if (noticeBanner) {
+      noticeBanner.classList.remove('hidden');
+      noticeBanner.style.display = '';
+      if (changesetStatus && (changesetStatus.has_changes || changesetStatus.changes_count > 0)) {
+        noticeBanner.classList.add('ring-2', 'ring-amber-400/50');
+      }
+    } else if (root && changesetStatus && (changesetStatus.has_changes || changesetStatus.changes_count > 0)) {
+      const headerCard = root.querySelector('#course-manage-root > div:nth-child(2)') || root.querySelector('#curriculum-studio-section');
+      if (headerCard && headerCard.parentNode) {
+        const bannerEl = document.createElement('div');
+        bannerEl.id = 'banner-draft-editing-notice';
+        bannerEl.className = 'rounded-2xl border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/40 p-4 sm:p-5 flex items-start gap-4 shadow-xs ring-2 ring-amber-400/50 mb-6';
+        bannerEl.innerHTML = `
+          <div class="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20 mt-0.5">
+            <span class="material-symbols-outlined text-2xl">edit_note</span>
+          </div>
+          <div class="flex-1 min-w-0">
+            <h4 class="text-sm font-bold text-amber-950 dark:text-amber-200 flex items-center gap-2">
+              <span>Đang chỉnh sửa bản nháp. Những thay đổi này chưa ảnh hưởng đến khóa học đang xuất bản</span>
+            </h4>
+            <p class="text-xs text-amber-900/80 dark:text-amber-300/80 mt-1 leading-relaxed">
+              Mọi chỉnh sửa giáo trình, đề cương, câu hỏi và tài liệu được lưu an toàn trong bản nháp tổng hợp. Học viên vẫn đang học phiên bản xuất bản chính thức. Hãy bấm <strong>"Gửi xét duyệt bản nháp"</strong> khi Thầy/Cô đã hoàn tất các thay đổi.
+            </p>
+          </div>
+        `;
+        headerCard.parentNode.insertBefore(bannerEl, headerCard);
+      }
     }
   }
 

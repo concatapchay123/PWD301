@@ -240,6 +240,7 @@ def reconcile_lesson_progress(
             session=sess,
             now=now,
             server_verified=True,
+            is_completed=is_completed,
         )
         if session is None:
             sess.commit()

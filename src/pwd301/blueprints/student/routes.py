@@ -1718,6 +1718,55 @@ def student_course_detail(course_id: str) -> Any:
             }
         )
 
+    from pwd301.models.file_import import LessonResource
+
+    # Identify file assets attached to deleted/trashed lessons or deleted learning units
+    # that are not attached to any active lesson in the course
+    active_lesson_subq = (
+        db.session.query(Lesson.id)
+        .outerjoin(LearningUnit, Lesson.learning_unit_id == LearningUnit.id)
+        .filter(
+            Lesson.course_id == course.id,
+            Lesson.deleted_at.is_(None),
+            Lesson.status.notin_(["TRASH", "HISTORICAL"]),
+            sa.or_(
+                Lesson.learning_unit_id.is_(None),
+                LearningUnit.deleted_at.is_(None),
+            ),
+        )
+        .subquery()
+    )
+
+    trashed_lesson_subq = (
+        db.session.query(Lesson.id)
+        .outerjoin(LearningUnit, Lesson.learning_unit_id == LearningUnit.id)
+        .filter(
+            Lesson.course_id == course.id,
+            sa.or_(
+                Lesson.deleted_at.isnot(None),
+                Lesson.status.in_(["TRASH", "HISTORICAL"]),
+                sa.and_(
+                    Lesson.learning_unit_id.isnot(None),
+                    LearningUnit.deleted_at.isnot(None),
+                ),
+            ),
+        )
+        .subquery()
+    )
+
+    active_asset_ids = sa.select(LessonResource.file_asset_id).where(
+        LessonResource.lesson_id.in_(sa.select(active_lesson_subq.c.id))
+    )
+
+    orphaned_asset_subq = (
+        db.session.query(LessonResource.file_asset_id)
+        .filter(
+            LessonResource.lesson_id.in_(sa.select(trashed_lesson_subq.c.id)),
+            LessonResource.file_asset_id.notin_(active_asset_ids),
+        )
+        .subquery()
+    )
+
     file_assets = (
         db.session.query(FileAsset)
         .filter(
@@ -1725,6 +1774,7 @@ def student_course_detail(course_id: str) -> Any:
             FileAsset.asset_type.notin_(["COURSE_IMAGE", "QUESTION_IMAGE", "IMPORT_SOURCE"]),
             FileAsset.status == "ACTIVE",
             FileAsset.deleted_at.is_(None),
+            FileAsset.id.notin_(sa.select(orphaned_asset_subq.c.file_asset_id)),
         )
         .all()
     )
