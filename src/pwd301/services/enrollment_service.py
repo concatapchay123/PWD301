@@ -709,8 +709,19 @@ def add_course_prerequisite(
     """
     sess = session if session is not None else db.session
 
+    from pwd301.services.course_workflow_service import (
+        ensure_course_authoring,
+        lock_prerequisite_graph,
+        should_stage,
+        stage_prerequisite,
+        validate_prerequisite_graph,
+    )
+
+    lock_prerequisite_graph(sess)
+
     # 1. Permission check
     course = require_course_manager(actor, course_id, session=sess)
+    course = ensure_course_authoring(actor, course, session=sess)
 
     # 2. Resolve prerequisite course
     prereq_course = _resolve_course(prerequisite_course_id, session=sess)
@@ -726,6 +737,18 @@ def add_course_prerequisite(
         raise CourseValidationError(
             f"Chỉ có thể chọn khóa học đã được xuất bản (PUBLISHED) làm môn tiên quyết. "
             f"Khóa học '{prereq_course.title}' hiện có trạng thái '{prereq_course.status}'."
+        )
+
+    validate_prerequisite_graph(course, prereq_course, sess)
+    if should_stage(actor, course, sess):
+        stage_prerequisite(actor, course, prereq_course, session=sess)
+        if session is None:
+            sess.commit()
+        return CoursePrerequisite(
+            course_id=course.id,
+            prerequisite_course_id=prereq_course.id,
+            approval_status="PENDING_APPROVAL",
+            created_by_user_id=actor.id,
         )
 
     # 4. Check if relation already exists (idempotent)
@@ -773,7 +796,7 @@ def add_course_prerequisite(
         actor, "is_admin", False
     )
     now = utc_now()
-    initial_status = "APPROVED" if is_own_course else "PENDING_APPROVAL"
+    initial_status = "APPROVED"
 
     link = CoursePrerequisite(
         course_id=course.id,
@@ -829,10 +852,26 @@ def remove_course_prerequisite(
     """
     sess = session if session is not None else db.session
 
+    from pwd301.services.course_workflow_service import (
+        ensure_course_authoring,
+        lock_prerequisite_graph,
+        should_stage,
+        stage_prerequisite,
+    )
+
+    lock_prerequisite_graph(sess)
+
     course = require_course_manager(actor, course_id, session=sess)
+    course = ensure_course_authoring(actor, course, session=sess)
     prereq_course = _resolve_course(prerequisite_course_id, session=sess)
     if prereq_course is None:
         raise CourseNotFoundError("Prerequisite course not found.")
+
+    if should_stage(actor, course, sess):
+        stage_prerequisite(actor, course, prereq_course, remove=True, session=sess)
+        if session is None:
+            sess.commit()
+        return True
 
     link = (
         sess.query(CoursePrerequisite)
@@ -1026,7 +1065,6 @@ def review_prerequisite_request(
     act_upper = action.strip().upper()
     if act_upper not in ("APPROVE", "REJECT", "APPROVED", "REJECTED"):
         raise CourseValidationError("Hành động xét duyệt phải là APPROVE hoặc REJECT.")
-    new_status = "APPROVED" if "APPROVE" in act_upper else "REJECTED"
 
     req_course = _resolve_course(requesting_course_id, session=sess)
     target_course = _resolve_course(prerequisite_course_id, session=sess)
@@ -1036,95 +1074,11 @@ def review_prerequisite_request(
     if not getattr(actor, "is_admin", False) and target_course.owner_instructor_id != actor.id:
         raise ForbiddenError("Bạn không có quyền duyệt yêu cầu tiên quyết cho khóa học này.")
 
-    from pwd301.models.course import CourseChangeRequest
+    from pwd301.services.exceptions import ConflictError
 
-    now = utc_now()
-    review_msg = (
-        note.strip()
-        if note
-        else ("Đã phê duyệt" if new_status == "APPROVED" else "Từ chối liên kết")
+    raise ConflictError(
+        "Yêu cầu môn tiên quyết riêng lẻ đã ngừng áp dụng. Hãy gửi toàn bộ bản nháp khóa học để Quản trị viên duyệt."
     )
-
-    # Update any corresponding CourseChangeRequest
-    cr = (
-        sess.query(CourseChangeRequest)
-        .filter_by(
-            course_id=req_course.id,
-            change_type="PREREQUISITE",
-            target_id=target_course.id,
-            status="PENDING",
-        )
-        .first()
-    )
-    if cr is not None:
-        cr.status = new_status
-        cr.reviewed_at = now
-        cr.reviewed_by_user_id = actor.id
-        cr.review_reason = review_msg
-        if new_status == "APPROVED":
-            cr.applied_at = now
-
-    link = (
-        sess.query(CoursePrerequisite)
-        .filter_by(
-            course_id=req_course.id,
-            prerequisite_course_id=target_course.id,
-        )
-        .first()
-    )
-
-    if link is None:
-        if new_status == "APPROVED":
-            link = CoursePrerequisite(
-                course_id=req_course.id,
-                prerequisite_course_id=target_course.id,
-                created_by_user_id=actor.id,
-                created_at=now,
-                approval_status="APPROVED",
-                requested_by_user_id=cr.requested_by_user_id if cr else None,
-                requested_at=cr.created_at if cr else now,
-                reviewed_at=now,
-                reviewed_by_user_id=actor.id,
-                review_note=review_msg,
-            )
-            sess.add(link)
-        else:
-            # For REJECTED when no link existed, create link with REJECTED status so it's tracked
-            link = CoursePrerequisite(
-                course_id=req_course.id,
-                prerequisite_course_id=target_course.id,
-                created_by_user_id=actor.id,
-                created_at=now,
-                approval_status="REJECTED",
-                requested_by_user_id=cr.requested_by_user_id if cr else None,
-                requested_at=cr.created_at if cr else now,
-                reviewed_at=now,
-                reviewed_by_user_id=actor.id,
-                review_note=review_msg,
-            )
-            sess.add(link)
-    else:
-        link.approval_status = new_status
-        link.reviewed_at = now
-        link.reviewed_by_user_id = actor.id
-        link.review_note = review_msg
-
-    _record_prerequisite_audit_event(
-        sess=sess,
-        actor=actor,
-        action=f"PREREQUISITE_{new_status}",
-        course_id=req_course.id,
-        prerequisite_course_id=target_course.id,
-        reason=f"Giảng viên {actor.display_name} đã {new_status} yêu cầu môn tiên quyết. Ghi chú: {review_msg}",
-    )
-    sess.flush()
-    try:
-        sess.commit()
-    except Exception:
-        sess.rollback()
-        raise
-
-    return link
 
 
 def get_student_enrollments(

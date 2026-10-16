@@ -1,37 +1,23 @@
-# Course State Machine
+# Course state machine
+
+See the [replacement contract](../implementation/WORKFLOW_SUPERSESSION.md).
 
 ```mermaid
 stateDiagram-v2
-    [*] --> DRAFT
-    DRAFT --> REVIEW: submit
-    REVIEW --> PUBLISHED: approve
-    REVIEW --> DRAFT: reject/change
-    PUBLISHED --> ARCHIVED: archive
-    ARCHIVED --> PUBLISHED: restore if valid
-    DRAFT --> TRASH: delete
-    ARCHIVED --> TRASH: delete/recovery workflow
-    TRASH --> ARCHIVED: restore
-
-    state "Published Course Working Draft (COURSE_VERSION_CHANGESET)" as Changeset {
-        PUBLISHED --> Changeset_DRAFT: instructor edits (isolated draft)
-        Changeset_DRAFT --> Changeset_PENDING: submit all changes
-        note right of Changeset_PENDING
-            FAIL-CLOSED LOCK:
-            All instructor mutations locked
-            Students view PUBLISHED version
-        end note
-        Changeset_PENDING --> Changeset_DRAFT: retract submission
-        Changeset_PENDING --> PUBLISHED: admin approve (atomic apply)
-        Changeset_PENDING --> Changeset_REJECTED: admin reject (with reason)
-        Changeset_REJECTED --> Changeset_DRAFT: instructor modifies draft
-        Changeset_DRAFT --> PUBLISHED: discard draft
-    }
+    [*] --> NeverApprovedDraft
+    NeverApprovedDraft --> InitialPending: submit
+    InitialPending --> NeverApprovedDraft: reject or withdraw
+    InitialPending --> ApprovedBaseline: Admin approves
+    ApprovedBaseline --> StagingDraft: explicit instructor save
+    StagingDraft --> FrozenSubmission: submit aggregate
+    FrozenSubmission --> ApprovedBaseline: approve exact version atomically
+    FrozenSubmission --> StagingDraft: withdraw or reject with complete successor
+    StagingDraft --> ApprovedBaseline: discard proposal
+    ApprovedBaseline --> Archived: archive if dependencies permit
+    Archived --> ApprovedBaseline: restore
 ```
 
-## Semantics
-- Primary course lifecycle follows DRAFT → REVIEW → PUBLISHED → ARCHIVED/TRASH.
-- For published courses, all updates (add/edit/delete/reorder lessons) are staged into an atomic `COURSE_VERSION_CHANGESET`.
-- Fragmented or piecemeal approvals are strictly banned.
-- When submitted for review (`Changeset_PENDING`), the course is locked fail-closed against instructor mutations until Admin approves or rejects, or instructor retracts.
-- Active students continue learning without disruption while changes are staged.
-
+Approved baseline includes APPROVED, PUBLISHED and historically approved courses.
+Legacy published courses missing approved_at remain review-required. Course
+baseline status and aggregate status are separate; no transition resets prior
+approval to free authoring. Pending submissions freeze all instructor mutators.

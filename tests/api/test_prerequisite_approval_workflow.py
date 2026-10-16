@@ -1,13 +1,4 @@
-"""TDD Tests for Course Prerequisite Approval Workflow & Publication Gate (TASK-084).
-
-Verifies:
-1. Cannot assign unpublished (e.g. DRAFT) course as prerequisite.
-2. Self-owned course prerequisite is automatically APPROVED and immediately active.
-3. Cross-instructor course prerequisite requires approval (PENDING_APPROVAL).
-4. Prerequisite owner instructor receives incoming requests and count.
-5. Prerequisite owner can approve or reject the request with review note.
-6. Only APPROVED prerequisites enforce graduation / completion gates on learners.
-"""
+"""Prerequisite publication gate and unified course administrator approval."""
 
 from __future__ import annotations
 
@@ -19,12 +10,14 @@ from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
+from pwd301.models.course import CourseChangeRequest, CoursePrerequisite
 from pwd301.seeds.baseline import seed_baseline
 from pwd301.services.course_service import create_course
 from pwd301.services.enrollment_service import (
     add_course_prerequisite,
 )
 from pwd301.services.exceptions import CourseValidationError
+from pwd301.services.lesson_service import approve_course_change_request, submit_course_changeset
 from pwd301.services.user_service import assign_role_to_user, register_user
 
 
@@ -52,6 +45,10 @@ def prereq_env(app: Flask) -> dict[str, Any]:
     )
     assign_role_to_user(inst2.id, "INSTRUCTOR", session=sess)
 
+    admin = register_user(
+        "prereq_review@pwd301.local", "Password@123", "Prerequisite Admin", session=sess
+    )
+    assign_role_to_user(admin.id, "ADMIN", session=sess)
     # Student
     student = register_user(
         email="student_prereq@pwd301.local",
@@ -116,6 +113,7 @@ def prereq_env(app: Flask) -> dict[str, Any]:
     sess.commit()
 
     return {
+        "admin": admin,
         "inst1": inst1,
         "inst2": inst2,
         "student": student,
@@ -149,8 +147,10 @@ def test_cannot_add_unpublished_course_as_prerequisite(prereq_env: dict[str, Any
     assert "chưa được xuất bản" in str(exc_info.value) or "PUBLISHED" in str(exc_info.value)
 
 
-def test_self_owned_prerequisite_is_auto_approved(prereq_env: dict[str, Any]) -> None:
-    """When an instructor adds their own course as prerequisite, it is auto-approved."""
+def test_self_owned_prerequisite_waits_for_complete_course_approval(
+    prereq_env: dict[str, Any],
+) -> None:
+    """A published target stages all prerequisite changes, including self-owned courses."""
     sess: Session = db.session
     inst1 = prereq_env["inst1"]
     course_a = prereq_env["course_a"]
@@ -164,8 +164,15 @@ def test_self_owned_prerequisite_is_auto_approved(prereq_env: dict[str, Any]) ->
     )
     sess.commit()
 
-    assert link.approval_status == "APPROVED"
-    assert link.reviewed_at is not None
+    assert link.approval_status == "PENDING_APPROVAL"
+    assert sess.query(CoursePrerequisite).filter_by(course_id=course_a.id).count() == 0
+    request = submit_course_changeset(inst1, course_a.id, {}, session=sess)
+    approve_course_change_request(prereq_env["admin"], request.id, session=sess)
+    sess.commit()
+    assert (
+        sess.query(CoursePrerequisite).filter_by(course_id=course_a.id).one().approval_status
+        == "APPROVED"
+    )
 
 
 def test_cross_instructor_prerequisite_requires_approval(
@@ -188,45 +195,22 @@ def test_cross_instructor_prerequisite_requires_approval(
     sess.commit()
 
     assert link.approval_status == "PENDING_APPROVAL"
-    assert link.requested_by_user_id == inst1.id
-
-    # Inst2 logs in and checks incoming requests
+    request = sess.query(CourseChangeRequest).filter_by(course_id=course_a.id, status="DRAFT").one()
+    assert request.change_type == "COURSE_VERSION_CHANGESET"
+    assert sess.query(CoursePrerequisite).filter_by(course_id=course_a.id).count() == 0
     csrf2 = login_client(client, inst2.email)
-
-    # 1. Count pending requests
     res_count = client.get(
-        "/instructor/prerequisites/incoming-requests/count",
-        headers={"X-CSRF-Token": csrf2},
+        "/instructor/prerequisites/incoming-requests/count", headers={"X-CSRF-Token": csrf2}
     )
-    assert res_count.status_code == 200
-    assert res_count.get_json().get("count") == 1
-
-    # 2. List incoming requests
-    res_list = client.get(
-        "/instructor/prerequisites/incoming-requests",
-        headers={"X-CSRF-Token": csrf2},
-    )
-    assert res_list.status_code == 200
-    reqs = res_list.get_json().get("incoming", [])
-    assert len(reqs) == 1
-    req = reqs[0]
-    assert req.get("requesting_course_code") == "CS_A101"
-    assert req.get("prerequisite_course_code") == "CS_B201"
-    assert req.get("approval_status") == "PENDING_APPROVAL"
-
-    # 3. Inst2 approves request
-    res_review = client.post(
+    assert res_count.status_code == 200 and res_count.get_json()["count"] == 0
+    forbidden_alias = client.post(
         f"/instructor/prerequisites/incoming-requests/{course_a.public_id}/{course_b.public_id}/review",
-        json={"action": "APPROVE", "note": "Đồng ý liên kết học phần."},
+        json={"action": "APPROVE"},
         headers={"X-CSRF-Token": csrf2},
     )
-    assert res_review.status_code == 200
-    assert res_review.get_json().get("approval_status") == "APPROVED"
-
-    # Re-check count
-    res_count_after = client.get(
-        "/instructor/prerequisites/incoming-requests/count",
-        headers={"X-CSRF-Token": csrf2},
-    )
-    assert res_count_after.status_code == 200
-    assert res_count_after.get_json().get("count") == 0
+    assert forbidden_alias.status_code == 409
+    submitted = submit_course_changeset(inst1, course_a.id, {}, session=sess)
+    approve_course_change_request(prereq_env["admin"], submitted.id, session=sess)
+    sess.commit()
+    link = sess.query(CoursePrerequisite).filter_by(course_id=course_a.id).one()
+    assert link.prerequisite_course_id == course_b.id and link.approval_status == "APPROVED"

@@ -1,12 +1,14 @@
 # Course Api
 
+The [replacement contract](../implementation/WORKFLOW_SUPERSESSION.md) governs all authoring routes, including compatibility endpoints. Never-approved authoring is direct; after first approval every write stages automatically without client opt-in. Pending writes return 409; withdraw before editing.
+
 This file expands the relevant entries from the endpoint catalog. Authorization is object-level and all mutations re-check current state inside the service transaction.
 
 ### `POST /instructor/courses/{course_id}/lessons/reorder`
 - Session authentication and CSRF; current course manager only. Supply the complete active course order in `ordered_lesson_ids`, including lessons in other chapters.
 - Optional `move` object contains `lesson_id` and destination `learning_unit_id`. Placement and order form one transaction and retain the Lesson ID/content. Both objects must belong to this course; reject deleted destinations, historical/trashed lessons, invalid/incomplete orders and destination chapter lesson/media limits.
-- Draft-course success is 200 with acknowledged lessons. For an approved/published/archived course, 202 and `pending_approval` mean one structural review intent was queued; current placement/order remain authoritative. Identical pending retries return the same request; a different proposal conflicts409 instead of falsely acknowledging the old proposal.
-- The existing Admin change-request review endpoint applies both placement and order in its review transaction. A failed mutation or required audit rolls back placement/order and keeps the request PENDING. Review metadata includes readable lesson/source/destination chapter names; the client displays those names and proposed order, retaining the current tree until approval.
+- Never-approved draft authoring returns the acknowledged order directly. After first approval save into the single editable aggregate, preserving student placement until aggregate approval; repeated saves update that same draft. A pending submission returns 409.
+- Submit the aggregate once. Admin approval identifies the displayed request and review_version and applies the sealed placement/order in its atomic review transaction. Stale review returns 409; mutation/audit failure rolls back all members.
 
 ### `GET /api/courses`
 - **Purpose:** Course catalog
@@ -85,9 +87,15 @@ This file expands the relevant entries from the endpoint catalog. Authorization 
 - **Purpose:** Submit Unified Staging Draft (`STAGING_DRAFT`) for single-submission Admin review.
 - **Authentication:** Session + CSRF
 - **Authorization:** Current Course manager
-- **Behavior:** Consolidates all pending course metadata, cover image, curriculum, lessons, quizzes, and resources into 01 `CourseVersionChangeset` with status `PENDING`.
+- **Behavior:** Consolidates all pending course metadata, cover image, curriculum, lessons, quizzes, and resources into one existing `COURSE_VERSION_CHANGESET` aggregate with status `PENDING`.
 - **Success:** 200 {"success": true, "data": {"change_request_id": ...}}
 - **Errors:** STATE_VIOLATION / CONFLICT
+
+### Version-bound withdrawal
+
+`POST /instructor/courses/{course_id}/cancel-submit` includes the displayed initial `review_version`.
+`POST /instructor/courses/{course_id}/changeset/retract` includes the displayed `request_id` and `review_version`.
+Missing or stale identity returns 409. Withdrawal retains terminal submission history and restores the full editable proposal; it does not discard changes. Draft discard is a separate explicit action and is forbidden while pending.
 
 ### `GET /api/courses/{course_id}/progress`
 - **Purpose:** Read own/authorized progress

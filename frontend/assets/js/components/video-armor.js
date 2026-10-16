@@ -132,6 +132,10 @@ class VideoArmor {
   _inspectMutations(mutations) {
     if (this.isBlackedOut) return;
     if (!this.container || this.container.isConnected === false) return;
+    if (this.container.closest?.('.route-render-stage[aria-hidden="true"]')) {
+      this._pauseAllMedia();
+      return;
+    }
 
     let tampered = false;
 

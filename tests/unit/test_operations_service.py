@@ -91,7 +91,7 @@ def admin_user(app: Flask, setup_roles: dict[str, Role]) -> User:
         role_code="ADMIN",
         session=sess,
     )
-    user.is_email_verified = True
+    user.email_verified_at = utc_now()
     sess.commit()
     return user
 
@@ -106,7 +106,7 @@ def student_user(app: Flask, setup_roles: dict[str, Role]) -> User:
         display_name="Student Ops",
         session=sess,
     )
-    user.is_email_verified = True
+    user.email_verified_at = utc_now()
     sess.commit()
     return user
 

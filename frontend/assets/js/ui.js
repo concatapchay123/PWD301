@@ -1635,10 +1635,24 @@ class UI {
     const struct = diff.curriculum_structure || [];
     const content = diff.content_blocks || [];
     const quizzes = diff.interactive_quizzes || [];
+    const questions = diff.question_changes || [];
     const assessments = (diff.assessments || []).filter(a => a.change_type !== 'UNCHANGED');
+    const files = diff.file_changes || [];
+    const prereqs = diff.prerequisite_changes || [];
+    const metaChanges = diff.metadata_changes || [];
     const gov = diff.governance_rules || {};
+    const governanceChange = (key, format) => {
+      const before = gov.current?.[key];
+      const after = gov.proposed && Object.hasOwn(gov.proposed, key) ? gov.proposed[key] : before;
+      const text = value => value == null ? 'Chưa cấu hình' : format(value);
+      return `<span class="text-slate-500">${UI.escapeHtml(text(before))}</span> <span aria-label="thay đổi thành">→</span> <strong>${UI.escapeHtml(text(after))}</strong>`;
+    };
 
-    const totalCount = diff.total_changes_count || (struct.length + content.length + quizzes.length + assessments.length + (gov.is_changed ? 1 : 0));
+    const totalCount = diff.total_changes_count || (
+      struct.length + content.length + quizzes.length + questions.length +
+      assessments.length + files.length + prereqs.length + metaChanges.length +
+      (gov.is_changed ? 1 : 0)
+    );
 
     if (totalCount === 0) {
       return `
@@ -1774,12 +1788,49 @@ class UI {
           `}
         </div>
 
-        <!-- 4. Assessments Category -->
+        <!-- 4. Question Bank Category -->
+        ${questions.length > 0 ? `
+        <div class="space-y-2.5">
+          <div class="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-700">
+            <div class="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-xs">
+              <span class="material-symbols-outlined text-[18px] text-amber-600">help_center</span>
+              <span>4. Ngân hàng Câu hỏi (${questions.length})</span>
+            </div>
+            <span class="text-[10px] text-slate-400">Trắc nghiệm, Tự luận, Câu hỏi đề xuất</span>
+          </div>
+          <div class="space-y-2">
+            ${questions.map(item => `
+              <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 space-y-1.5 shadow-2xs">
+                <div class="flex items-center justify-between gap-2">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${badgeClasses[item.change_type] || 'bg-slate-100 text-slate-700'}">
+                      ${badgeLabels[item.change_type] || item.change_type}
+                    </span>
+                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300 font-mono font-bold">
+                      ${UI.escapeHtml(item.question_type || 'MULTIPLE_CHOICE')}
+                    </span>
+                  </div>
+                </div>
+                <div class="text-[11px] text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-slate-900/50 p-2 rounded-lg font-medium">
+                  "${UI.escapeHtml(item.content || item.description || '')}"
+                </div>
+                ${item.explanation ? `
+                  <div class="text-[10px] text-slate-500 italic pl-1">
+                    Giải thích: ${UI.escapeHtml(item.explanation)}
+                  </div>
+                ` : ''}
+              </div>
+            `).join('')}
+          </div>
+        </div>
+        ` : ''}
+
+        <!-- 5. Assessments Category -->
         <div class="space-y-2.5">
           <div class="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-700">
             <div class="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-xs">
               <span class="material-symbols-outlined text-[18px] text-amber-600">assignment</span>
-              <span>4. Bài kiểm tra & Đánh giá (${assessments.length})</span>
+              <span>5. Bài kiểm tra & Đánh giá (${assessments.length})</span>
             </div>
             <span class="text-[10px] text-slate-400">Kiểm tra chương, Final Test</span>
           </div>
@@ -1807,12 +1858,40 @@ class UI {
           `}
         </div>
 
-        <!-- 5. Governance Rules & Cover Category -->
+        <!-- 6. Standalone Files Category -->
+        ${files.length > 0 ? `
+        <div class="space-y-2.5">
+          <div class="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-700">
+            <div class="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-xs">
+              <span class="material-symbols-outlined text-[18px] text-teal-600">attach_file</span>
+              <span>6. Tài liệu & Tệp đính kèm (${files.length})</span>
+            </div>
+            <span class="text-[10px] text-slate-400">Tài liệu tham khảo, giáo trình đính kèm</span>
+          </div>
+          <div class="space-y-2">
+            ${files.map(item => `
+              <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 flex items-center justify-between gap-2 shadow-2xs">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${badgeClasses[item.change_type] || 'bg-slate-100 text-slate-700'}">
+                    ${badgeLabels[item.change_type] || item.change_type}
+                  </span>
+                  <span class="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">${UI.escapeHtml(item.file_name)}</span>
+                </div>
+                <div class="text-[11px] font-mono text-slate-500 shrink-0">
+                  ${item.file_size_bytes ? `${Math.round(item.file_size_bytes / 1024)} KB` : '0 KB'} · ${UI.escapeHtml(item.scan_status || 'CLEAN')}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+        ` : ''}
+
+        <!-- 7. Governance Rules & Cover Category -->
         <div class="space-y-2.5">
           <div class="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-700">
             <div class="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-xs">
               <span class="material-symbols-outlined text-[18px] text-purple-600">verified_user</span>
-              <span>5. Quy chế Hoàn thành & Ảnh bìa</span>
+              <span>7. Quy chế Hoàn thành & Ảnh bìa</span>
             </div>
             <span class="text-[10px] text-slate-400">Điều kiện tốt nghiệp, chứng chỉ, ảnh đại diện</span>
           </div>
@@ -1820,25 +1899,68 @@ class UI {
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
               <div>
                 <span class="text-slate-400">Điểm GPA tối thiểu:</span>
-                <span class="font-bold text-slate-800 dark:text-slate-200 ml-1.5">${gov.proposed?.min_gpa ?? gov.current?.min_gpa ?? '5.0'}/10</span>
+                <span class="text-slate-800 dark:text-slate-200 ml-1.5">${governanceChange('minimum_grade_score', value => `${value}/10`)}</span>
               </div>
               <div>
                 <span class="text-slate-400">Tiến độ bài học tối thiểu:</span>
-                <span class="font-bold text-slate-800 dark:text-slate-200 ml-1.5">${gov.proposed?.completion_percent ?? gov.current?.completion_percent ?? '80'}%</span>
+                <span class="text-slate-800 dark:text-slate-200 ml-1.5">${governanceChange('minimum_progress_percent', value => `${value}%`)}</span>
               </div>
               <div>
                 <span class="text-slate-400">Bắt buộc học tất cả bài:</span>
-                <span class="font-bold text-slate-800 dark:text-slate-200 ml-1.5">${gov.proposed?.require_all_lessons ? 'Có' : 'Không'}</span>
+                <span class="text-slate-800 dark:text-slate-200 ml-1.5">${governanceChange('require_all_required_lessons', value => value ? 'Có' : 'Không')}</span>
               </div>
               <div>
                 <span class="text-slate-400">Bắt buộc làm bài thi:</span>
-                <span class="font-bold text-slate-800 dark:text-slate-200 ml-1.5">${gov.proposed?.require_assessments ? 'Có' : 'Không'}</span>
+                <span class="text-slate-800 dark:text-slate-200 ml-1.5">${governanceChange('require_required_assessments', value => value ? 'Có' : 'Không')}</span>
               </div>
             </div>
-            ${gov.cover_image_url ? `
-              <div class="pt-2 border-t border-slate-100 dark:border-slate-700 flex items-center gap-3">
-                <span class="text-slate-400 text-[11px]">Ảnh bìa khóa học:</span>
-                <img src="${UI.escapeHtml(gov.cover_image_url)}" class="h-10 w-16 object-cover rounded-lg border border-slate-200 dark:border-slate-700 shadow-2xs" alt="Cover" />
+            ${prereqs.length > 0 ? `
+              <div class="pt-2 border-t border-slate-100 dark:border-slate-700 space-y-1.5">
+                <div class="font-bold text-slate-700 dark:text-slate-200 text-[11px]">Môn học Tiên quyết:</div>
+                <div class="space-y-1">
+                  ${prereqs.map(item => `
+                    <div class="flex items-center gap-2 text-[11px]">
+                      <span class="px-1.5 py-0.5 rounded text-[9px] font-bold border ${badgeClasses[item.change_type] || 'bg-slate-100 text-slate-700'}">
+                        ${badgeLabels[item.change_type] || item.change_type}
+                      </span>
+                      <span class="text-slate-800 dark:text-slate-200 font-semibold">[${UI.escapeHtml(item.course_code || '')}]</span>
+                      <span class="text-slate-600 dark:text-slate-300">${UI.escapeHtml(item.title || '')}</span>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            ` : ''}
+            ${metaChanges.length > 0 ? `
+              <div class="pt-2 border-t border-slate-100 dark:border-slate-700 space-y-1.5">
+                <div class="font-bold text-slate-700 dark:text-slate-200 text-[11px]">Thông tin Khóa học:</div>
+                <div class="space-y-1 text-[11px]">
+                  ${metaChanges.map(item => `
+                    <div>
+                      <span class="text-slate-400">${UI.escapeHtml(item.field)}:</span>
+                      <span class="text-slate-500 line-through ml-1">${UI.escapeHtml(String(item.old_value ?? '(Trống)'))}</span>
+                      <span>→</span>
+                      <strong class="text-slate-900 dark:text-slate-100">${UI.escapeHtml(String(item.new_value ?? '(Trống)'))}</strong>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            ` : ''}
+            ${(Object.hasOwn(gov, 'proposed_cover_url') || gov.cover_image_url) ? `
+              <div class="pt-3 border-t border-slate-100 dark:border-slate-700 grid gap-4 lg:grid-cols-2">
+                ${(Object.hasOwn(gov, 'proposed_cover_url') ? [
+                  { label: 'Ảnh bìa hiện tại', url: gov.current_cover_url },
+                  { label: 'Ảnh bìa đề xuất', url: gov.proposed_cover_url }
+                ] : [{ label: 'Ảnh bìa khóa học', url: gov.cover_image_url }]).map(cover => `
+                  <figure class="min-w-0 space-y-2">
+                    <figcaption class="text-xs font-semibold text-slate-700 dark:text-slate-200">${cover.label}</figcaption>
+                    <div class="relative w-full aspect-video rounded-lg overflow-hidden bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center justify-center">
+                      ${cover.url ? `
+                        <img src="${UI.escapeHtml(cover.url)}" class="absolute inset-0 w-full h-full object-cover object-center" alt="${cover.label}" onerror="this.hidden=true;this.nextElementSibling.classList.remove('hidden')" />
+                        <p class="hidden p-4 text-center text-slate-300 text-xs">Không tải được ảnh bìa. Hãy tải lại để kiểm tra quyền truy cập.</p>
+                      ` : '<p class="p-4 text-center text-slate-300 text-xs">Không có ảnh bìa</p>'}
+                    </div>
+                  </figure>
+                `).join('')}
               </div>
             ` : ''}
           </div>

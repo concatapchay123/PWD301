@@ -115,6 +115,7 @@ CREATE TABLE learning_units (
     id BIGINT IDENTITY(1,1) NOT NULL,
     public_id UNIQUEIDENTIFIER NOT NULL DEFAULT (NEWSEQUENTIALID()),
     course_id BIGINT NOT NULL,
+    change_request_id BIGINT NULL,
     title NVARCHAR(200) NOT NULL,
     position INT NOT NULL,
     created_at DATETIME2(3) NOT NULL DEFAULT (SYSUTCDATETIME()),
@@ -122,7 +123,8 @@ CREATE TABLE learning_units (
     CONSTRAINT pk_learning_units PRIMARY KEY (id),
     CONSTRAINT uq_learning_units_public_id UNIQUE (public_id),
     CONSTRAINT ck_learning_units_position CHECK (position > 0),
-    CONSTRAINT fk_learning_units_course_id FOREIGN KEY (course_id) REFERENCES courses (id)
+    CONSTRAINT fk_learning_units_course_id FOREIGN KEY (course_id) REFERENCES courses (id),
+    CONSTRAINT fk_learning_units_change_request_id FOREIGN KEY (change_request_id) REFERENCES course_change_requests (id)
 );
 GO
 

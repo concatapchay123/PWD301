@@ -14,7 +14,7 @@ from pwd301.extensions import db
 from pwd301.models.course import Course, Lesson
 from pwd301.models.file_import import LessonResource
 from pwd301.models.identity import Role, User
-from pwd301.services.course_service import create_course
+from pwd301.services.course_service import change_course_status, create_course
 from pwd301.services.jwt_auth_service import create_token_pair
 from pwd301.services.lesson_service import create_lesson
 from pwd301.services.user_service import assign_role_to_user, register_user
@@ -80,7 +80,6 @@ def test_course(app: Flask, instructor_user: User) -> Course:
             "difficulty": "INTERMEDIATE",
         },
     )
-    c.status = "PUBLISHED"
     db.session.commit()
     return c
 
@@ -283,6 +282,9 @@ class TestFileApiEndpoints:
         """Published Lesson resource links change only after Admin approval."""
         tokens = create_token_pair(instructor_user)
         headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+        change_course_status(instructor_user, test_course.id, "SUBMITTED_FOR_REVIEW")
+        change_course_status(admin_user, test_course.id, "APPROVED")
+        change_course_status(instructor_user, test_course.id, "PUBLISHED")
 
         # Upload asset first
         upload_resp = client.post(
@@ -299,33 +301,64 @@ class TestFileApiEndpoints:
             json={"file_asset_id": asset_id, "title": "Lab 1 Manual"},
             headers=headers,
         )
-        assert attach_resp.status_code == 202
+        assert attach_resp.status_code == 201
+        assert attach_resp.get_json()["is_draft"] is True
         review_id = attach_resp.get_json()["change_request_id"]
         assert db.session.query(LessonResource).filter_by(lesson_id=test_lesson.id).count() == 0
+        staged = db.session.query(Lesson).filter_by(previous_lesson_id=test_lesson.id).one()
+        assert staged.status == "DRAFT"
+        submitted = client.post(
+            f"/api/courses/{test_course.public_id}/changeset/submit", json={}, headers=headers
+        )
+        assert submitted.status_code == 202
+        assert submitted.get_json()["change_request_id"] == review_id
 
         login_web_user(client, admin_user)
+        displayed = client.get(f"/admin/change-requests/{review_id}/diff").get_json()
         approved = client.post(
-            f"/admin/change-requests/{review_id}/review", json={"action": "approve"}
+            f"/admin/change-requests/{review_id}/review",
+            json={
+                "action": "approve",
+                "request_id": review_id,
+                "review_version": displayed["review_version"],
+            },
         )
         assert approved.status_code == 200
-        resource = db.session.query(LessonResource).filter_by(lesson_id=test_lesson.id).one()
+        assert staged.status == "PUBLISHED"
+        assert test_lesson.status == "HISTORICAL"
+        resource = db.session.query(LessonResource).filter_by(lesson_id=staged.id).one()
         assert resource.label == "Lab 1 Manual"
 
         # Detach
         detach_resp = client.delete(
-            f"/api/lessons/{test_lesson.public_id}/resources/{resource.public_id}",
+            f"/api/lessons/{staged.public_id}/resources/{resource.public_id}",
             headers=headers,
         )
-        assert detach_resp.status_code == 202
-        assert db.session.query(LessonResource).filter_by(lesson_id=test_lesson.id).count() == 1
+        assert detach_resp.status_code == 200, detach_resp.get_json()
+        assert detach_resp.get_json()["is_draft"] is True
+        assert db.session.query(LessonResource).filter_by(lesson_id=staged.id).count() == 1
+        detached_draft = db.session.query(Lesson).filter_by(previous_lesson_id=staged.id).one()
+        assert detached_draft.status == "DRAFT" and len(detached_draft.resources) == 0
+        submitted = client.post(
+            f"/api/courses/{test_course.public_id}/changeset/submit", json={}, headers=headers
+        )
+        assert submitted.status_code == 202
+        review_id = submitted.get_json()["change_request_id"]
 
         login_web_user(client, admin_user)
+        displayed = client.get(f"/admin/change-requests/{review_id}/diff").get_json()
         approved = client.post(
-            f"/admin/change-requests/{detach_resp.get_json()['change_request_id']}/review",
-            json={"action": "approve"},
+            f"/admin/change-requests/{review_id}/review",
+            json={
+                "action": "approve",
+                "request_id": review_id,
+                "review_version": displayed["review_version"],
+            },
         )
         assert approved.status_code == 200
-        assert db.session.query(LessonResource).filter_by(lesson_id=test_lesson.id).count() == 0
+        assert detached_draft.status == "PUBLISHED"
+        assert db.session.query(LessonResource).filter_by(lesson_id=detached_draft.id).count() == 0
+        assert db.session.query(LessonResource).filter_by(lesson_id=staged.id).count() == 1
 
 
 class TestWebInstructorFileRoutes:

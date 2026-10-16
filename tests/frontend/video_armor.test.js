@@ -326,3 +326,25 @@ test('VideoArmor does not label an F12 key as proof of tampering', () => {
   try { mockWindow.dispatchEvent({ type: 'keyup', key: 'F12', preventDefault() {} }); assert.equal(armor.isBlackedOut, false); assert.doesNotMatch(armor._formatWatermarkText(), /127\.0\.0\.1|domain\.local/); }
   finally { armor.destroy(); for (const id of intervals) clearInterval(id); }
 });
+
+test('VideoArmor pauses during hidden route staging and enforces the watermark after commit', () => {
+  const { mockDocument, mockWindow, MockElement, MockMutationObserver, intervals } = createMockDOM();
+  global.document = mockDocument; global.window = mockWindow; global.MutationObserver = MockMutationObserver;
+  const { VideoArmor } = require('../../frontend/assets/js/components/video-armor.js');
+  const container = new MockElement('div'), video = new MockElement('video');
+  container.appendChild(video);
+  let staging = true;
+  container.closest = selector => staging && selector.includes('route-render-stage') ? {} : null;
+  container.style.visibility = 'hidden';
+  const armor = VideoArmor.mount(container);
+  try {
+    video._paused = false;
+    armor._inspectMutations([]);
+    assert.equal(armor.isBlackedOut, false, 'router hidden staging is not watermark tampering');
+    assert.equal(video._paused, true, 'hidden staging cannot accumulate playback');
+    staging = false; container.style.visibility = 'visible';
+    armor.watermarkEl.style.visibility = 'hidden';
+    armor._inspectMutations([]);
+    assert.equal(armor.isBlackedOut, true, 'actual watermark hiding remains blocked after route commit');
+  } finally { armor.destroy(); for (const id of intervals) clearInterval(id); }
+});

@@ -1,4 +1,3 @@
-import contextlib
 import json
 import uuid
 from typing import Any
@@ -11,7 +10,6 @@ from pwd301.extensions import db
 from pwd301.models.course import Course, CourseChangeRequest, LearningUnit, Lesson
 from pwd301.models.file_import import FileAsset, LessonResource
 from pwd301.models.identity import User
-from pwd301.models.types import utc_now
 from pwd301.services.analytics_service import get_admin_system_overview
 from pwd301.services.authorization_service import (
     _resolve_user,
@@ -26,8 +24,17 @@ from pwd301.services.course_service import (
     swap_course_owners,
     trash_course,
 )
+from pwd301.services.course_workflow_service import (
+    course_review_version,
+    cover_review_fields,
+    cover_url,
+    lock_course,
+    require_review_identity,
+    review_version,
+)
 from pwd301.services.exceptions import (
     AdminActionForbiddenError,
+    ConflictError,
     ForbiddenError,
     InvalidRoleAssignmentError,
     ResourceNotFoundError,
@@ -50,13 +57,7 @@ from pwd301.services.user_service import assign_role_to_user, remove_role_from_u
 
 
 def _serialize_course(c: Course) -> dict[str, Any]:
-    thumb_url = getattr(c, "thumbnail_url", None)
-    if not thumb_url:
-        thumb_asset = getattr(c, "thumbnail_asset", None)
-        if thumb_asset is not None:
-            thumb_url = f"/api/files/{thumb_asset.public_id}/download"
-        elif c.thumbnail_file_asset_id:
-            thumb_url = f"/api/courses/{c.public_id}/thumbnail"
+    thumb_url = cover_url(c, c.thumbnail_file_asset_id, db.session)
     owner_name = None
     if c.owner_instructor:
         owner_name = getattr(c.owner_instructor, "full_name", None) or getattr(
@@ -73,6 +74,7 @@ def _serialize_course(c: Course) -> dict[str, Any]:
         "description": c.description,
         "summary": getattr(c, "summary", None),
         "thumbnail_url": thumb_url,
+        "review_version": course_review_version(c, db.session),
         "thumbnail_file_asset_id": c.thumbnail_file_asset_id,
         "owner_instructor_id": (str(c.owner_instructor.public_id) if c.owner_instructor else None),
         "owner_instructor_name": owner_name,
@@ -214,12 +216,10 @@ def admin_course_detail(course_id: str) -> tuple[Response, int] | Response:
         if getattr(item, "deleted_at", None) is None
     ]
 
-    thumb_asset = getattr(course, "thumbnail_asset", None)
-    thumb_url = None
-    if thumb_asset is not None:
-        thumb_url = f"/api/files/{thumb_asset.public_id}/download"
-    elif course.thumbnail_file_asset_id:
-        thumb_url = f"/api/courses/{course.public_id}/thumbnail"
+    from pwd301.services.course_service import get_course_thumbnail_asset
+
+    thumb_asset = get_course_thumbnail_asset(course, db.session)
+    thumb_url = cover_url(course, course.thumbnail_file_asset_id, db.session)
 
     return (
         jsonify(
@@ -229,6 +229,7 @@ def admin_course_detail(course_id: str) -> tuple[Response, int] | Response:
                 "title": course.title,
                 "description": course.description,
                 "thumbnail_url": thumb_url,
+                "review_version": course_review_version(course, db.session),
                 "thumbnail_file_asset_id": (
                     str(thumb_asset.public_id) if thumb_asset is not None else None
                 ),
@@ -634,6 +635,13 @@ def review_course(course_id: str) -> Any:
                 400,
             )
 
+    if course_obj is None:
+        raise ResourceNotFoundError("Course not found.")
+    course_obj = lock_course(course_obj, db.session)
+    if course_obj.status != "SUBMITTED_FOR_REVIEW" or payload.get(
+        "review_version"
+    ) != course_review_version(course_obj, db.session):
+        raise ConflictError("Bản xét duyệt đã thay đổi. Hãy tải lại trước khi duyệt.")
     target_status = "APPROVED" if action == "approve" else "DRAFT"
     course = change_course_status(
         actor=actor,
@@ -1786,6 +1794,8 @@ def _build_change_request_diff_payload(req: CourseChangeRequest) -> dict[str, An
     return {
         "success": True,
         "request_id": req.id,
+        "review_version": review_version(req),
+        **cover_review_fields(c, payload_data, db.session),
         "course_id": str(c.public_id) if c else str(req.course_id),
         "course_code": c.course_code if c else None,
         "course_title": c.title if c else None,
@@ -1832,34 +1842,7 @@ def admin_list_change_requests() -> tuple[Response, int] | Response:
         query = query.filter(CourseChangeRequest.status == status_filter)
 
     records = query.all()
-    # Consolidate PENDING records per course to enforce exactly 1 consolidated row per course
-    pending_by_course: dict[int, list[CourseChangeRequest]] = {}
-    other_records: list[CourseChangeRequest] = []
-    for record in records:
-        if record.status == "PENDING" and record.course_id:
-            pending_by_course.setdefault(record.course_id, []).append(record)
-        else:
-            other_records.append(record)
-
-    consolidated_pending: list[CourseChangeRequest] = []
-    for _cid, cr_list in pending_by_course.items():
-        changeset_req = None
-        for r in sorted(cr_list, key=lambda x: x.id, reverse=True):
-            try:
-                p = json.loads(r.proposed_payload_json or "{}")
-            except Exception:
-                p = {}
-            if r.change_type == "COURSE_VERSION_CHANGESET" or (
-                isinstance(p, dict) and p.get("action") == "COURSE_VERSION_CHANGESET"
-            ):
-                changeset_req = r
-                break
-        if changeset_req:
-            consolidated_pending.append(changeset_req)
-        else:
-            consolidated_pending.append(max(cr_list, key=lambda x: x.id))
-
-    visible_records = consolidated_pending + other_records
+    visible_records = records
     visible_records.sort(key=lambda x: x.id, reverse=True)
     results = []
     for r in visible_records:
@@ -2218,6 +2201,9 @@ def admin_list_change_requests() -> tuple[Response, int] | Response:
         results.append(
             {
                 "id": r.id,
+                "request_id": r.id,
+                "review_version": review_version(r),
+                **cover_review_fields(r.course, payload_data, db.session),
                 "course_id": str(r.course.public_id) if r.course else str(r.course_id),
                 "course_code": r.course.course_code if r.course else None,
                 "course_title": r.course.title if r.course else None,
@@ -2266,449 +2252,17 @@ def admin_list_change_requests() -> tuple[Response, int] | Response:
 
 @admin_bp.route("/change-requests/<int:req_id>/review", methods=["POST"])
 @admin_required
-def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
-    """Approve or reject a course/lesson change request (Admin only)."""
-    from pwd301.services.enrollment_service import add_course_prerequisite
-    from pwd301.services.lesson_service import (
-        lock_course_change_request,
-        record_change_request_review,
-        trash_lesson,
-        update_lesson,
-    )
-    from pwd301.services.notification_service import dispatch_notification
-
-    actor = require_authenticated_actor()
-    if not actor.has_admin_permission("COURSE_REVIEW"):
-        raise ForbiddenError("Bạn không có quyền thẩm định yêu cầu thay đổi khóa học.")
-
+def admin_review_change_request(req_id: int):
+    """Legacy URL is an alias for reviewing the same sealed course aggregate."""
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
-    reason = str(payload.get("reason", "")).strip()
-    raw_action = (
-        str(payload.get("action") or payload.get("decision") or payload.get("status") or "")
-        .strip()
-        .lower()
-    )
-    if raw_action in ("approve", "approved"):
-        action = "approve"
-    elif raw_action in ("reject", "rejected"):
-        action = "reject"
-    else:
-        raise ValidationError("Action must be 'approve' or 'reject'.")
-
-    if action == "reject" and len(reason) < 5:
-        raise ValidationError("Lý do từ chối yêu cầu bắt buộc tối thiểu 5 ký tự.")
-
-    req_record = lock_course_change_request(db.session, req_id)
-
-    if req_record.status != "PENDING":
-        raise ValidationError(f"Change request is already in '{req_record.status}' status.")
-
-    if req_record.requested_by_user_id == actor.id and not actor.is_primary_admin:
-        raise ForbiddenError(
-            "Bạn không được phép tự duyệt yêu cầu thay đổi do chính mình tạo ra. Yêu cầu phải được Admin khác thẩm định."
-        )
-
-    if req_record.target_type == "LESSON":
-        sibling_query = db.session.query(CourseChangeRequest).filter_by(
-            requested_by_user_id=req_record.requested_by_user_id,
-            target_type="LESSON",
-            target_id=req_record.target_id,
-            change_type=req_record.change_type,
-            status="PENDING",
-        )
-        newer = sibling_query.filter(CourseChangeRequest.id > req_record.id).first()
-        if newer is not None:
-            raise ValidationError("Yêu cầu này đã được thay thế bởi bản sửa mới hơn.")
-    else:
-        sibling_query = None
-
-    now = utc_now()
-    p_data = _load_change_request_payload(req_record)
-    reviewed_in_service = False
-
-    target_lesson = (
-        db.session.get(Lesson, req_record.target_id)
-        if req_record.target_type == "LESSON" and req_record.target_id
-        else None
-    )
-    if target_lesson is not None and target_lesson.course_id != req_record.course_id:
-        raise ValidationError("Lesson does not belong to the reviewed course.")
-    if req_record.target_type == "LESSON" and target_lesson is not None:
-        lesson_title = p_data.get("title") or (
-            target_lesson.title if target_lesson else "được đề xuất"
-        )
-        subject = f"Lesson '{lesson_title}'"
-    elif req_record.change_type == "PREREQUISITE":
-        subject = f"Điều kiện tiên quyết của khóa học '{req_record.course.title}'"
-    elif (
-        req_record.change_type == "COURSE_VERSION_CHANGESET"
-        or p_data.get("action") == "COURSE_VERSION_CHANGESET"
-    ):
-        subject = f"Đợt cập nhật khóa học '{req_record.course.title}'"
-    else:
-        subject = f"Khóa học '{req_record.course.title}'"
-    action_url = f"#/instructor/courses/{req_record.course.public_id}/manage"
-
-    if action == "approve":
-        course_owner = (
-            req_record.course.owner_instructor
-            or (
-                db.session.get(User, req_record.course.owner_instructor_id)
-                if req_record.course and req_record.course.owner_instructor_id
-                else None
-            )
-            or req_record.requested_by
-            or actor
-        )
-        if p_data.get("action") == "UPDATE_LEARNING_UNIT":
-            from pwd301.services.lesson_service import update_learning_unit
-
-            try:
-                public_unit_id = uuid.UUID(str(p_data.get("learning_unit_id")))
-            except (TypeError, ValueError, AttributeError):
-                raise ValidationError("Mã Bài học trong yêu cầu không hợp lệ.") from None
-            unit = (
-                db.session.query(LearningUnit)
-                .filter(
-                    LearningUnit.public_id == public_unit_id,
-                    LearningUnit.course_id == req_record.course_id,
-                    LearningUnit.deleted_at.is_(None),
-                )
-                .first()
-            )
-            if unit is None:
-                raise ValidationError("Bài học không thuộc khóa học được yêu cầu xét duyệt.")
-            update_learning_unit(
-                course_owner,
-                public_unit_id,
-                {"title": p_data.get("title")},
-                session=db.session,
-            )
-            msg = f"Đã phê duyệt tên Bài học #{req_record.id}."
-
-        elif p_data.get("action") == "RESOURCE_CHANGES":
-            from pwd301.services.file_service import (
-                attach_resource_to_lesson,
-                detach_resource_from_lesson,
-            )
-
-            if target_lesson is None or target_lesson.course_id != req_record.course_id:
-                raise ValidationError("Lesson không thuộc khóa học được xét duyệt.")
-            changes = p_data.get("changes")
-            if not isinstance(changes, list) or not changes:
-                raise ValidationError("Yêu cầu tài liệu Lesson không hợp lệ.")
-            if any(not isinstance(change, dict) for change in changes):
-                raise ValidationError("Yêu cầu tài liệu Lesson không hợp lệ.")
-            lessons_to_update = [target_lesson]
-            if target_lesson.status == "HISTORICAL":
-                newer_active = (
-                    db.session.query(Lesson)
-                    .filter(
-                        Lesson.course_id == target_lesson.course_id,
-                        Lesson.position == target_lesson.position,
-                        Lesson.status.in_(["ACTIVE", "PUBLISHED"]),
-                        Lesson.deleted_at.is_(None),
-                        Lesson.id != target_lesson.id,
-                    )
-                    .first()
-                )
-                if newer_active and newer_active not in lessons_to_update:
-                    lessons_to_update.append(newer_active)
-
-            for change in sorted(changes, key=lambda item: item.get("action") != "DETACH"):
-                if change.get("action") == "DETACH":
-                    res_id = change.get("resource_id")
-                    original_resource = db.session.get(LessonResource, res_id)
-                    if original_resource is None or original_resource.lesson_id != target_lesson.id:
-                        raise ValidationError("Resource does not belong to the reviewed lesson.")
-                    for l_target in lessons_to_update:
-                        resource = (
-                            db.session.get(LessonResource, res_id)
-                            if l_target.id == target_lesson.id
-                            else None
-                        )
-                        if resource is not None and resource.lesson_id == l_target.id:
-                            detach_resource_from_lesson(
-                                course_owner,
-                                l_target.id,
-                                resource.id,
-                                session=db.session,
-                                commit=False,
-                            )
-                        elif l_target.id != target_lesson.id:
-                            orig_res = original_resource
-                            if orig_res:
-                                matching_res = (
-                                    db.session.query(LessonResource)
-                                    .filter(
-                                        LessonResource.lesson_id == l_target.id,
-                                        LessonResource.file_asset_id == orig_res.file_asset_id,
-                                    )
-                                    .first()
-                                )
-                                if matching_res:
-                                    detach_resource_from_lesson(
-                                        course_owner,
-                                        l_target.id,
-                                        matching_res.id,
-                                        session=db.session,
-                                        commit=False,
-                                    )
-                elif change.get("action") == "ATTACH":
-                    asset = db.session.get(FileAsset, change.get("asset_id"))
-                    if (
-                        asset is None
-                        or asset.course_id != req_record.course_id
-                        or asset.asset_type != "RESOURCE"
-                        or asset.status != "ACTIVE"
-                        or asset.deleted_at is not None
-                    ):
-                        raise ValidationError("Tệp đề xuất không còn hợp lệ hoặc chưa quét sạch.")
-                    for l_target in lessons_to_update:
-                        attach_resource_to_lesson(
-                            course_owner,
-                            l_target.id,
-                            asset.id,
-                            label=change.get("label"),
-                            session=db.session,
-                            commit=False,
-                        )
-                else:
-                    raise ValidationError("Thao tác tài liệu Lesson không hợp lệ.")
-            msg = f"Đã phê duyệt thay đổi tài liệu Lesson #{req_record.id}."
-
-        elif req_record.change_type == "LESSON_STRUCTURE" and p_data.get("action") == "DELETE":
-            lesson_id = req_record.target_id or p_data.get("lesson_id")
-            if lesson_id:
-                trash_lesson(
-                    course_owner,
-                    lesson_id,
-                    reason=reason or "Admin phê duyệt yêu cầu xóa",
-                    session=db.session,
-                )
-            msg = f"Đã phê duyệt yêu cầu xóa bài giảng #{req_record.target_id}."
-
-        elif (
-            req_record.change_type == "LESSON_STRUCTURE"
-            and p_data.get("action") == "DELETE_LEARNING_UNIT"
-        ):
-            from pwd301.services.lesson_service import delete_learning_unit
-
-            target_unit_id = p_data.get("learning_unit_id")
-            if target_unit_id:
-                delete_learning_unit(course_owner, target_unit_id, session=db.session)
-            msg = f"Đã phê duyệt yêu cầu xóa chương mục #{target_unit_id}."
-
-        elif (
-            req_record.change_type == "COURSE_VERSION_CHANGESET"
-            or p_data.get("action") == "COURSE_VERSION_CHANGESET"
-        ):
-            from pwd301.services.lesson_service import approve_course_change_request
-
-            approve_course_change_request(
-                actor, req_record.id, review_reason=reason, session=db.session
-            )
-            reviewed_in_service = True
-            msg = f"Đã phê duyệt đợt cập nhật khóa học #{req_record.course_id}."
-
-        elif (
-            req_record.change_type == "LESSON_STRUCTURE"
-            and p_data.get("action") == "REORDER_LESSONS"
-        ):
-            from pwd301.services.lesson_service import reorder_lessons
-
-            ordered_ids = p_data.get("ordered_lesson_ids") or []
-            if ordered_ids:
-                try:
-                    reorder_lessons(
-                        course_owner,
-                        req_record.course_id,
-                        ordered_ids,
-                        session=db.session,
-                        move=p_data.get("move"),
-                    )
-                except Exception:
-                    db.session.rollback()
-                    raise
-            msg = f"Đã phê duyệt sắp xếp lại bài giảng khóa học #{req_record.course_id}."
-
-        elif req_record.change_type == "COMPLETION_RULE":
-            from pwd301.services.completion_service import set_course_completion_rule
-
-            set_course_completion_rule(
-                actor=course_owner,
-                course_id=req_record.course_id,
-                payload=p_data,
-                session=db.session,
-            )
-            msg = f"Đã phê duyệt quy tắc hoàn thành khóa học #{req_record.course_id}."
-
-        elif (
-            req_record.change_type == "LESSON_STRUCTURE"
-            and p_data.get("action") == "CREATE_LEARNING_UNIT"
-        ):
-            from pwd301.services.lesson_service import create_learning_unit
-
-            create_learning_unit(course_owner, req_record.course_id, p_data, session=db.session)
-            msg = f"Đã phê duyệt tạo chương mục mới cho khóa học #{req_record.course_id}."
-
-        elif (
-            req_record.change_type == "LESSON_STRUCTURE"
-            and p_data.get("action") == "REORDER_LEARNING_UNITS"
-        ):
-            from pwd301.services.lesson_service import reorder_learning_units
-
-            unit_ids = p_data.get("unit_ids") or []
-            if unit_ids:
-                reorder_learning_units(
-                    course_owner, req_record.course_id, unit_ids, session=db.session
-                )
-            msg = f"Đã phê duyệt sắp xếp lại chương mục cho khóa học #{req_record.course_id}."
-
-        elif req_record.change_type in ("LESSON_CONTENT", "LESSON_STRUCTURE"):
-            staged = (
-                db.session.query(Lesson).filter(Lesson.change_request_id == req_record.id).first()
-            )
-            if staged:
-                from pwd301.services.lesson_service import approve_course_change_request
-
-                approve_course_change_request(
-                    actor, req_record.id, review_reason=reason, session=db.session
-                )
-                reviewed_in_service = True
-            else:
-                lesson_id = req_record.target_id
-                if lesson_id:
-                    update_data = {
-                        k: v
-                        for k, v in p_data.items()
-                        if k
-                        in (
-                            "title",
-                            "summary",
-                            "markdown_content",
-                            "estimated_duration_minutes",
-                            "minimum_completion_seconds",
-                            "viewed_fraction_required",
-                            "required_for_periods_starting_at",
-                            "status",
-                        )
-                    }
-                    if update_data:
-                        update_lesson(course_owner, lesson_id, update_data, session=db.session)
-            msg = f"Đã phê duyệt thay đổi nội dung bài giảng #{req_record.target_id}."
-
-        elif req_record.change_type == "PREREQUISITE":
-            if p_data.get("action") == "REMOVE_PREREQUISITE":
-                from pwd301.services.enrollment_service import remove_course_prerequisite
-
-                remove_course_prerequisite(
-                    actor=course_owner,
-                    course_id=req_record.course_id,
-                    prerequisite_course_id=req_record.target_id,
-                    session=db.session,
-                )
-                msg = f"Đã phê duyệt xóa môn tiên quyết #{req_record.target_id}."
-            else:
-                add_course_prerequisite(
-                    actor=course_owner,
-                    course_id=req_record.course_id,
-                    prerequisite_course_id=req_record.target_id,
-                    session=db.session,
-                )
-                msg = f"Đã phê duyệt thiết lập môn tiên quyết #{req_record.target_id}."
-
-        elif req_record.change_type == "COURSE_METADATA":
-            from pwd301.services.course_service import update_course
-
-            update_course(
-                course_owner,
-                req_record.course_id,
-                p_data,
-                session=db.session,
-                is_approved_review=True,
-            )
-            msg = f"Đã phê duyệt cập nhật thông tin khóa học #{req_record.course_id}."
-
-        else:
-            msg = f"Đã phê duyệt yêu cầu thay đổi #{req_record.id}."
-
-        req_record.status = "APPROVED"
-        req_record.reviewed_by_user_id = actor.id
-        req_record.review_reason = reason or "Admin đã phê duyệt"
-        req_record.reviewed_at = now
-        req_record.applied_at = now
-        db.session.flush()
-
-        if req_record.requested_by:
-            with contextlib.suppress(Exception):
-                dispatch_notification(
-                    recipient_user=req_record.requested_by,
-                    event_type="COURSE_CHANGE_APPROVED",
-                    title=f"{subject} đã được phê duyệt",
-                    body=f"Quản trị viên đã phê duyệt thay đổi đối với {subject}.",
-                    action_url=action_url,
-                    category="COURSE",
-                    target_role="INSTRUCTOR",
-                    event_key=uuid.uuid5(
-                        uuid.NAMESPACE_URL,
-                        f"pwd301:course-change:{req_record.id}:COURSE_CHANGE_APPROVED:{req_record.requested_by_user_id}",
-                    ),
-                    session=db.session,
-                )
-
-    else:
-        staged = db.session.query(Lesson).filter(Lesson.change_request_id == req_record.id).first()
-        if staged:
-            from pwd301.services.lesson_service import reject_course_change_request
-
-            reject_course_change_request(
-                actor, req_record.id, review_reason=reason, session=db.session
-            )
-            reviewed_in_service = True
-
-        req_record.status = "REJECTED"
-        req_record.reviewed_by_user_id = actor.id
-        req_record.review_reason = reason or "Admin từ chối yêu cầu thay đổi"
-        req_record.reviewed_at = now
-        db.session.flush()
-
-        if req_record.requested_by:
-            with contextlib.suppress(Exception):
-                dispatch_notification(
-                    recipient_user=req_record.requested_by,
-                    event_type="COURSE_CHANGE_REJECTED",
-                    title=f"{subject} cần chỉnh sửa",
-                    body=(
-                        f"Thay đổi đối với {subject} chưa được duyệt. "
-                        f"Lý do: {reason or 'Chưa nêu lý do'}."
-                    ),
-                    action_url=action_url,
-                    category="COURSE",
-                    target_role="INSTRUCTOR",
-                    event_key=uuid.uuid5(
-                        uuid.NAMESPACE_URL,
-                        f"pwd301:course-change:{req_record.id}:COURSE_CHANGE_REJECTED:{req_record.requested_by_user_id}",
-                    ),
-                    session=db.session,
-                )
-        msg = f"Đã từ chối yêu cầu thay đổi #{req_record.id}."
-
-    if sibling_query is not None:
-        for superseded in sibling_query.filter(CourseChangeRequest.id < req_record.id).all():
-            superseded.status = "REJECTED"
-            superseded.reviewed_by_user_id = actor.id
-            superseded.review_reason = f"Đã được thay thế bởi yêu cầu #{req_record.id}"
-            superseded.reviewed_at = now
-
-    try:
-        if not reviewed_in_service:
-            record_change_request_review(db.session, actor, req_record, req_record.status)
-        db.session.commit()
-    except Exception:
-        db.session.rollback()
-        raise
-    return jsonify({"status": req_record.status, "message": msg}), 200
+    action = str(
+        payload.get("action") or payload.get("decision") or payload.get("status") or ""
+    ).lower()
+    if action in ("approve", "approved"):
+        return approve_course_changeset_route(req_id=req_id)
+    if action in ("reject", "rejected"):
+        return reject_course_changeset_route(req_id=req_id)
+    raise ValidationError("Action must be 'approve' or 'reject'.")
 
 
 @admin_bp.route("/change-requests/<int:req_id>/diff", methods=["GET"])
@@ -2747,193 +2301,76 @@ def get_course_changeset_diff_route(
     return jsonify(diff_data), 200
 
 
+def _displayed_course_changeset(req_id, course_id, payload):
+    from pwd301.services.authorization_service import _resolve_course
+    from pwd301.services.lesson_service import lock_course_change_request
+
+    displayed_id = req_id if req_id is not None else payload.get("request_id")
+    if not str(displayed_id).isdigit():
+        raise ConflictError("Thiếu định danh bản xét duyệt đang hiển thị; hãy tải lại.")
+    record = lock_course_change_request(db.session, int(displayed_id))
+    if course_id:
+        course = _resolve_course(course_id, session=db.session)
+        if course is None or record.course_id != course.id:
+            raise ConflictError("Bản xét duyệt không còn khớp khóa học đang hiển thị.")
+    require_review_identity(record, payload)
+    if record.status != "PENDING":
+        raise ConflictError("Bản gửi duyệt đã được xử lý hoặc rút lại; hãy tải lại.")
+    proposed = _load_change_request_payload(record)
+    if (
+        record.change_type != "COURSE_VERSION_CHANGESET"
+        and proposed.get("action") != "COURSE_VERSION_CHANGESET"
+    ):
+        raise ConflictError(
+            "Yêu cầu cũ chưa được hợp nhất; cần đối soát thành một bản gửi duyệt đầy đủ."
+        )
+    return record
+
+
 @admin_bp.route("/course-changes/<int:req_id>/approve", methods=["POST"])
 @admin_bp.route("/courses/<course_id>/changeset/approve", methods=["POST"])
 @admin_required
-def approve_course_changeset_route(
-    req_id: int | None = None, course_id: str | None = None
-) -> tuple[Response, int] | Response:
-    """Atomically approve and apply a course version changeset."""
+def approve_course_changeset_route(req_id: int | None = None, course_id: str | None = None):
     actor = require_authenticated_actor()
     if not actor.has_admin_permission("COURSE_REVIEW"):
-        raise ForbiddenError("Bạn không có quyền thẩm định yêu cầu thay đổi khóa học.")
-
+        raise ForbiddenError("Bạn không có quyền thẩm định khóa học.")
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
-    reason = str(payload.get("reason", "")).strip()
-
-    target_req = None
-    if req_id is not None:
-        target_req = db.session.get(CourseChangeRequest, req_id)
-    elif course_id:
-        from pwd301.services.authorization_service import _resolve_course
-
-        course = _resolve_course(course_id, session=db.session)
-        if course:
-            target_req = (
-                db.session.query(CourseChangeRequest)
-                .filter(
-                    CourseChangeRequest.course_id == course.id,
-                    CourseChangeRequest.status == "PENDING",
-                    CourseChangeRequest.target_type == "COURSE",
-                )
-                .order_by(CourseChangeRequest.id.desc())
-                .first()
-            )
-
-    if target_req is None:
-        raise ResourceNotFoundError("Yêu cầu thay đổi không tồn tại.")
-
-    from pwd301.services.lesson_service import lock_course_change_request
-
-    target_req = lock_course_change_request(db.session, target_req.id)
-    if target_req.status != "PENDING":
-        raise ValidationError(
-            f"Yêu cầu đang ở trạng thái '{target_req.status}', không thể phê duyệt."
-        )
-
-    try:
-        proposed = json.loads(target_req.proposed_payload_json or "{}")
-    except (json.JSONDecodeError, TypeError):
-        raise ValidationError("Change request payload must be a valid JSON object.") from None
-    if target_req.change_type != "COURSE_VERSION_CHANGESET" and not (
-        isinstance(proposed, dict) and proposed.get("action") == "COURSE_VERSION_CHANGESET"
-    ):
-        raise ValidationError(
-            "This endpoint approves course version changesets only. "
-            "Use the change-request review endpoint for other request types."
-        )
-
-    if target_req.requested_by_user_id == actor.id and not actor.is_primary_admin:
-        raise ForbiddenError("Bạn không được phép tự duyệt yêu cầu thay đổi do chính mình tạo ra.")
-
+    record = _displayed_course_changeset(req_id, course_id, payload)
+    if record.requested_by_user_id == actor.id and not actor.is_primary_admin:
+        raise ForbiddenError("Không được tự phê duyệt yêu cầu của mình.")
     from pwd301.services.lesson_service import approve_course_change_request
 
-    approved_req = approve_course_change_request(
+    approved = approve_course_change_request(
         actor,
-        target_req.id,
-        review_reason=reason or "Quản trị viên đã phê duyệt đợt cập nhật.",
+        record.id,
+        review_reason=str(payload.get("reason") or "Đã duyệt toàn bộ đợt cập nhật."),
         session=db.session,
     )
     db.session.commit()
-    return (
-        jsonify(
-            {
-                "success": True,
-                "status": "APPROVED",
-                "message": "Đã phê duyệt và áp dụng đợt cập nhật thành công.",
-                "change_request_id": approved_req.id,
-            }
-        ),
-        200,
-    )
+    return jsonify({"success": True, "status": "APPROVED", "change_request_id": approved.id}), 200
 
 
 @admin_bp.route("/course-changes/<int:req_id>/reject", methods=["POST"])
 @admin_bp.route("/courses/<course_id>/changeset/reject", methods=["POST"])
 @admin_required
-def reject_course_changeset_route(
-    req_id: int | None = None, course_id: str | None = None
-) -> tuple[Response, int] | Response:
-    """Reject a course version changeset with mandatory reason."""
+def reject_course_changeset_route(req_id: int | None = None, course_id: str | None = None):
     actor = require_authenticated_actor()
     if not actor.has_admin_permission("COURSE_REVIEW"):
-        raise ForbiddenError("Bạn không có quyền thẩm định yêu cầu thay đổi khóa học.")
-
+        raise ForbiddenError("Bạn không có quyền thẩm định khóa học.")
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
-    reason = str(payload.get("reason", "")).strip()
+    reason = str(payload.get("reason") or "").strip()
     if len(reason) < 5:
-        raise ValidationError("Lý do từ chối yêu cầu bắt buộc tối thiểu 5 ký tự.")
+        raise ValidationError("Lý do từ chối cần ít nhất 5 ký tự.")
+    record = _displayed_course_changeset(req_id, course_id, payload)
+    if record.requested_by_user_id == actor.id and not actor.is_primary_admin:
+        raise ForbiddenError("Không được tự thẩm định yêu cầu của mình.")
+    from pwd301.services.lesson_service import reject_course_change_request
 
-    target_req = None
-    if req_id is not None:
-        target_req = db.session.get(CourseChangeRequest, req_id)
-    elif course_id:
-        from pwd301.services.authorization_service import _resolve_course
-
-        course = _resolve_course(course_id, session=db.session)
-        if course:
-            target_req = (
-                db.session.query(CourseChangeRequest)
-                .filter(
-                    CourseChangeRequest.course_id == course.id,
-                    CourseChangeRequest.status == "PENDING",
-                    CourseChangeRequest.target_type == "COURSE",
-                )
-                .order_by(CourseChangeRequest.id.desc())
-                .first()
-            )
-
-    if target_req is None:
-        raise ResourceNotFoundError("Yêu cầu thay đổi không tồn tại.")
-
-    if target_req.status != "PENDING":
-        raise ValidationError(
-            f"Yêu cầu đang ở trạng thái '{target_req.status}', không thể từ chối."
-        )
-
-    from pwd301.models.notification_audit import AuditEvent
-    from pwd301.services.notification_service import dispatch_notification
-
-    course = target_req.course
-    if course is None or course.public_id is None:
-        raise ResourceNotFoundError("Khóa học của yêu cầu thay đổi không tồn tại.")
-
-    course_public_id = str(course.public_id)
-    course_code = course.course_code or course_public_id
-    now = utc_now()
-    target_req.status = "REJECTED"
-    target_req.reviewed_by_user_id = actor.id
-    target_req.review_reason = reason
-    target_req.reviewed_at = now
-
-    actor_roles = ",".join(sorted(actor.role_codes)) if actor and actor.role_codes else "ADMIN"
-    audit = AuditEvent(
-        actor_user_id=actor.id,
-        actor_roles_snapshot=actor_roles,
-        action="COURSE_CHANGESET_REJECTED",
-        target_type="COURSE",
-        target_id=target_req.course_id,
-        reason=reason,
-        performed_as_admin=True,
-        after_json=json.dumps(
-            {
-                "course_id": course_public_id,
-                "change_request_id": target_req.id,
-                "reason": reason,
-            },
-            ensure_ascii=False,
-        ),
-        created_at=now,
+    rejected = reject_course_change_request(
+        actor, record.id, review_reason=reason, session=db.session
     )
-    db.session.add(audit)
-
-    if target_req.requested_by:
-        with contextlib.suppress(Exception):
-            dispatch_notification(
-                recipient_user=target_req.requested_by,
-                event_type="COURSE_CHANGE_REJECTED",
-                title=f"Đợt cập nhật khóa học {course_code} cần chỉnh sửa lại",
-                body=f"Quản trị viên đã từ chối đợt cập nhật. Lý do: {reason}",
-                action_url=f"#/instructor/courses/manage?id={course_public_id}",
-                category="COURSE",
-                target_role="INSTRUCTOR",
-                payload={
-                    "course_id": course_public_id,
-                    "change_request_id": target_req.id,
-                    "reason": reason,
-                },
-                event_key=uuid.uuid5(
-                    uuid.NAMESPACE_URL,
-                    f"pwd301:course-change:{target_req.id}:COURSE_CHANGE_REJECTED:{target_req.requested_by_user_id}",
-                ),
-                session=db.session,
-            )
-
     db.session.commit()
-    return (
-        jsonify({"success": True, "status": "REJECTED", "message": "Đã từ chối đợt cập nhật."}),
-        200,
-    )
+    return jsonify({"success": True, "status": "REJECTED", "change_request_id": rejected.id}), 200
 
 
 @admin_bp.route("/courses/<course_id>/lessons/<lesson_id>/flag", methods=["POST"])

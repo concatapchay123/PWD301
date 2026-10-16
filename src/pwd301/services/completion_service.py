@@ -16,7 +16,7 @@ import json
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 import sqlalchemy as sa
 from sqlalchemy.orm import Session, scoped_session
@@ -164,6 +164,10 @@ def set_course_completion_rule(
     sess = session if session is not None else db.session
     course = require_course_manager(actor, course_id, session=sess)
 
+    from pwd301.services.course_workflow_service import ensure_course_authoring, should_stage
+
+    course = ensure_course_authoring(actor, course, session=sess)
+
     if course.deleted_at is not None or course.status in ("TRASH", "ARCHIVED"):
         raise CompletionRuleValidationError(
             f"Cannot configure completion rules for course in '{course.status}' status."
@@ -193,6 +197,39 @@ def set_course_completion_rule(
             min_pct = Decimal(str(round(flt_val, 2)))
 
     rule = get_or_create_default_completion_rule(course.id, session=sess)
+
+    if should_stage(actor, course, sess):
+        from pwd301.services.course_workflow_service import AuthoringProjection, stage_course_fields
+
+        allowed = {
+            "require_all_required_lessons",
+            "require_required_assessments",
+            "minimum_progress_percent",
+            "minimum_grade_score",
+            "allow_certificate",
+            "completion_grace_days",
+        }
+        proposed = {key: value for key, value in payload.items() if key in allowed}
+        for key in (
+            "require_all_required_lessons",
+            "require_required_assessments",
+            "allow_certificate",
+        ):
+            if key in proposed and not isinstance(proposed[key], bool):
+                raise CompletionRuleValidationError(f"{key} must be a boolean.")
+        if "minimum_grade_score" in proposed:
+            try:
+                proposed["minimum_grade_score"] = float(proposed["minimum_grade_score"])
+            except (ValueError, TypeError):
+                raise CompletionRuleValidationError(
+                    "minimum_grade_score must be numeric."
+                ) from None
+            if not 0 <= proposed["minimum_grade_score"] <= 10:
+                raise CompletionRuleValidationError("minimum_grade_score must be between 0 and 10.")
+        stage_course_fields(actor, course, "completion_rules", proposed, session=sess)
+        if session is None:
+            sess.commit()
+        return cast(CourseCompletionRule, AuthoringProjection(rule, proposed))
 
     # Parse existing course completion requirements JSON
     req_dict: dict[str, Any] = {}

@@ -56,9 +56,6 @@ def changeset_rest_env(app: Flask) -> dict[str, Any]:
         },
         session=sess,
     )
-    course.status = "PUBLISHED"
-    sess.flush()
-
     lesson1 = create_lesson(
         actor=inst,
         course_id=course.id,
@@ -71,6 +68,7 @@ def changeset_rest_env(app: Flask) -> dict[str, Any]:
         session=sess,
     )
     lesson1.status = "PUBLISHED"
+    course.status = "PUBLISHED"
     sess.commit()
 
     return {
@@ -174,7 +172,16 @@ def test_rest_changeset_submit_and_discard_lifecycle(
     assert st_data["status"] == "PENDING"
     assert st_data["has_metadata_changes"] is True
 
-    # 4. Discard changeset via REST
+    # Pending submissions freeze editing and require displayed-identity withdrawal.
+    blocked = client.post(f"/api/courses/{course.public_id}/changeset/discard", headers=headers)
+    assert blocked.status_code == 409
+    withdrawn = client.post(
+        f"/api/courses/{course.public_id}/changeset/retract",
+        headers=headers,
+        json={"request_id": st_data["request_id"], "review_version": st_data["review_version"]},
+    )
+    assert withdrawn.status_code == 200, withdrawn.get_json()
+    # 4. Discard the restored draft.
     resp_disc = client.post(f"/api/courses/{course.public_id}/changeset/discard", headers=headers)
     assert resp_disc.status_code == 200
 

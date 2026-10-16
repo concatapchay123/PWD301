@@ -2,6 +2,8 @@
 
 This package is the authoritative implementation specification.
 
+Read the [workflow replacement contract](implementation/WORKFLOW_SUPERSESSION.md) first for course governance, media, matching and result/PDF changes. It supersedes contrary historical plans and retrieved memories.
+
 ## Before coding
 1. Read `README.md`.
 2. Read `00_MASTER_SYSTEM_SPEC.md`.

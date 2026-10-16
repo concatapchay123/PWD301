@@ -7,20 +7,20 @@ const vm = require('node:vm');
 const source = fs.readFileSync(path.resolve(__dirname, '../../frontend/assets/js/views/student.js'), 'utf8');
 
 test('preview mini quiz gives local feedback without writing learner progress or completion', async () => {
-  const start = source.indexOf('checkQuizBtn.onclick = async () => {');
+  const start = source.indexOf('checkBtn.onclick = async () => {');
   const end = source.indexOf('\n              };', start) + '\n              };'.length;
   const classList = { add() {}, remove() {} };
   const explanation = { classList, innerHTML: '' };
-  const card = { querySelector: selector => selector.includes(':checked') ? { value: 'true' } : explanation, querySelectorAll: () => [] };
+  const card = { dataset: { qidx: '0' }, classList, querySelector: selector => selector.includes(':checked') ? { value: 'true' } : explanation, querySelectorAll: () => [] };
   const banner = { innerHTML: '' };
   const writes = [];
   const context = {
-    isPreview: true, checkQuizBtn: { classList }, resetQuizBtn: { classList }, nextQuizBtn: null,
+    isPreview: true, checkBtn: { classList }, resetBtn: { classList }, nextBtn: null, finishBtn: null, closeXBtn: null, banner,
     lesson: { quiz: [{ type: 'TRUE_FALSE', correct_value: true }] },
-    quizSection: { querySelector: () => card, querySelectorAll: () => [card] },
-    totalQuizSlides: 1, quizPassingPercent: 80, currentQuizSlide: 0, hasPassedQuiz: false,
+    modalWrapper: { querySelector: () => card, querySelectorAll: () => [card] },
+    totalSlides: 1, quizPassingPercent: 80, currentQuizSlide: 0, hasPassedQuiz: false,
     activeItem: { id: 'lesson' }, hasVideo: true, setLessonCompleted: () => writes.push('local-completion'),
-    updateQuizSlideView() {}, UI: { escapeHtml: String, showToast() {} },
+    updateQuizSlideView() {}, checkAndUnlockLesson() {}, UI: { escapeHtml: String, showToast() {} },
     document: { getElementById: id => id === 'cisco-quiz-score-banner' ? banner : { dataset: { lessonId: 'lesson' } } },
     ApiClient: {
       recordLessonProgress: async () => { writes.push('progress'); },
@@ -28,10 +28,10 @@ test('preview mini quiz gives local feedback without writing learner progress or
     },
   };
   vm.runInNewContext(source.slice(start, end), context);
-  await context.checkQuizBtn.onclick();
+  await context.checkBtn.onclick();
   assert.deepEqual(writes, []);
   assert.match(explanation.innerHTML, /Chính xác/);
-  assert.match(banner.innerHTML, /Xem thử/);
+  assert.match(banner.innerHTML, /100|hoàn thành|đạt/i);
 });
 
 test('preview revision opt-in cannot change a learners active revision', async () => {

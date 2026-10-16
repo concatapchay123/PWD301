@@ -468,6 +468,17 @@ class CourseChangeRequest(Base):
             sqlite_where=sa.text("status='PENDING'"),
         ),
         sa.Index("ix_course_changes_course", "course_id", "created_at"),
+        sa.Index(
+            "uq_course_changeset_active",
+            "course_id",
+            unique=True,
+            mssql_where=sa.text(
+                "change_type='COURSE_VERSION_CHANGESET' AND status IN ('DRAFT','PENDING')"
+            ),
+            sqlite_where=sa.text(
+                "change_type='COURSE_VERSION_CHANGESET' AND status IN ('DRAFT','PENDING')"
+            ),
+        ),
     )
 
     course = relationship("Course", foreign_keys=[course_id], backref="change_requests")
@@ -494,6 +505,11 @@ class LearningUnit(Base):
         nullable=False,
     )
     title = db.Column(sa.Unicode(200), nullable=False)
+    change_request_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("course_change_requests.id", name="fk_learning_units_change_request_id"),
+        nullable=True,
+    )
     position = db.Column(sa.Integer, nullable=False)
     created_at = db.Column(
         UTCDateTime,

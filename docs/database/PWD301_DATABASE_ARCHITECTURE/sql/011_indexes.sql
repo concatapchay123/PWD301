@@ -51,6 +51,9 @@ GO
 
 CREATE INDEX ix_course_changes_course ON course_change_requests (course_id, created_at);
 GO
+CREATE UNIQUE INDEX uq_course_changeset_active ON course_change_requests (course_id)
+WHERE change_type='COURSE_VERSION_CHANGESET' AND status IN ('DRAFT','PENDING');
+GO
 
 CREATE INDEX ix_lessons_course_status_position ON lessons (course_id, status, position);
 GO
@@ -89,6 +92,8 @@ CREATE INDEX ix_questions_bank_filter ON questions (course_id, lesson_id, diffic
 GO
 
 CREATE INDEX ix_questions_usage ON questions (course_id, last_used_at, usage_count);
+CREATE UNIQUE INDEX ux_questions_working_revision ON questions (change_request_id, previous_question_id)
+WHERE change_request_id IS NOT NULL AND previous_question_id IS NOT NULL;
 GO
 
 CREATE INDEX ix_question_revisions_question ON question_revisions (question_id, revision_no);

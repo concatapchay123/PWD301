@@ -29,7 +29,12 @@ from pwd301.services.enrollment_service import (
     leave_course,
 )
 from pwd301.services.exceptions import CompletionRuleValidationError
-from pwd301.services.lesson_service import create_lesson, record_lesson_progress
+from pwd301.services.lesson_service import (
+    approve_course_change_request,
+    create_lesson,
+    record_lesson_progress,
+    submit_course_changeset,
+)
 from pwd301.services.user_service import assign_role_to_user, register_user
 from tests.conftest import login_web_user
 
@@ -125,6 +130,9 @@ def _create_published_lesson(
         "status": "PUBLISHED",
     }
     lesson = create_lesson(instructor, course.id, data)
+    admin = next(user for user in db.session.query(User).all() if user.is_admin)
+    request = submit_course_changeset(instructor, course.id, {})
+    approve_course_change_request(admin, request.id, session=db.session)
     db.session.commit()
     return lesson
 
@@ -169,9 +177,14 @@ def test_set_course_completion_rule_valid(
     assert updated.require_all_required_lessons is False
     assert updated.require_required_assessments is False
     assert float(updated.minimum_progress_percent) == 75.50
-    assert updated.updated_by_user_id == instructor_user.id
+    assert get_or_create_default_completion_rule(course.id).minimum_progress_percent == 100
+    request = submit_course_changeset(instructor_user, course.id, {})
+    approve_course_change_request(admin_user, request.id, session=db.session)
+    db.session.commit()
+    updated = get_or_create_default_completion_rule(course.id)
+    assert updated.updated_by_user_id == admin_user.id
 
-    # Verify AuditEvent
+    # The applied rule is audited by the administrator; the aggregate keeps its requester.
     audit = (
         db.session.query(AuditEvent)
         .filter(
@@ -182,8 +195,8 @@ def test_set_course_completion_rule_valid(
         .first()
     )
     assert audit is not None
-    assert audit.actor_user_id == instructor_user.id
-    assert audit.reason == "Relaxing requirements for pilot cohort"
+    assert audit.actor_user_id == admin_user.id
+    assert request.requested_by_user_id == instructor_user.id
 
 
 def test_set_course_completion_rule_invalid_percent(
@@ -540,6 +553,8 @@ def test_enrollment_prerequisite_honors_durable_summary(
 
     # Set Course A as prerequisite for Course B
     add_course_prerequisite(instructor_user, course_b.id, course_a.id)
+    request = submit_course_changeset(instructor_user, course_b.id, {})
+    approve_course_change_request(admin_user, request.id, session=db.session)
     db.session.commit()
 
     l1 = _create_published_lesson(instructor_user, course_a, "L1", 1)

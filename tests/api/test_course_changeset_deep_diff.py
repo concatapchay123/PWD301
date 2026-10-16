@@ -165,3 +165,121 @@ def test_deep_diff_categorization_and_lesson_move(deep_diff_env: dict[str, Any])
     assert len(quiz_changes) > 0
     added_quizzes = [q for q in quiz_changes if q.get("change_type") == "ADDED"]
     assert any("Việt Nam có thủ đô là [___]." in q.get("question", "") for q in added_quizzes)
+
+
+def test_deep_diff_detects_question_bank_revisions(deep_diff_env: dict[str, Any]) -> None:
+    """A draft with question revisions produces question_changes and nonzero total_changes_count."""
+    sess: Session = db.session
+    inst = deep_diff_env["instructor"]
+    course = deep_diff_env["course"]
+
+    from pwd301.services.question_bank_service import create_question
+
+    q = create_question(
+        actor=inst,
+        course_id=course.id,
+        payload={
+            "question_type": "MULTIPLE_CHOICE",
+            "content": "Câu hỏi ngân hàng mới trong bản nháp?",
+            "explanation": "Giải thích chi tiết",
+            "difficulty": "REMEMBER",
+            "choices": [
+                {"content": "Đáp án đúng", "is_correct": True, "position": 1},
+                {"content": "Đáp án sai", "is_correct": False, "position": 2},
+            ],
+        },
+        session=sess,
+    )
+    sess.commit()
+
+    diff = get_course_changeset_diff(
+        actor=inst, change_request_id_or_course_id=course.id, session=sess
+    )
+    assert "question_changes" in diff
+    assert len(diff["question_changes"]) > 0
+    q_change = next(
+        c for c in diff["question_changes"] if "Câu hỏi ngân hàng mới" in c.get("content", "")
+    )
+    assert q_change["change_type"] == "ADDED"
+    assert q_change["question_type"] == "MULTIPLE_CHOICE"
+    assert q_change["explanation"] == "Giải thích chi tiết"
+    assert diff["total_changes_count"] > 0
+
+
+def test_deep_diff_detects_prerequisite_changes_with_human_readable_titles(
+    deep_diff_env: dict[str, Any],
+) -> None:
+    """Prerequisite changes show course code and title, not just raw UUIDs."""
+    sess: Session = db.session
+    inst = deep_diff_env["instructor"]
+    course = deep_diff_env["course"]
+
+    prereq_course = create_course(
+        actor=inst,
+        data={
+            "course_code": "PRE101",
+            "title": "Môn Tiên Quyết Mẫu",
+            "description": "Mô tả tiên quyết.",
+            "duration_hours": 15,
+        },
+        session=sess,
+    )
+    prereq_course.status = "PUBLISHED"
+    sess.commit()
+
+    from pwd301.services.course_workflow_service import stage_prerequisite
+
+    stage_prerequisite(
+        actor=inst, course=course, prerequisite=prereq_course, remove=False, session=sess
+    )
+    sess.commit()
+
+    diff = get_course_changeset_diff(
+        actor=inst, change_request_id_or_course_id=course.id, session=sess
+    )
+    assert "prerequisite_changes" in diff
+    assert len(diff["prerequisite_changes"]) > 0
+    p_change = diff["prerequisite_changes"][0]
+    assert p_change["change_type"] == "ADDED"
+    assert p_change["course_code"] == "PRE101"
+    assert p_change["title"] == "Môn Tiên Quyết Mẫu"
+    assert "PRE101" in p_change["description"]
+    assert diff["total_changes_count"] > 0
+
+
+def test_deep_diff_detects_standalone_file_assets(deep_diff_env: dict[str, Any]) -> None:
+    """Standalone accepted files in draft are reported with file_name and size."""
+    import io
+    from unittest.mock import patch
+
+    from pwd301.services.file_service import store_file_stream
+    from pwd301.services.scanner_service import ScanVerdict
+
+    sess: Session = db.session
+    inst = deep_diff_env["instructor"]
+    course = deep_diff_env["course"]
+
+    scan = ScanVerdict(status="PASS", engine_name="fixture")
+    with (
+        patch("pwd301.services.file_service.scan_file_all_engines", return_value=[scan]),
+        patch("pwd301.services.file_service.scan_blob_file", return_value=scan),
+    ):
+        fa = store_file_stream(
+            inst,
+            course.id,
+            io.BytesIO(b"Giao trinh chuyen sau noi dung"),
+            "GiaoTrinh_ChuyenSau.pdf",
+            session=sess,
+        )
+
+    sess.commit()
+
+    diff = get_course_changeset_diff(
+        actor=inst, change_request_id_or_course_id=course.id, session=sess
+    )
+    assert "file_changes" in diff
+    assert len(diff["file_changes"]) > 0
+    f_change = diff["file_changes"][0]
+    assert f_change["change_type"] == "ADDED"
+    assert f_change["file_name"] == "GiaoTrinh_ChuyenSau.pdf"
+    assert diff["total_changes_count"] > 0

@@ -55,6 +55,16 @@ class Assessment(Base):
         sa.ForeignKey("users.id", name="fk_assessments_creator_user_id"),
         nullable=True,
     )
+    change_request_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("course_change_requests.id", name="fk_assessments_change_request_id"),
+        nullable=True,
+    )
+    previous_assessment_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("assessments.id", name="fk_assessments_previous_assessment_id"),
+        nullable=True,
+    )
     title = db.Column(sa.Unicode(200), nullable=False)
     description = db.Column(NVarCharMax, nullable=True)
     assessment_type = db.Column(sa.String(20), nullable=False)

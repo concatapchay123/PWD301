@@ -5,10 +5,12 @@ import hashlib
 import pytest
 
 from pwd301.extensions import db
+from pwd301.models.course import Course
 from pwd301.models.file_import import FileAsset, FileBlob, FileRevision, FileScanResult
 from pwd301.models.identity import Role, UserRole
 from pwd301.models.types import utc_now
 from pwd301.services.course_service import create_course
+from pwd301.services.enrollment_service import enroll_student
 from pwd301.services.user_service import assign_role_to_user, register_user
 from tests.conftest import login_web_user
 
@@ -23,6 +25,7 @@ def video_env(app):
         ("owner", "INSTRUCTOR"),
         ("foreign", "INSTRUCTOR"),
         ("reviewer", "ADMIN"),
+        ("primary", "ADMIN"),
         ("monitor", "ADMIN"),
         ("student", "STUDENT"),
     ):
@@ -36,11 +39,11 @@ def video_env(app):
                 )
                 .one()
             )
-            assignment.assignment_reason = (
-                "SUB_ROLE:ADMIN_COURSE_REVIEW"
-                if name == "reviewer"
-                else "SUB_ROLE:ADMIN_SYSTEM_MONITORING"
-            )
+            assignment.assignment_reason = {
+                "reviewer": "SUB_ROLE:ADMIN_COURSE_REVIEW",
+                "primary": "SUB_ROLE:ADMIN_PRIMARY",
+                "monitor": "SUB_ROLE:ADMIN_SYSTEM_MONITORING",
+            }[name]
         users[name] = user
     course = create_course(users["owner"], {"course_code": "STREAM090", "title": "Video reviewer"})
     content = bytes(range(256)) * 4
@@ -88,7 +91,7 @@ def video_env(app):
     return users, asset, revision, scan, content
 
 
-@pytest.mark.parametrize("role", ["owner", "reviewer"])
+@pytest.mark.parametrize("role", ["owner", "reviewer", "primary"])
 def test_reviewer_full_stream_is_inline_and_private(client, video_env, role):
     users, asset, _, _, content = video_env
     login_web_user(client, users[role])
@@ -170,3 +173,63 @@ def test_invalid_bearer_never_falls_back_to_reviewer_cookie(client, video_env):
     assert client.get(
         f"/api/files/{asset.public_id}/stream", headers={"Authorization": "Bearer invalid"}
     ).status_code in (401, 403)
+
+
+@pytest.mark.parametrize("role", ["reviewer", "primary"])
+def test_admin_reviewers_can_stream_partial_video_bytes(client, video_env, role):
+    users, asset, _, _, content = video_env
+    login_web_user(client, users[role])
+    response = client.get(f"/api/files/{asset.public_id}/stream", headers={"Range": "bytes=0-5"})
+    assert response.status_code == 206
+    assert response.data == content[:6]
+
+
+def _enroll_video_student(video_env, verified):
+    users, asset, revision, _, _ = video_env
+    course = db.session.get(Course, asset.course_id)
+    course.status = "PUBLISHED"
+    student = users["student"]
+    student.email_verified_at = utc_now() if verified else None
+    db.session.commit()
+    enroll_student(student, course.id)
+    return student, asset, revision
+
+
+@pytest.mark.parametrize("verified", [False, True])
+@pytest.mark.parametrize("endpoint", ["stream", "download"])
+def test_enrolled_students_cannot_fetch_raw_video(client, video_env, verified, endpoint):
+    student, asset, _ = _enroll_video_student(video_env, verified)
+    login_web_user(client, student)
+
+    response = client.get(
+        f"/api/files/{asset.public_id}/{endpoint}", headers={"Range": "bytes=0-5"}
+    )
+
+    assert response.status_code == 403
+    assert response.json["error"]["code"] != "EMAIL_NOT_VERIFIED"
+    assert response.data != video_env[-1][:6]
+
+
+@pytest.mark.parametrize("verified", [False, True])
+@pytest.mark.parametrize("endpoint", ["stream", "download"])
+def test_enrolled_students_can_read_scanned_documents_without_email_gate(
+    client, video_env, verified, endpoint
+):
+    student, asset, revision = _enroll_video_student(video_env, verified)
+    revision.blob.detected_mime_type = "application/pdf"
+    revision.detected_mime_type = "application/pdf"
+    revision.original_filename = "Bài học.pdf"
+    asset.display_name = "Bài học.pdf"
+    db.session.commit()
+    login_web_user(client, student)
+
+    response = client.get(f"/api/files/{asset.public_id}/{endpoint}")
+
+    assert response.status_code == 200
+    assert response.data == video_env[-1]
+    assert response.mimetype == "application/pdf"
+
+
+def test_anonymous_cannot_stream_scanned_video(client, video_env):
+    _, asset, _, _, _ = video_env
+    assert client.get(f"/api/files/{asset.public_id}/stream").status_code in (401, 403)

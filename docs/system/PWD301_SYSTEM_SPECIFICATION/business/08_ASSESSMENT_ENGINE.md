@@ -30,3 +30,7 @@ State violations return a stable conflict/state error; authorization failures di
 
 ## Tests
 Trace to `../testing/03_BUSINESS_RULE_TEST_MATRIX.md`, domain-specific integration tests and `../testing/11_END_TO_END_SCENARIOS.md`.
+
+## Result and presentation replacement
+
+The [replacement contract](../implementation/WORKFLOW_SUPERSESSION.md) governs authoritative attempts/counts/configured display score, detail masking with released totals, empty PDF cells and offline vector math. Score release takes priority; NEVER retains no question-detail output.

@@ -238,12 +238,11 @@ def test_attempt_pdf_renders_latex_math_cleanly():
     reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
     full_text = "".join(page.extract_text() for page in reader.pages)
 
-    # Check math symbols rendered
-    assert "∫" in full_text
-    assert "√" in full_text
-    assert "π" in full_text
-    assert "±" in full_text
-    assert "≤" in full_text
+    # Math glyphs are actual vector outlines; prose remains extractable.
+    normalized_text = " ".join(full_text.split())
+    assert "Tính tích phân" in normalized_text
+    assert "Kết quả là" in normalized_text
+    assert b" c" in reader.pages[-1].get_contents().get_data()
     # Ensure raw LaTeX tokens were converted
     assert r"\frac" not in full_text
     assert r"\sqrt" not in full_text
@@ -282,13 +281,96 @@ def test_attempt_pdf_hides_results_when_allow_student_view_results_is_false():
     reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
     full_text = "".join(page.extract_text() for page in reader.pages)
 
-    # Check status badge is "ĐÃ GHI NHẬN BÀI NỘP" instead of "ĐẠT CHUẨN MÔN HỌC"
-    assert "ĐÃ GHI NHẬN BÀI NỘP" in full_text
-    assert "ĐẠT CHUẨN MÔN HỌC" not in full_text
+    # Hiding question details preserves the released total and pass/fail result.
+    assert "ĐẠT CHUẨN MÔN HỌC" in full_text
 
     # Student selected choice text, correctness and awarded score are masked
     assert "TLS 1.3" not in full_text
-    assert "8.5 / 10" not in full_text
-    assert "85%" not in full_text
+    assert "8.5 / 10" in full_text
+    assert "85%" in full_text
     # Question text remains visible
     assert "Giao thức nào cung cấp mã hóa đầu cuối?" in full_text
+
+
+def test_disabled_pdf_has_three_truly_empty_question_cells(monkeypatch):
+    from pwd301.services import result_pdf_service
+
+    tables = []
+    table_type = result_pdf_service.Table
+
+    def capture_table(rows, *args, **kwargs):
+        table = table_type(rows, *args, **kwargs)
+        tables.append(rows)
+        return table
+
+    monkeypatch.setattr(result_pdf_service, "Table", capture_table)
+    result_pdf_service.build_attempt_result_pdf(
+        {
+            "allow_student_view_results": False,
+            "score_status": "RELEASED",
+            "raw_score": 8,
+            "max_score": 10,
+            "passed": True,
+            "questions": [
+                {
+                    "content": "VISIBLE QUESTION",
+                    "student_answer_text": "SECRET",
+                    "awarded_points": 8,
+                }
+            ],
+        }
+    )
+    rows = next(rows for rows in tables if len(rows) > 1 and len(rows[0]) == 5)
+    assert [
+        cell.getPlainText() if hasattr(cell, "getPlainText") else cell for cell in rows[1][-3:]
+    ] == ["", "", ""]
+
+
+def test_pdf_math_is_true_offline_vector_and_mixed_text_wraps():
+    from reportlab.lib.styles import ParagraphStyle
+
+    from pwd301.services.pdf_math_service import math_paragraph, render_math_svg
+
+    expression = r"\lim_{x\to0}\frac{\sin x}{x}+\begin{pmatrix}1&2\\3&4\end{pmatrix}"
+    svg = render_math_svg(expression)
+    assert b"<path" in svg
+    assert b"<script" not in svg
+    assert b"http://" not in svg.replace(b"http://www.w3.org/2000/svg", b"")
+    flowable = math_paragraph(
+        "Dẫn giải " + f"${expression}$" + " kết thúc " * 20,
+        ParagraphStyle("MathTest", fontName="Helvetica", fontSize=9, leading=12),
+    )
+    assert flowable.wrap(150, 800)[1] > 24
+    assert len(flowable.split(150, 35)) == 2
+
+
+def test_offline_math_rejects_external_content_and_oversized_input():
+    import pytest
+
+    from pwd301.services.pdf_math_service import render_math_svg
+
+    for expression in (r"\href{https://example.org}{x}", r"\require{html}", "x" * 5000):
+        with pytest.raises(ValueError):
+            render_math_svg(expression)
+
+
+def test_offline_math_preserves_vietnamese_text_inside_formula():
+    from pwd301.services.pdf_math_service import render_math_svg
+
+    assert b"<text" in render_math_svg(r"\text{nếu }x>0")
+    _, text = _pdf_text(
+        build_attempt_result_pdf(
+            {
+                "raw_score": 1,
+                "max_score": 1,
+                "passed": True,
+                "questions": [
+                    {
+                        "content": r"Xét $f(x)=x^2\text{ nếu }x>0$.",
+                        "student_answer_text": r"$1\text{ nếu }x=1$",
+                    }
+                ],
+            }
+        )
+    )
+    assert "ế" in text

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import re
 import uuid
 
 import pytest
@@ -20,6 +21,7 @@ from pwd301.services.lesson_service import (
     create_lesson,
     create_lesson_change_request,
     queue_lesson_resource_change,
+    submit_course_changeset,
 )
 from pwd301.services.user_service import assign_role_to_user, register_user
 from tests.conftest import login_web_user
@@ -97,12 +99,7 @@ def test_approved_lesson_revision_inherits_resources(
         },
         session=sess,
     )
-    change_course_status(instructor_user, course.id, "SUBMITTED_FOR_REVIEW", session=sess)
-    change_course_status(admin_user, course.id, "APPROVED", session=sess)
-    change_course_status(admin_user, course.id, "PUBLISHED", session=sess)
-    sess.commit()
-
-    # Attach video file asset to lesson
+    # Include the baseline video before the first complete course approval.
     video_asset = store_file_stream(
         actor=instructor_user,
         course_id=course.id,
@@ -128,6 +125,10 @@ def test_approved_lesson_revision_inherits_resources(
     sess.commit()
 
     assert len(lesson.resources) == 1
+    change_course_status(instructor_user, course.id, "SUBMITTED_FOR_REVIEW", session=sess)
+    change_course_status(admin_user, course.id, "APPROVED", session=sess)
+    change_course_status(admin_user, course.id, "PUBLISHED", session=sess)
+    sess.commit()
 
     # Instructor submits lesson edit via CourseChangeRequest
     req, staged_lesson = create_lesson_change_request(
@@ -148,7 +149,9 @@ def test_approved_lesson_revision_inherits_resources(
     # Staged lesson should already inherit the video resource
     assert len(staged_lesson.resources) >= 1
 
-    # Admin approves change request
+    # Seal the complete shared draft before Admin approval.
+    submitted = submit_course_changeset(instructor_user, course.id, {}, session=sess)
+    assert submitted.id == req.id
     approved_req = approve_course_change_request(
         actor=admin_user,
         change_request_id=req.id,
@@ -179,14 +182,10 @@ def test_approved_lesson_revision_inherits_resources(
     assert len(serialized["video_urls"]) >= 1
 
 
-def test_resource_change_request_attaches_to_active_published_lesson_when_target_historical(
+def test_resource_and_content_edits_share_one_sealed_course_review(
     client: FlaskClient, app: Flask, instructor_user: User, admin_user: User
 ) -> None:
-    """If an instructor uploaded a video to a lesson that was subsequently updated to a newer
-
-    PUBLISHED revision before the video change request was reviewed, approving the video request
-    must attach the video to the active PUBLISHED revision.
-    """
+    """Video and content edits remain private and publish together in one atomic review."""
     sess = db.session
     unique = uuid.uuid4().hex[:6]
     course = create_course(
@@ -242,7 +241,7 @@ def test_resource_change_request_attaches_to_active_published_lesson_when_target
     )
     sess.commit()
 
-    # Now an edit is created and approved BEFORE res_req is approved
+    # Content edits accumulate in the same working draft as the resource attachment.
     edit_req, lesson2 = create_lesson_change_request(
         actor=instructor_user,
         course_id=course.id,
@@ -256,24 +255,33 @@ def test_resource_change_request_attaches_to_active_published_lesson_when_target
         session=sess,
     )
     sess.commit()
-    approve_course_change_request(admin_user, edit_req.id, session=sess)
+    assert edit_req.id == res_req.id
+    assert edit_req.status == "DRAFT"
+    assert len(lesson1.resources) == 0
+    assert any(r.file_asset_id == video_asset.id for r in lesson2.resources)
+    submitted = submit_course_changeset(instructor_user, course.id, {}, session=sess)
+    assert submitted.id == res_req.id
     sess.commit()
 
-    sess.refresh(lesson1)
-    sess.refresh(lesson2)
-    assert lesson1.status == "HISTORICAL"
-    assert lesson2.status == "PUBLISHED"
-
-    # Now Admin approves res_req via API endpoint
+    # One displayed review identity approves both edits together.
     login_web_user(client, admin_user)
+    displayed = client.get(f"/admin/change-requests/{res_req.id}/diff").get_json()
     resp = client.post(
         f"/admin/change-requests/{res_req.id}/review",
-        json={"action": "approve", "reason": "Duyệt video"},
+        json={
+            "action": "approve",
+            "reason": "Duyệt video",
+            "request_id": res_req.id,
+            "review_version": displayed["review_version"],
+        },
     )
     assert resp.status_code == 200
 
     # Verify that the active PUBLISHED lesson2 received the attached video!
     sess.refresh(lesson2)
+    sess.refresh(lesson1)
+    assert lesson1.status == "HISTORICAL"
+    assert lesson2.status == "PUBLISHED"
     assert any(r.file_asset_id == video_asset.id for r in lesson2.resources)
 
 
@@ -327,6 +335,7 @@ def test_instructor_curriculum_serialization_filters_historical_lessons(
         session=sess,
     )
     sess.commit()
+    submit_course_changeset(instructor_user, course.id, {}, session=sess)
     approve_course_change_request(admin_user, edit_req.id, session=sess)
     sess.commit()
 
@@ -406,7 +415,7 @@ def test_student_views_multi_video_lesson_and_anti_seek_defaults_locked(
         "setupCustomVideoPlayer(`cisco-extra-video-${idx}`, {\n              isCompleted: true,"
         not in js_code
     )
-    assert (
-        "setupCustomVideoPlayer(`cisco-extra-video-${idx}`, {\n              isCompleted, streamUrl: url, lessonId: trackedLessonId,"
-        in js_code
+    assert re.search(
+        r"setupCustomVideoPlayer\(`cisco-extra-video-\$\{idx\}`,\s*\{\s*isCompleted,\s*streamUrl:\s*url,",
+        js_code,
     )

@@ -257,11 +257,11 @@ Instructor owner/Admin.
 
 **Purpose**
 
-Staging tối thiểu cho thay đổi material của Course đã published để Admin duyệt trước khi áp dụng.
+Sau lần Admin duyệt đầu tiên, mọi chỉnh sửa hợp lệ của Instructor tích lũy vào duy nhất một COURSE_VERSION_CHANGESET/DRAFT cho mỗi Course. DRAFT tương đương STAGING_DRAFT; không có bảng staging thứ hai.
 
 **Lifecycle**
 
-PENDING → APPROVED/REJECTED/CANCELLED; APPROVED → APPLIED trong transaction.
+DRAFT → PENDING → APPROVED (applied_at được ghi cùng transaction). REJECTED/CANCELLED giữ nguyên snapshot đã gửi và tạo một DRAFT kế tiếp giữ toàn bộ đề xuất. Học viên chỉ đọc dữ liệu đã duyệt.
 
 ### Columns
 
@@ -270,11 +270,11 @@ PENDING → APPROVED/REJECTED/CANCELLED; APPROVED → APPLIED trong transaction.
 | `id` | `BIGINT` | No | IDENTITY(1,1) | Khóa chính nội bộ |
 | `course_id` | `BIGINT` | No |  | Course |
 | `requested_by_user_id` | `BIGINT` | No |  | Instructor/Admin tạo |
-| `change_type` | `VARCHAR(32)` | No |  | COURSE_METADATA/LESSON_STRUCTURE/LESSON_CONTENT/COMPLETION_RULE/PREREQUISITE/OTHER |
+| `change_type` | `VARCHAR(32)` | No |  | COURSE_VERSION_CHANGESET; các loại COURSE_METADATA/LESSON_STRUCTURE/LESSON_CONTENT/COMPLETION_RULE/PREREQUISITE/OTHER được giữ để đọc lịch sử |
 | `target_type` | `VARCHAR(32)` | No |  | COURSE/LESSON/RULE/PREREQUISITE |
 | `target_id` | `BIGINT` | Yes |  | ID target nếu có |
 | `proposed_payload_json` | `NVARCHAR(MAX)` | No |  | Patch/proposed data; chỉ dùng staging, source of truth vẫn ở bảng chuẩn hóa |
-| `status` | `VARCHAR(20)` | No | `'PENDING'` | PENDING/APPROVED/REJECTED/CANCELLED/APPLIED |
+| `status` | `VARCHAR(20)` | No | `'PENDING'` | DRAFT/PENDING/APPROVED/REJECTED/CANCELLED/APPLIED |
 | `reviewed_by_user_id` | `BIGINT` | Yes |  | Admin |
 | `review_reason` | `NVARCHAR(1000)` | Yes |  | Lý do |
 | `created_at` | `DATETIME2(3)` | No | `SYSUTCDATETIME()` | Thời điểm tạo (UTC) |
@@ -300,9 +300,9 @@ _None._
 
 ### Check Constraints
 
-- `change_type IN ('COURSE_METADATA','LESSON_STRUCTURE','LESSON_CONTENT','COMPLETION_RULE','PREREQUISITE','OTHER')`
+- `change_type IN ('COURSE_METADATA','LESSON_STRUCTURE','LESSON_CONTENT','COMPLETION_RULE','PREREQUISITE','OTHER','COURSE_VERSION_CHANGESET')`
 - `target_type IN ('COURSE','LESSON','RULE','PREREQUISITE')`
-- `status IN ('PENDING','APPROVED','REJECTED','CANCELLED','APPLIED')`
+- `status IN ('DRAFT','PENDING','APPROVED','REJECTED','CANCELLED','APPLIED')`
 - `ISJSON(proposed_payload_json)=1`
 
 ### Indexes
@@ -311,6 +311,7 @@ _None._
 |---|---|---:|---|---|
 | `ix_course_changes_pending` | `status, created_at` | No | `status='PENDING'` | Hỗ trợ truy vấn/filter/pagination chính của table. |
 | `ix_course_changes_course` | `course_id, created_at` | No | `` | Hỗ trợ truy vấn/filter/pagination chính của table. |
+| `uq_course_changeset_active` | `course_id` | Yes | `change_type=COURSE_VERSION_CHANGESET AND status IN (DRAFT,PENDING)` | Exactly one active aggregate per course; terminal history remains unrestricted. |
 
 ### Relationships
 
@@ -319,7 +320,7 @@ _None._
 
 ### Delete behavior
 
-Giữ tối thiểu trong audit retention; không dùng làm historical content snapshot dài hạn.
+Giữ snapshot gửi duyệt, quyết định và liên kết phiên bản kế tiếp theo audit retention. Không xóa lịch sử để hợp nhất hàng đợi.
 
 ### Audit behavior
 
@@ -327,7 +328,7 @@ Review/apply bắt buộc audit.
 
 ### Concurrency
 
-row_version + conditional transition.
+Khóa Course rồi aggregate trong cùng transaction, unique filtered index uq_course_changeset_active, token review_version cho request đang hiển thị và conditional transition. Đồ thị tiên quyết dùng khóa transaction chung và kiểm tra lại cycle khi duyệt.
 
 ### Security / PII classification
 
@@ -335,8 +336,8 @@ Payload có thể chứa nội dung học liệu; chỉ owner/Admin.
 
 ### Important invariants
 
-- Không áp dụng material change vào published data trước APPROVED
-- Minor edit không cần row này nhưng vẫn audit khi quan trọng
+- Mọi chỉnh sửa Instructor sau lần duyệt đầu tiên phải ở aggregate, không có nhánh bỏ qua cho minor edit.
+- Khi PENDING, Instructor phải rút lại trước khi sửa; duyệt áp dụng đúng thành viên/snapshot đã gửi trong một transaction có audit.
 
 ---
 
@@ -351,6 +352,7 @@ Bài học là nhóm nội dung thuộc một Course; mỗi nhóm chứa tối �
 | `id` | `BIGINT` | No | IDENTITY(1,1) | Khóa chính nội bộ |
 | `public_id` | `UNIQUEIDENTIFIER` | No | `NEWSEQUENTIALID()` | ID công khai |
 | `course_id` | `BIGINT` | No |  | Course sở hữu |
+| `change_request_id` | `BIGINT` | Yes |  | FK course_change_requests(id), NO ACTION; new unit owned by DRAFT/PENDING aggregate, cleared on approval |
 | `title` | `NVARCHAR(200)` | No |  | Tên Bài học |
 | `position` | `INT` | No |  | Thứ tự trong Course |
 | `created_at` | `DATETIME2(3)` | No | `SYSUTCDATETIME()` | UTC |

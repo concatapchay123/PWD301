@@ -43,11 +43,9 @@ Across the entire codebase, **1,338+ automated tests** were executed and verifie
 
 During the initial Round 3 sweep, 6 edge-case regressions were identified in secondary security and change-lock test suites. All 6 were resolved and verified immediately:
 
-### 1. Course Changeset Creation vs Standalone Change Request Flow
-- **Location**: `tests/api/test_course_pending_lock_defense.py:99`
-- **Issue**: Creating a draft lesson on a published course without explicit `as_draft=True` defaulted to the standalone `LESSON_STRUCTURE` change request flow (HTTP 202), causing the changeset test setup to fail.
-- **Resolution**: Added `"as_draft": True` to the initial draft lesson creation request, correctly creating a working changeset draft and locking subsequent mutations with 409 Conflict once submitted.
-- **Result**: `tests/api/test_course_pending_lock_defense.py` PASSED (100%).
+### 1. Course authoring workflow — SUPERSEDED
+
+The opt-in lesson-staging fix and its historical pass claim have been removed. All legal post-approval authoring now follows the [mandatory aggregate replacement contract](docs/system/PWD301_SYSTEM_SPECIFICATION/implementation/WORKFLOW_SUPERSESSION.md); pending review freezes edits until version-bound withdrawal. Historical tests are not TASK-095 acceptance. Unrelated historical findings below remain evidence only.
 
 ### 2. Path Traversal Defense in Disaster Recovery Engine
 - **Location**: `src/pwd301/services/operations_service.py` (`restore_database_snapshot`)

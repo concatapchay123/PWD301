@@ -2420,7 +2420,7 @@ class InstructorView {
                             <span class="material-symbols-outlined text-[24px] fill-current">play_arrow</span>
                           </div>
                         </div>
-                        <span class="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-xs text-[10px] font-bold text-white uppercase tracking-wider font-mono">YouTube</span>
+                        <span class="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-sm text-[10px] font-bold text-white uppercase tracking-wider font-mono">YouTube</span>
                       </div>
                       <div class="flex items-center justify-between gap-2 min-w-0">
                         <div class="min-w-0 flex-1">
@@ -2463,7 +2463,7 @@ class InstructorView {
                               <span class="material-symbols-outlined text-[24px] fill-current">play_arrow</span>
                             </div>
                           </div>
-                          <span class="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-xs text-[10px] font-bold text-white uppercase tracking-wider font-mono">${vfSize || 'VIDEO'}</span>
+                          <span class="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-sm text-[10px] font-bold text-white uppercase tracking-wider font-mono">${vfSize || 'VIDEO'}</span>
                         </div>
                         <div class="flex items-center justify-between gap-2 min-w-0">
                           <div class="min-w-0 flex-1">
@@ -3414,11 +3414,15 @@ class InstructorView {
           videoUrlInput.onchange = () => {
             scrapeBlocksFromDom();
             const targetBlock = activeBlocks.find(b => b.id === cardBlockId);
-            if (targetBlock) {
-              targetBlock.url = videoUrlInput.value.trim();
-            }
+            if (targetBlock) targetBlock.url = videoUrlInput.value.trim();
             isEditorDirty = true;
-            renderEditor();
+            const preview = card.querySelector('.block-video-preview');
+            if (preview && targetBlock) {
+              const template = document.createElement('template');
+              template.innerHTML = renderBlockHtml(targetBlock, bIdx);
+              const replacement = template.content.querySelector('.block-video-preview');
+              preview.innerHTML = replacement?.innerHTML || '';
+            }
           };
         }
 
@@ -4382,7 +4386,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
           );
           if (!conf) return;
           try {
-            await ApiClient.cancelSubmitCourse(cId);
+            await ApiClient.cancelSubmitCourse(cId, course.review_version);
             UI.showToast('Đã rút lại yêu cầu xét duyệt. Khóa học đã mở khóa để chỉnh sửa.', 'success');
             UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(container, cId, 'curriculum'));
           } catch (e) {
@@ -4454,7 +4458,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
           </button>
         `;
         UI.openModal({
-          title: 'Gửi duyệt cập nhật giáo trình',
+          title: 'Gửi duyệt đợt cập nhật',
           bodyHtml,
           footerHtml,
           size: 'md'
@@ -4549,7 +4553,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
           );
           if (!conf) return;
           try {
-            await ApiClient.retractCourseChangeset(cId);
+            await ApiClient.retractCourseChangeset(cId, { request_id: changesetStatus.request_id, review_version: changesetStatus.review_version });
             UI.showToast('Đã rút lại đợt cập nhật giáo trình thành công.', 'success');
             UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(container, cId, 'curriculum'));
           } catch (err) {
@@ -4564,7 +4568,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
           discardBtn.onclick = async () => {
             const conf = await UI.confirm(
               'Hủy bỏ bản nháp cập nhật',
-              'Hành động này sẽ hủy bỏ các thay đổi đang nháp/chờ duyệt và khôi phục trạng thái ban đầu của khóa học. Xác nhận hủy bỏ?',
+              'Hành động này sẽ hủy các thay đổi trong bản nháp và giữ giáo trình đã duyệt. Xác nhận hủy bản nháp?',
               'Hủy bỏ bản nháp'
             );
             if (!conf) return;
@@ -4625,28 +4629,6 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
             UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(container, cId, initialTab));
           } catch (error) {
             UI.showToast(error.message || 'Không thể xóa bài học.', 'error');
-          }
-        });
-      });
-
-      // Bind Submit Learning Unit (Gửi duyệt Chương/Bài học mới)
-      container.querySelectorAll('.btn-submit-learning-unit').forEach(button => {
-        button.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          const unitId = button.dataset.unitId;
-          const unitTitle = button.dataset.unitTitle || 'Bài học này';
-          const conf = await UI.confirm(
-            'Gửi duyệt bài học',
-            `Xác nhận gửi bài học "${unitTitle}" và toàn bộ các bài giảng bên trong tới Quản trị viên để xét duyệt xuất bản?`,
-            'Gửi xét duyệt'
-          );
-          if (!conf) return;
-          try {
-            const res = await ApiClient.submitLearningUnit(unitId, cId);
-            UI.showToast(res.message || 'Đã gửi yêu cầu xét duyệt bài học thành công.', 'success');
-            UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(container, cId, 'curriculum'));
-          } catch (error) {
-            UI.showToast(error.message || 'Không thể gửi yêu cầu xét duyệt.', 'error');
           }
         });
       });
@@ -4975,14 +4957,24 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
   // - Instructor Contact Channels
   // - Single unified Save action for the entire page
   // =========================================================================
-  static async openCourseLandingEditorModal(course) {
+  static getPrerequisiteEdits(initial, selected) {
+    const id = item => String(item.prerequisite_course_id || item.course_id || item.id);
+    const before = new Map(initial.map(item => [id(item), item]));
+    const after = new Map(selected.map(item => [id(item), item]));
+    return {
+      remove: Array.from(before.keys()).filter(key => !after.has(key)),
+      add: Array.from(after.entries()).filter(([key]) => !before.has(key)).map(([key]) => ({ prerequisite_course_id: key }))
+    };
+  }
+
+  static async openCourseLandingEditorModal(course, initialTab = 'overview') {
     const cId = course.course_id || course.id;
 
     // Refresh course from backend to ensure freshest persistent data
     try {
       const freshCourse = await ApiClient.getCourse(cId);
-      if (freshCourse && (freshCourse.course || freshCourse.data)) {
-        Object.assign(course, freshCourse.course || freshCourse.data);
+      if (freshCourse) {
+        Object.assign(course, freshCourse.course || freshCourse.data || freshCourse);
       }
     } catch (e) {}
 
@@ -5063,16 +5055,22 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
       ];
     }
 
-    // 3. Extract Completion Rules
-    let compReqs = {};
-    if (course.completion_requirements) {
-      if (typeof course.completion_requirements === 'object') compReqs = course.completion_requirements;
-      else if (typeof course.completion_requirements === 'string') {
-        try { compReqs = JSON.parse(course.completion_requirements); } catch (e) {}
-      }
+    let academicRules, initialPrerequisites, catalog;
+    try {
+      const responses = await Promise.all([ApiClient.getCourseCompletionRules(cId), ApiClient.getCoursePrerequisites(cId), ApiClient.getCatalogCourses()]);
+      academicRules = responses[0] || {};
+      const prereqResponse = responses[1];
+      initialPrerequisites = (Array.isArray(prereqResponse) ? prereqResponse : prereqResponse?.prerequisites || []).map(item => ({ ...item }));
+      const catalogResponse = responses[2];
+      catalog = Array.isArray(catalogResponse) ? catalogResponse : catalogResponse?.courses || catalogResponse?.items || [];
+    } catch (error) {
+      UI.showToast(error.message || 'Không thể tải cấu hình học vụ. Vui lòng thử lại.', 'error');
+      return;
     }
-    const minProgressVal = compReqs.min_progress_percent !== undefined ? compReqs.min_progress_percent : 80;
-    const minScoreVal = compReqs.min_assessment_score !== undefined ? compReqs.min_assessment_score : 5.0;
+    let selectedPrerequisites = initialPrerequisites.map(item => ({ ...item }));
+    const prereqId = item => String(item.prerequisite_course_id || item.course_id || item.id);
+    const minProgressVal = academicRules.minimum_progress_percent ?? 80;
+    const minScoreVal = academicRules.minimum_grade_score ?? 5;
 
     const modalBodyHtml = `
       <div class="space-y-5 text-sans">
@@ -5227,7 +5225,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
               <span class="text-[11px] text-slate-400 font-medium">Học viên có thể liên hệ trực tiếp khi cần giải đáp</span>
             </div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="grid grid-cols-1 gap-4">
               <div class="space-y-1.5">
                 <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
                   Email Giảng viên phụ trách <span class="text-rose-500">*</span>
@@ -5341,6 +5339,19 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
 
         <!-- TAB 3: CÀI ĐẶT & HỌC VỤ -->
         <div id="landing-tab-pane-academic-settings" class="space-y-5 hidden">
+          <section class="space-y-4 rounded-2xl border border-slate-200 dark:border-slate-700 p-5">
+            <h3 class="font-bold text-sm text-slate-800 dark:text-slate-100">Môn học tiên quyết</h3>
+            <p class="text-xs text-slate-600 dark:text-slate-300">Các yêu cầu được lưu cùng bản chỉnh sửa khóa học và gửi duyệt một lần.</p>
+            <div id="unified-prerequisites-list" class="space-y-3"></div>
+            <div class="space-y-3">
+              <label class="block text-xs font-semibold" for="unified-prerequisite-course">Chọn môn tiên quyết</label>
+              <select id="unified-prerequisite-course" class="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 p-3 text-sm">
+                <option value="">Chọn một môn học</option>
+                ${catalog.filter(item => String(item.course_id || item.id) !== String(cId) && (!item.status || item.status === 'PUBLISHED')).map(item => `<option value="${UI.escapeHtml(item.course_id || item.id)}">${UI.escapeHtml(item.course_code || item.code || '')} — ${UI.escapeHtml(item.title)}</option>`).join('')}
+              </select>
+              <button id="unified-prerequisite-add" type="button" class="w-full sm:w-auto px-4 py-2 rounded-lg border border-slate-400 text-sm font-semibold">Thêm môn tiên quyết</button>
+            </div>
+          </section>
           <!-- THÔNG TIN & ĐỊNH DANH MÔN HỌC -->
           <div class="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/80 space-y-4">
             <div class="flex items-center justify-between pb-2 border-b border-slate-200/60 dark:border-slate-700/60">
@@ -5350,7 +5361,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
               </h3>
               <span class="text-[11px] text-slate-400 font-mono font-bold">${UI.escapeHtml(course.code || course.course_code || '')}</span>
             </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="grid grid-cols-1 gap-4">
               <div class="space-y-1.5 sm:col-span-2">
                 <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
                   Tên khóa học <span class="text-rose-500">*</span>
@@ -5405,7 +5416,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
               <span class="text-[11px] text-slate-400 font-medium">Tiêu chí cấp chứng nhận hoàn thành</span>
             </div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="grid grid-cols-1 gap-4">
               <div class="space-y-1.5 p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
                 <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
                   Tỉ lệ xem bài học tối thiểu (%)
@@ -5512,6 +5523,29 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
         });
       };
     });
+
+    const renderPrerequisites = () => {
+      const box = document.getElementById('unified-prerequisites-list');
+      if (!box) return;
+      box.innerHTML = selectedPrerequisites.length ? selectedPrerequisites.map((item, index) => `<div class="space-y-2 rounded-lg border border-slate-200 dark:border-slate-700 p-3">
+        <div class="text-sm font-semibold">${UI.escapeHtml(item.course_code || item.code || '')} ${UI.escapeHtml(item.title || item.prerequisite_title || 'Môn học đã chọn')}</div>
+        <div class="text-xs text-slate-600 dark:text-slate-300">Học viên cần hoàn thành môn này trước khi ghi danh.</div>
+        <button type="button" data-remove-prerequisite="${index}" class="px-4 py-2 text-xs underline">Bỏ khỏi danh sách</button>
+      </div>`).join('') : '<p class="text-xs text-slate-600 dark:text-slate-300">Không có yêu cầu môn tiên quyết.</p>';
+      box.querySelectorAll('[data-remove-prerequisite]').forEach(button => {
+        button.onclick = () => { selectedPrerequisites.splice(Number(button.dataset.removePrerequisite), 1); renderPrerequisites(); };
+      });
+    };
+    renderPrerequisites();
+    document.getElementById('unified-prerequisite-add').onclick = () => {
+      const key = document.getElementById('unified-prerequisite-course').value;
+      if (!key) { UI.showToast('Vui lòng chọn môn tiên quyết.', 'warning'); return; }
+      if (selectedPrerequisites.some(item => prereqId(item) === key)) { UI.showToast('Môn này đã có trong danh sách.', 'warning'); return; }
+      const item = catalog.find(candidate => String(candidate.course_id || candidate.id) === key);
+      if (item) selectedPrerequisites.push({ ...item, prerequisite_course_id: key });
+      renderPrerequisites();
+    };
+    Array.from(tabButtons).find(button => button.dataset.landingTab === initialTab)?.click();
 
     // Helper: Render SLOs List
     const renderSLOs = () => {
@@ -5770,33 +5804,24 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
             office_hours: cOffice
           };
 
-          const compPayload = {
-            min_progress_percent: isNaN(minProg) ? 80 : Math.max(1, Math.min(100, minProg)),
-            min_assessment_score: isNaN(minSc) ? 5.0 : Math.max(0, Math.min(10, minSc))
+          const rulesPayload = {
+            require_all_required_lessons: academicRules.require_all_required_lessons ?? true,
+            require_required_assessments: academicRules.require_required_assessments ?? true,
+            allow_certificate: academicRules.allow_certificate ?? true,
+            completion_grace_days: academicRules.completion_grace_days ?? 14,
+            minimum_progress_percent: Number.isNaN(minProg) ? 80 : minProg,
+            minimum_grade_score: Number.isNaN(minSc) ? 5 : minSc
           };
-
-          await ApiClient.updateCourse(cId, {
-            title: titleVal,
-            category: catVal,
-            description: descVal,
-            trailer_url: trUrlVal,
-            video_url: trUrlVal,
-            learning_objectives: JSON.stringify(slos),
-            completion_requirements: JSON.stringify(compPayload),
-            contact_info: contactPayload
+          const metadata = { title: titleVal, category: catVal, description: descVal,
+            trailer_url: trUrlVal, video_url: trUrlVal, contact_info: contactPayload };
+          const result = await ApiClient.saveCourseAcademicSettings(cId, {
+            course_metadata: metadata, learning_objectives: slos,
+            completion_rules: rulesPayload,
+            prerequisites: InstructorView.getPrerequisiteEdits(initialPrerequisites, selectedPrerequisites)
           });
-
-          // Sync in-memory course object
-          course.title = titleVal;
-          course.category = catVal;
-          course.description = descVal;
-          course.trailer_url = trUrlVal;
-          course.video_url = trUrlVal;
-          course.learning_objectives = slos;
-          course.completion_requirements = compPayload;
-          course.contact_info = contactPayload;
-
-          UI.showToast('Đã lưu thông tin Trang Giới thiệu & Học vụ thành công!', 'success');
+          Object.assign(course, result.course || metadata);
+          course.learning_objectives = result.course?.learning_objectives ?? slos;
+          UI.showToast(result.staged || result.pending_approval ? 'Đã lưu vào bản nháp tổng hợp. Gửi duyệt khi bạn hoàn tất các thay đổi.' : 'Đã lưu Trang Giới thiệu & Học vụ.', 'success');
           UI.closeModal();
         } catch (err) {
           saveBtn.disabled = false;
@@ -5859,7 +5884,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
       return InstructorView.openCourseStudentsModal(course);
     }
     if (defaultSubTab === 'settings' || defaultSubTab === 'academic') {
-      return InstructorView.openCourseLandingEditorModal(course);
+      return InstructorView.openCourseLandingEditorModal(course, 'academic-settings');
     }
     const cId = course.course_id || course.id;
 
@@ -6199,694 +6224,9 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
   // 3.2. Tab Academic ABET SLO Dossier
   // =========================================================================
   static async renderTabAcademic(tabContainer, course) {
-    const cId = course.course_id || course.id;
-    let customSLOs = [];
-    if (course.learning_objectives !== null && course.learning_objectives !== undefined) {
-      if (Array.isArray(course.learning_objectives)) {
-        customSLOs = course.learning_objectives.map((item, idx) => {
-          if (typeof item === 'object' && item !== null) {
-            return {
-              title: item.title || item.name || item.code || `SLO-${idx + 1}`,
-              description: item.description || item.content || '',
-              weight: item.weight || ''
-            };
-          }
-          return { title: `SLO-${idx + 1}`, description: String(item), weight: '' };
-        });
-      } else if (typeof course.learning_objectives === 'string') {
-        try {
-          const parsed = JSON.parse(course.learning_objectives);
-          if (Array.isArray(parsed)) {
-            customSLOs = parsed.map((item, idx) => {
-              if (typeof item === 'object' && item !== null) {
-                return {
-                  title: item.title || item.name || item.code || `SLO-${idx + 1}`,
-                  description: item.description || item.content || '',
-                  weight: item.weight || ''
-                };
-              }
-              return { title: `SLO-${idx + 1}`, description: String(item), weight: '' };
-            });
-          }
-        } catch {
-          customSLOs = course.learning_objectives.split('\n').filter(s => s.trim()).map((s, i) => ({
-            title: `SLO-${i + 1}`,
-            description: s.trim(),
-            weight: ''
-          }));
-        }
-      }
-    }
-    // Only fall back to default template if the course has never configured any SLOs (null or undefined)
-    if ((course.learning_objectives === null || course.learning_objectives === undefined) && customSLOs.length === 0) {
-      customSLOs = [
-        { title: 'SLO-1 • Phân tích & Giải quyết Vấn đề', description: 'Sinh viên có khả năng phân tích một bài toán kỹ thuật phần mềm phức tạp và áp dụng các nguyên lý máy tính để xác định giải pháp phù hợp.', weight: '30%' },
-        { title: 'SLO-2 • Thiết kế Hệ thống & Kiểm thử', description: 'Sinh viên có khả năng thiết kế, cài đặt và đánh giá giải pháp dựa trên máy tính nhằm đáp ứng tập hợp các yêu cầu điện toán xác định theo chuẩn kiến trúc RESTful & CSDL quan hệ.', weight: '50%' },
-        { title: 'SLO-3 • Giao tiếp & Tài liệu Kỹ thuật', description: 'Sinh viên có khả năng truyền đạt hiệu quả các luận điểm kỹ thuật trong các ngữ cảnh chuyên môn khác nhau qua báo cáo tài liệu và mã nguồn chuẩn chỉnh.', weight: '20%' }
-      ];
-    }
-
-    tabContainer.innerHTML = `
-      <div class="space-y-6 max-w-[1720px] w-full mx-auto animate-fade-in" id="academic-tab-root">
-        
-        <!-- TOPBAR: Unified Academic Controls & Single Save Action -->
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
-          <div>
-            <h2 class="text-base sm:text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <span class="material-symbols-outlined text-indigo-600 text-[24px]">school</span>
-              <span>Cài đặt & Chuẩn mực Học vụ</span>
-            </h2>
-            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Quản lý Chuẩn đầu ra (SLOs), Đồ thị Môn tiên quyết và Quy chuẩn hoàn thành khóa học tập trung tại một nơi.
-            </p>
-          </div>
-          <div class="flex items-center gap-3 shrink-0">
-            <span id="academic-pending-badge" class="hidden px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300 dark:border-amber-800 flex items-center gap-1.5 shadow-2xs">
-              <span class="material-symbols-outlined text-[15px] text-amber-600">hourglass_top</span>
-              <span>Đang chờ Admin xét duyệt</span>
-            </span>
-            <button type="button" id="btn-save-academic-settings" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer">
-              <span class="material-symbols-outlined text-[18px]">save</span>
-              <span>Lưu thay đổi học vụ</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- CARD 1: Chuẩn đầu ra (SLO) -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-2xs space-y-5">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
-            <div>
-              <div class="flex items-center gap-2">
-                <span class="material-symbols-outlined text-primary text-[20px]">verified</span>
-                <h3 class="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
-                  1. Chuẩn đầu ra (Student Learning Outcomes - SLO)
-                </h3>
-                <!-- Icon dấu chấm hỏi ? có popover giải thích khi rê chuột hoặc bấm -->
-                <div class="relative inline-flex items-center" id="slo-help-wrapper">
-                  <button
-                    type="button"
-                    id="btn-slo-help-trigger"
-                    class="w-5 h-5 rounded-full bg-slate-100 hover:bg-primary/10 text-slate-500 hover:text-primary dark:bg-slate-800 dark:text-slate-400 dark:hover:text-primary transition-all flex items-center justify-center cursor-pointer shadow-2xs"
-                    title="Bấm hoặc rê chuột để xem giải thích Chuẩn đầu ra (SLO)"
-                    aria-label="Giải thích Chuẩn đầu ra"
-                  >
-                    <span class="material-symbols-outlined text-[15px]">help</span>
-                  </button>
-
-                  <!-- Micro Popover Giải thích SLO -->
-                  <div
-                    id="slo-help-popover"
-                    class="hidden absolute left-0 top-full mt-2 w-80 sm:w-96 p-4 rounded-xl bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-slate-800 shadow-xl z-50 text-xs leading-relaxed space-y-2.5 animate-in fade-in"
-                  >
-                    <div class="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
-                      <div class="flex items-center gap-1.5 font-bold text-slate-900 dark:text-white">
-                        <span class="material-symbols-outlined text-primary text-[17px]">lightbulb</span>
-                        <span>Chuẩn đầu ra (SLO) là gì?</span>
-                      </div>
-                      <button type="button" id="btn-close-slo-popover" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 rounded cursor-pointer">
-                        <span class="material-symbols-outlined text-[14px]">close</span>
-                      </button>
-                    </div>
-                    <div class="space-y-1.5 text-slate-600 dark:text-slate-300">
-                      <p>
-                        <strong class="text-primary font-semibold">Student Learning Outcomes (SLO):</strong> Bản cam kết năng lực, kiến thức và kỹ năng thực tế mà người học chắc chắn sẽ tự tay làm được sau khi hoàn thành môn học.
-                      </p>
-                      <div class="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 text-[11px] text-slate-500 dark:text-slate-400 border-l-2 border-primary">
-                        <em>Ví dụ: "Tự tay thiết kế và triển khai được hệ thống RESTful API an toàn, có xác thực phân quyền."</em>
-                      </div>
-                      <p class="text-[11px] text-slate-400 dark:text-slate-500">
-                        Giảng viên dựa vào các chuẩn này để xây dựng đề thi công bằng và phục vụ kiểm định chất lượng đào tạo (ABET CAC Criterion 3).
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <p class="text-xs text-slate-500 mt-1 leading-relaxed">
-                Quy định cụ thể những năng lực, kỹ năng thực tế mà sinh viên sẽ làm được sau khóa học. Các chuẩn này được ánh xạ vào ma trận ngân hàng đề thi và hồ sơ kiểm định quốc tế ABET CAC Criterion 3.
-              </p>
-            </div>
-            <div class="flex items-center gap-2 shrink-0">
-              <button type="button" id="btn-add-slo" class="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors flex items-center gap-1.5 shadow-2xs">
-                <span class="material-symbols-outlined text-[16px] text-primary">add</span>
-                <span>Thêm Chuẩn đầu ra</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Micro-Guide Callout for Instructors -->
-          <div class="p-3.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-900/40 text-xs text-amber-900 dark:text-amber-300 space-y-1">
-            <div class="font-bold flex items-center gap-1.5">
-              <span class="material-symbols-outlined text-[17px] text-amber-600">lightbulb</span>
-              <span>Khuyến nghị sư phạm cho Giảng viên:</span>
-            </div>
-            <p class="text-[11px] leading-relaxed">
-              Hãy đặt tên chuẩn đầu ra rõ ràng, hướng hành động (ví dụ: <em>"Kỹ năng 1: Thiết kế và triển khai CSDL quan hệ 3NF"</em>) thay vì chỉ để mã kỹ thuật cộc lốc. Điều này giúp cả sinh viên, phụ huynh và hội đồng học vụ dễ dàng hiểu được giá trị thực tế của môn học.
-            </p>
-          </div>
-
-          <div class="space-y-3" id="slo-items-list"></div>
-        </div>
-
-        <!-- CARD 2: Course Prerequisites Matrix -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-6">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
-            <div>
-              <h3 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <span class="material-symbols-outlined text-indigo-600 text-[20px]">account_tree</span>
-                <span>2. Danh sách Môn học Tiên quyết (Prerequisites)</span>
-              </h3>
-              <p class="text-xs text-slate-500 mt-0.5">Quy định điều kiện các môn học sinh viên bắt buộc phải thi đạt trước khi được phép ghi danh vào môn này. (Hệ thống tự động kiểm tra đồ thị phụ thuộc để ngăn ngừa vòng lặp môn học).</p>
-            </div>
-            <button type="button" id="btn-open-prereq-modal" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm shrink-0">
-              <span class="material-symbols-outlined text-[16px]">add_link</span>
-              <span>Thêm môn tiên quyết</span>
-            </button>
-          </div>
-
-          <div id="prereqs-table-box" class="space-y-3">
-            <div class="p-8 text-center text-slate-400 text-xs">
-              <span class="inline-block animate-spin text-lg mb-1">⏳</span>
-              <p>Đang kiểm tra danh sách môn học tiên quyết...</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- CARD 3: Course Completion Rules -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-6">
-          <div class="pb-4 border-b border-slate-100 dark:border-slate-800">
-            <h3 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <span class="material-symbols-outlined text-emerald-600 text-[20px]">workspace_premium</span>
-              <span>3. Điều kiện hoàn thành khóa học</span>
-            </h3>
-            <p class="text-xs text-slate-500 mt-0.5">Tiêu chuẩn nghiệm thu học vụ tự động để sinh viên được công nhận hoàn thành khóa học và cấp chứng chỉ số.</p>
-          </div>
-
-          <form id="completion-rules-form" class="grid grid-cols-1 md:grid-cols-2 gap-5 text-xs">
-            <div class="space-y-2">
-              <label class="block font-bold text-slate-700 dark:text-slate-300">Tiến độ bài học tối thiểu (%)</label>
-              <input type="number" min="0" max="100" id="rule-min-progress" class="w-full h-10 px-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-slate-900 dark:text-white outline-none focus:border-primary" value="80" />
-              <span class="text-[11px] text-slate-400">Sinh viên phải xem và hoàn thành ít nhất tỉ lệ này của các bài học.</span>
-            </div>
-
-            <div class="space-y-2">
-              <label class="block font-bold text-slate-700 dark:text-slate-300">Điểm khảo thí trung bình tối thiểu (Thang 10)</label>
-              <input type="number" step="0.1" min="0" max="10" id="rule-min-score" class="w-full h-10 px-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-slate-900 dark:text-white outline-none focus:border-primary" value="5.0" />
-              <span class="text-[11px] text-slate-400">Điểm tổng kết các bài khảo thí bắt buộc phải đạt ngưỡng này trở lên.</span>
-            </div>
-
-            <div class="space-y-3 pt-2">
-              <label class="flex items-center gap-2.5 cursor-pointer font-bold text-slate-800 dark:text-slate-200">
-                <input type="checkbox" id="rule-require-lessons" class="rounded text-primary focus:ring-primary w-4 h-4" checked />
-                <span>Bắt buộc hoàn thành 100% bài học tiên quyết</span>
-              </label>
-              <label class="flex items-center gap-2.5 cursor-pointer font-bold text-slate-800 dark:text-slate-200">
-                <input type="checkbox" id="rule-require-assessments" class="rounded text-primary focus:ring-primary w-4 h-4" checked />
-                <span>Bắt buộc nộp bài khảo thí chính thức (Midterm/Final)</span>
-              </label>
-              <label class="flex items-center gap-2.5 cursor-pointer font-bold text-slate-800 dark:text-slate-200">
-                <input type="checkbox" id="rule-allow-certificate" class="rounded text-primary focus:ring-primary w-4 h-4" checked />
-                <span>Tự động cấp Chứng nhận hoàn thành (Digital Certificate)</span>
-              </label>
-            </div>
-          </form>
-        </div>
-
-      </div>
-    `;
-
-    // 0. Wire SLO Help Popover (Click & Hover)
-    const helpTrigger = document.getElementById('btn-slo-help-trigger');
-    const helpPopover = document.getElementById('slo-help-popover');
-    const closePopoverBtn = document.getElementById('btn-close-slo-popover');
-    let popoverTimeout = null;
-
-    if (helpTrigger && helpPopover) {
-      const showPopover = () => {
-        if (popoverTimeout) clearTimeout(popoverTimeout);
-        helpPopover.classList.remove('hidden');
-      };
-      const hidePopover = (delay = 200) => {
-        if (popoverTimeout) clearTimeout(popoverTimeout);
-        popoverTimeout = setTimeout(() => {
-          helpPopover.classList.add('hidden');
-        }, delay);
-      };
-
-      helpTrigger.addEventListener('mouseenter', () => showPopover());
-      helpTrigger.addEventListener('mouseleave', () => hidePopover(250));
-      helpPopover.addEventListener('mouseenter', () => showPopover());
-      helpPopover.addEventListener('mouseleave', () => hidePopover(200));
-
-      helpTrigger.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (helpPopover.classList.contains('hidden')) {
-          showPopover();
-        } else {
-          helpPopover.classList.add('hidden');
-        }
-      });
-
-      closePopoverBtn?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        helpPopover.classList.add('hidden');
-      });
-
-      const onDocClick = (e) => {
-        if (!helpTrigger.contains(e.target) && !helpPopover.contains(e.target)) {
-          helpPopover.classList.add('hidden');
-        }
-      };
-      document.addEventListener('click', onDocClick);
-    }
-
-    // 1. Render SLOs helper
-    const sloContainer = document.getElementById('slo-items-list');
-    const colors = ['text-primary', 'text-indigo-600', 'text-purple-600', 'text-emerald-600'];
-
-    const harvestDOMtoSLOs = () => {
-      const cards = sloContainer ? sloContainer.querySelectorAll('[data-slo-idx]') : [];
-      if (!cards || cards.length === 0) return customSLOs;
-      const gathered = [];
-      cards.forEach((card, idx) => {
-        const titleInput = card.querySelector('.slo-title-input');
-        const weightInput = card.querySelector('.slo-weight-input');
-        const descInput = card.querySelector('.slo-desc-input');
-        const title = (titleInput ? titleInput.value : '').trim() || `SLO-${idx + 1}`;
-        const weight = (weightInput ? weightInput.value : '').trim();
-        const description = (descInput ? descInput.value : '').trim();
-        gathered.push({ title, description, weight });
-      });
-      customSLOs = gathered;
-      return gathered;
-    };
-
-    const renderSLOList = () => {
-      if (!sloContainer) return;
-      if (customSLOs.length === 0) {
-        sloContainer.innerHTML = `
-          <div class="p-6 text-center text-slate-400 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
-            Chưa có chuẩn đầu ra nào được thiết lập. Nhấp "+ Thêm Chuẩn đầu ra" để tạo mới.
-          </div>
-        `;
-        return;
-      }
-
-      sloContainer.innerHTML = customSLOs.map((slo, idx) => {
-        const title = typeof slo === 'object' ? (slo.title || `SLO-${idx + 1}`) : `SLO-${idx + 1}`;
-        const text = typeof slo === 'object' ? (slo.description || slo.content || '') : String(slo);
-        const weight = typeof slo === 'object' ? (slo.weight || '') : '';
-
-        return `
-          <div class="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 space-y-2 relative group" data-slo-idx="${idx}">
-            <div class="flex items-center justify-between">
-              <input type="text" class="slo-title-input font-mono text-xs font-bold ${colors[idx % colors.length]} bg-transparent border-0 border-b border-transparent focus:border-primary outline-none px-1 py-0.5 w-2/3" value="${UI.escapeHtml(title)}" placeholder="VD: SLO-${idx + 1} • Kỹ năng: Lập trình Web và Thiết kế CSDL..." />
-              <div class="flex items-center gap-2">
-                <input type="text" class="slo-weight-input text-[11px] text-slate-400 bg-transparent border-0 border-b border-transparent focus:border-primary outline-none px-1 w-24 text-right" value="${UI.escapeHtml(weight)}" placeholder="Trọng số 30%" />
-                <button type="button" class="btn-del-slo p-1 text-slate-400 hover:text-rose-600 transition-colors" data-idx="${idx}" title="Xóa chuẩn đầu ra">
-                  <span class="material-symbols-outlined text-[16px]">delete</span>
-                </button>
-              </div>
-            </div>
-            <textarea class="slo-desc-input w-full p-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-700 dark:text-slate-300 leading-relaxed outline-none focus:border-primary resize-none" rows="2" placeholder="Mô tả cụ thể: Sau khi học xong, sinh viên có thể tự tay làm được những gì...">${UI.escapeHtml(text)}</textarea>
-          </div>
-        `;
-      }).join('');
-
-      sloContainer.querySelectorAll('.btn-del-slo').forEach(btn => {
-        btn.onclick = () => {
-          harvestDOMtoSLOs();
-          const idx = parseInt(btn.dataset.idx, 10);
-          customSLOs.splice(idx, 1);
-          renderSLOList();
-        };
-      });
-
-      sloContainer.querySelectorAll('.slo-title-input').forEach((inp, i) => {
-        inp.oninput = (e) => {
-          if (typeof customSLOs[i] !== 'object') customSLOs[i] = { title: '', description: '' };
-          customSLOs[i].title = e.target.value;
-        };
-      });
-
-      sloContainer.querySelectorAll('.slo-weight-input').forEach((inp, i) => {
-        inp.oninput = (e) => {
-          if (typeof customSLOs[i] !== 'object') customSLOs[i] = { title: '', description: '' };
-          customSLOs[i].weight = e.target.value;
-        };
-      });
-
-      sloContainer.querySelectorAll('.slo-desc-input').forEach((inp, i) => {
-        inp.oninput = (e) => {
-          if (typeof customSLOs[i] !== 'object') customSLOs[i] = { title: '', description: '' };
-          customSLOs[i].description = e.target.value;
-        };
-      });
-    };
-
-    renderSLOList();
-
-    const addSloBtn = document.getElementById('btn-add-slo');
-    if (addSloBtn) {
-      addSloBtn.onclick = () => {
-        harvestDOMtoSLOs();
-        customSLOs.push({
-          title: `SLO-${customSLOs.length + 1} • Tiêu chuẩn Năng lực Mới`,
-          description: '',
-          weight: '20%'
-        });
-        renderSLOList();
-      };
-    }
-
-    // 2. Prerequisites List with Staging State
-    const prereqBox = document.getElementById('prereqs-table-box');
-    let stagedPrerequisites = [];
-
-    const renderPrerequisitesTable = () => {
-      if (!prereqBox) return;
-
-      if (stagedPrerequisites.length === 0) {
-        prereqBox.innerHTML = `
-          <div class="p-6 text-center text-slate-400 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-xs space-y-1">
-            <span class="material-symbols-outlined text-slate-300 dark:text-slate-600 text-3xl">task_alt</span>
-            <p class="font-semibold text-slate-600 dark:text-slate-300">Không có điều kiện tiên quyết</p>
-            <p class="text-[11px] text-slate-400">Sinh viên có thể trực tiếp ghi danh môn học này mà không cần hoàn thành học phần trước.</p>
-          </div>
-        `;
-      } else {
-        prereqBox.innerHTML = `
-          <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
-            <table class="w-full text-left border-collapse text-xs">
-              <thead class="bg-slate-50 dark:bg-slate-800/60 text-slate-500 font-semibold border-b border-slate-200 dark:border-slate-700">
-                <tr>
-                  <th class="p-3">Mã & Tên môn tiên quyết</th>
-                  <th class="p-3">Điểm GPA tối thiểu</th>
-                  <th class="p-3">Trạng thái phê duyệt</th>
-                  <th class="p-3 text-right">Tác vụ</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
-                ${stagedPrerequisites.map((p, idx) => {
-                  const isDeleted = !!p.is_deleted;
-                  const isNew = !!p.is_new;
-                  const targetId = p.course_id || p.prerequisite_course_id || p.id;
-                  let rowCls = 'hover:bg-slate-50/50 dark:hover:bg-slate-800/40';
-                  let statusBadge = `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300">Đã phê duyệt</span>`;
-                  if (isDeleted) {
-                    rowCls = 'bg-rose-50/40 dark:bg-rose-950/20 opacity-60 line-through';
-                    statusBadge = `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300">Chờ gỡ bỏ</span>`;
-                  } else if (isNew) {
-                    statusBadge = `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-300">Mới thêm (Chờ lưu)</span>`;
-                  } else if (p.approval_status === 'PENDING_APPROVAL') {
-                    statusBadge = `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300">Chờ GV khác phê duyệt</span>`;
-                  } else if (p.approval_status === 'REJECTED') {
-                    statusBadge = `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300">Bị từ chối</span>`;
-                  }
-
-                  return `
-                    <tr class="${rowCls}">
-                      <td class="p-3">
-                        <span class="font-mono font-bold text-primary">${UI.escapeHtml(p.course_code || p.prerequisite_course_code || 'PREREQ')}</span>
-                        <span class="text-slate-800 dark:text-slate-200 ml-1.5">${UI.escapeHtml(p.title || p.prerequisite_course_title || 'Môn học tiên quyết')}</span>
-                      </td>
-                      <td class="p-3">
-                        <span class="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                          ${p.min_grade_point ? `≥ ${p.min_grade_point}` : '≥ 5.0 (C)'}
-                        </span>
-                      </td>
-                      <td class="p-3">
-                        ${statusBadge}
-                      </td>
-                      <td class="p-3 text-right">
-                        ${isDeleted ? `
-                          <button type="button" class="btn-undo-del-prereq px-2.5 py-1 rounded-lg text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition font-bold" data-prereq-idx="${idx}">
-                            Hoàn tác
-                          </button>
-                        ` : `
-                          <button type="button" class="btn-del-prereq px-2.5 py-1 rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition font-bold" data-prereq-idx="${idx}" data-prereq-id="${targetId}">
-                            Gỡ bỏ
-                          </button>
-                        `}
-                      </td>
-                    </tr>
-                  `;
-                }).join('')}
-              </tbody>
-            </table>
-          </div>
-        `;
-      }
-
-      // Attach delete & undo handlers
-      prereqBox.querySelectorAll('.btn-del-prereq').forEach(btn => {
-        btn.onclick = () => {
-          const idx = parseInt(btn.dataset.prereqIdx, 10);
-          if (stagedPrerequisites[idx]) {
-            if (stagedPrerequisites[idx].is_new) {
-              stagedPrerequisites.splice(idx, 1);
-            } else {
-              stagedPrerequisites[idx].is_deleted = true;
-            }
-            renderPrerequisitesTable();
-          }
-        };
-      });
-
-      prereqBox.querySelectorAll('.btn-undo-del-prereq').forEach(btn => {
-        btn.onclick = () => {
-          const idx = parseInt(btn.dataset.prereqIdx, 10);
-          if (stagedPrerequisites[idx]) {
-            stagedPrerequisites[idx].is_deleted = false;
-            renderPrerequisitesTable();
-          }
-        };
-      });
-      // End of renderPrerequisitesTable
-    };
-
-
-    const loadPrerequisites = async () => {
-      try {
-        const res = await ApiClient.getCoursePrerequisites(cId);
-        const list = (res && res.prerequisites) ? res.prerequisites : (Array.isArray(res) ? res : []);
-        stagedPrerequisites = list.map(item => ({
-          ...item,
-          course_id: item.course_id || item.prerequisite_course_id || item.id,
-          is_new: false,
-          is_deleted: false,
-        }));
-        renderPrerequisitesTable();
-      } catch (err) {
-        prereqBox.innerHTML = `<div class="p-4 text-center text-rose-500 text-xs">Lỗi nạp điều kiện tiên quyết: ${UI.escapeHtml(err.message || err)}</div>`;
-      }
-    };
-
-    await loadPrerequisites();
-
-    // Open Prerequisite Modal with Staging
-    const openPrereqBtn = document.getElementById('btn-open-prereq-modal');
-    if (openPrereqBtn) {
-      openPrereqBtn.onclick = async () => {
-        let myCourses = [];
-        let catalogCourses = [];
-        try {
-          const [cRes, catRes] = await Promise.allSettled([
-            ApiClient.getInstructorCourses(),
-            ApiClient.getCatalogCourses()
-          ]);
-          myCourses = (cRes.status === 'fulfilled' && cRes.value) ? (cRes.value.courses || (Array.isArray(cRes.value) ? cRes.value : [])) : [];
-          catalogCourses = (catRes.status === 'fulfilled' && catRes.value) ? (catRes.value.courses || catRes.value.items || (Array.isArray(catRes.value) ? catRes.value : [])) : [];
-        } catch {
-          myCourses = [];
-          catalogCourses = [];
-        }
-
-        const map = new Map();
-        for (const c of [...myCourses, ...catalogCourses]) {
-          const key = c.course_id || c.id;
-          const status = c.status || 'PUBLISHED';
-          if (key && key !== cId && status === 'PUBLISHED' && !map.has(key)) {
-            map.set(key, c);
-          }
-        }
-        const candidateCourses = Array.from(map.values()).sort((a, b) => {
-          const aMine = myCourses.some(mc => (mc.course_id || mc.id) === (a.course_id || a.id));
-          const bMine = myCourses.some(mc => (mc.course_id || mc.id) === (b.course_id || b.id));
-          if (aMine && !bMine) return -1;
-          if (!aMine && bMine) return 1;
-          return (a.title || '').localeCompare(b.title || '');
-        });
-
-        const modalHtml = `
-          <div class="space-y-4">
-            <div class="space-y-1">
-              <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">Chọn môn học bắt buộc tiên quyết</label>
-              <select id="modal-prereq-select" class="w-full h-10 px-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-xs text-slate-900 dark:text-white outline-none focus:border-primary">
-                ${candidateCourses.map(c => {
-                  const isMine = myCourses.some(mc => (mc.course_id || mc.id) === (c.course_id || c.id));
-                  const badge = isMine ? '★ [Môn của bạn - Dùng được ngay]' : '[Giảng viên khác - Cần gửi xét duyệt]';
-                  return `<option value="${c.course_id || c.id}" data-code="${UI.escapeHtml(c.course_code || '')}" data-title="${UI.escapeHtml(c.title || '')}">${c.course_code || 'MÔN'} - ${UI.escapeHtml(c.title)} ${badge}</option>`;
-                }).join('')}
-              </select>
-              <p class="text-[11px] text-slate-400 mt-1">Lưu ý: Môn học của giảng viên khác sẽ tự động gửi yêu cầu xin duyệt đến giảng viên phụ trách khi bấm Lưu thay đổi học vụ.</p>
-            </div>
-
-            <div class="space-y-1">
-              <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">Điểm GPA tối thiểu yêu cầu (Thang 4 hoặc 10)</label>
-              <input type="number" step="0.1" min="0" max="10" id="modal-prereq-min-grade" class="w-full h-10 px-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-xs text-slate-900 dark:text-white outline-none focus:border-primary" value="5.0" />
-            </div>
-
-            <div class="space-y-1">
-              <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">Lý do học thuật / Căn cứ đề cương</label>
-              <input type="text" id="modal-prereq-reason" class="w-full h-10 px-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white outline-none focus:border-primary" placeholder="VD: Bắt buộc nắm vững kiến thức Lập trình cơ sở..." value="Yêu cầu tiên quyết chuẩn hóa theo đề cương đào tạo" />
-            </div>
-
-            <div class="flex justify-end gap-2 pt-2">
-              <button type="button" class="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold cursor-pointer" onclick="UI.closeModal()">Hủy</button>
-              <button type="button" id="modal-prereq-submit-btn" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm cursor-pointer">Thêm vào danh sách</button>
-            </div>
-          </div>
-        `;
-
-        UI.openModal({
-          title: 'Thiết lập Môn học Tiên quyết',
-          bodyHtml: modalHtml,
-          size: 'md'
-        });
-
-        const subBtn = document.getElementById('modal-prereq-submit-btn');
-        if (subBtn) {
-          subBtn.onclick = () => {
-            const selectEl = document.getElementById('modal-prereq-select');
-            const prereqCourseId = selectEl?.value;
-            const selectedOpt = selectEl?.selectedOptions?.[0];
-            const courseCode = selectedOpt?.dataset?.code || 'PREREQ';
-            const courseTitle = selectedOpt?.dataset?.title || 'Môn tiên quyết';
-            const minGrade = parseFloat(document.getElementById('modal-prereq-min-grade')?.value || '5.0');
-            const reason = document.getElementById('modal-prereq-reason')?.value || '';
-
-            if (!prereqCourseId) {
-              UI.showToast('Vui lòng chọn môn học tiên quyết.', 'warning');
-              return;
-            }
-
-            // Check if already in staged
-            const existing = stagedPrerequisites.find(p => (p.course_id || p.prerequisite_course_id || p.id) === prereqCourseId);
-            if (existing) {
-              if (existing.is_deleted) {
-                existing.is_deleted = false;
-                existing.min_grade_point = minGrade;
-                existing.reason = reason;
-                UI.closeModal();
-                renderPrerequisitesTable();
-                UI.showToast('Đã khôi phục môn tiên quyết vào danh sách.', 'info');
-                return;
-              }
-              UI.showToast('Môn học này đã có trong danh sách tiên quyết.', 'warning');
-              return;
-            }
-
-            stagedPrerequisites.push({
-              course_id: prereqCourseId,
-              prerequisite_course_id: prereqCourseId,
-              course_code: courseCode,
-              title: courseTitle,
-              min_grade_point: minGrade,
-              reason: reason,
-              is_new: true,
-              is_deleted: false,
-            });
-
-            UI.closeModal();
-            renderPrerequisitesTable();
-            UI.showToast('Đã thêm môn tiên quyết vào danh sách tạm. Nhấp "Lưu thay đổi học vụ" để áp dụng.', 'info');
-          };
-        }
-      };
-    }
-
-    // 3. Load Completion Rules
-    const loadCompletionRules = async () => {
-      try {
-        const rule = await ApiClient.getCourseCompletionRules(cId);
-        if (rule) {
-          const pEl = document.getElementById('rule-min-progress');
-          const sEl = document.getElementById('rule-min-score');
-          const lEl = document.getElementById('rule-require-lessons');
-          const aEl = document.getElementById('rule-require-assessments');
-          const cEl = document.getElementById('rule-allow-certificate');
-
-          if (pEl && rule.minimum_progress_percent !== undefined) pEl.value = rule.minimum_progress_percent;
-          if (sEl && rule.minimum_grade_score !== undefined) sEl.value = rule.minimum_grade_score;
-          if (lEl && rule.require_all_required_lessons !== undefined) lEl.checked = !!rule.require_all_required_lessons;
-          if (aEl && rule.require_required_assessments !== undefined) aEl.checked = !!rule.require_required_assessments;
-          if (cEl && rule.allow_certificate !== undefined) cEl.checked = !!rule.allow_certificate;
-        }
-      } catch (err) {
-        console.warn('Could not load completion rules:', err);
-      }
-    };
-
-    await loadCompletionRules();
-
-    // 4. UNIFIED SAVE ACTION: Lưu Toàn Bộ Cài Đặt & Học Vụ
-    const saveAcademicBtn = document.getElementById('btn-save-academic-settings');
-    const pendingBadge = document.getElementById('academic-pending-badge');
-
-    if (saveAcademicBtn) {
-      saveAcademicBtn.onclick = async () => {
-        try {
-          saveAcademicBtn.disabled = true;
-          saveAcademicBtn.innerHTML = `<span class="inline-block animate-spin text-[14px]">⏳</span> <span>Đang lưu...</span>`;
-
-          const toSaveSLOs = harvestDOMtoSLOs();
-          const rulesPayload = {
-            minimum_progress_percent: parseFloat(document.getElementById('rule-min-progress')?.value || '80'),
-            minimum_grade_score: parseFloat(document.getElementById('rule-min-score')?.value || '5.0'),
-            completion_grace_days: 14,
-            require_all_required_lessons: Boolean(document.getElementById('rule-require-lessons')?.checked),
-            require_required_assessments: Boolean(document.getElementById('rule-require-assessments')?.checked),
-            allow_certificate: Boolean(document.getElementById('rule-allow-certificate')?.checked),
-          };
-          const prereqId = item => String(item.course_id || item.prerequisite_course_id || item.id);
-          const result = await ApiClient.saveCourseAcademicSettings(cId, {
-            learning_objectives: toSaveSLOs,
-            completion_rules: rulesPayload,
-            prerequisites: {
-              remove: stagedPrerequisites.filter(p => p.is_deleted && !p.is_new).map(prereqId),
-              add: stagedPrerequisites.filter(p => p.is_new && !p.is_deleted).map(item => ({
-                prerequisite_course_id: prereqId(item),
-                min_grade_point: item.min_grade_point ?? 5.0,
-                reason: item.reason || 'Yêu cầu chuẩn hóa đề cương'
-              }))
-            }
-          });
-          const hasPendingApproval = Boolean(result.pending_approval);
-          course.learning_objectives = result.course?.learning_objectives ?? toSaveSLOs;
-          customSLOs = [...toSaveSLOs];
-
-          // 4.4. Refresh state
-          await loadPrerequisites();
-
-          if (hasPendingApproval) {
-            if (pendingBadge) pendingBadge.classList.remove('hidden');
-            UI.showToast('Khóa học đã ban hành: Một số thay đổi học vụ đã được gửi tới Quản trị viên để xét duyệt!', 'info');
-          } else {
-            UI.showToast('Đã lưu toàn bộ Cài đặt & Chuẩn mực Học vụ thành công!', 'success');
-          }
-        } catch (err) {
-          UI.showToast('Lỗi lưu cài đặt học vụ: ' + (err.message || err), 'error');
-        } finally {
-          saveAcademicBtn.disabled = false;
-          saveAcademicBtn.innerHTML = `<span class="material-symbols-outlined text-[18px]">save</span><span>Lưu thay đổi học vụ</span>`;
-        }
-      };
-    }
+    return InstructorView.openCourseLandingEditorModal(course, 'academic-settings');
   }
 
-  // =========================================================================
-  // 3.3. Tab Student Roster Management
-  // =========================================================================
   static async renderTabStudents(tabContainer, courseId) {
     tabContainer.innerHTML = `
       <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden" id="students-roster-box">

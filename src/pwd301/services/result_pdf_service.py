@@ -27,6 +27,8 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from pwd301.services.pdf_math_service import math_paragraph, prepare_math
+
 # Cache registered font names
 _FONT_NORMAL = "Helvetica"
 _FONT_BOLD = "Helvetica-Bold"
@@ -115,182 +117,23 @@ def _plain(value: Any) -> str:
     return escape(str(value)).replace("\n", "<br/>")
 
 
-def _render_math_and_plain(value: Any) -> str:
-    """Format mathematical formulas, fractions, powers, roots, and LaTeX symbols into clean ReportLab markup."""
-    if value is None:
-        return ""
-    text = str(value)
-
-    # 1. Process explicit math blocks: $...$, $$...$$, \(...\), \[...\]
-    def _process_math_block(match: re.Match[str]) -> str:
-        s = match.group(1)
-        s = re.sub(r"\^\{([^{}]+)\}", r"<sup>\1</sup>", s)
-        s = re.sub(r"\^([a-zA-Z0-9+\-α-ωΑ-Ω])", r"<sup>\1</sup>", s)
-        s = re.sub(r"_\{([^{}]+)\}", r"<sub>\1</sub>", s)
-        s = re.sub(r"_([a-zA-Z0-9+\-α-ωΑ-Ω])", r"<sub>\1</sub>", s)
-        return s
-
-    text = re.sub(r"\$\$(.*?)\$\$", _process_math_block, text, flags=re.DOTALL)
-    text = re.sub(r"\$(.*?)\$", _process_math_block, text)
-    text = re.sub(r"\\\[(.*?)\\\]", _process_math_block, text, flags=re.DOTALL)
-    text = re.sub(r"\\\((.*?)\\\)", _process_math_block, text)
-
-    # 2. LaTeX symbols to Unicode equivalents
-    latex_syms = [
-        (r"\\pm\b", "±"),
-        (r"\\mp\b", "∓"),
-        (r"\\times\b", "×"),
-        (r"\\div\b", "÷"),
-        (r"\\cdot\b", "·"),
-        (r"\\approx\b", "≈"),
-        (r"\\neq\b", "≠"),
-        (r"\\ne\b", "≠"),
-        (r"\\leq\b", "≤"),
-        (r"\\le\b", "≤"),
-        (r"\\geq\b", "≥"),
-        (r"\\ge\b", "≥"),
-        (r"\\infty\b", "∞"),
-        (r"\\in\b", "∈"),
-        (r"\\notin\b", "∉"),
-        (r"\\subset\b", "⊂"),
-        (r"\\subseteq\b", "⊆"),
-        (r"\\cap\b", "∩"),
-        (r"\\cup\b", "∪"),
-        (r"\\forall\b", "∀"),
-        (r"\\exists\b", "∃"),
-        (r"\\to\b", "→"),
-        (r"\\rightarrow\b", "→"),
-        (r"\\Leftarrow\b", "⇐"),
-        (r"\\Rightarrow\b", "⇒"),
-        (r"\\Leftrightarrow\b", "⇔"),
-        (r"\\sum\b", "∑"),
-        (r"\\prod\b", "∏"),
-        (r"\\int\b", "∫"),
-        (r"\\iint\b", "∬"),
-        (r"\\iiint\b", "∭"),
-        (r"\\oint\b", "∮"),
-        (r"\\alpha\b", "α"),
-        (r"\\beta\b", "β"),
-        (r"\\gamma\b", "γ"),
-        (r"\\Gamma\b", "Γ"),
-        (r"\\delta\b", "δ"),
-        (r"\\Delta\b", "Δ"),
-        (r"\\epsilon\b", "ε"),
-        (r"\\varepsilon\b", "ε"),
-        (r"\\zeta\b", "ζ"),
-        (r"\\eta\b", "η"),
-        (r"\\theta\b", "θ"),
-        (r"\\Theta\b", "Θ"),
-        (r"\\lambda\b", "λ"),
-        (r"\\Lambda\b", "Λ"),
-        (r"\\mu\b", "μ"),
-        (r"\\pi\b", "π"),
-        (r"\\Pi\b", "Π"),
-        (r"\\rho\b", "ρ"),
-        (r"\\sigma\b", "σ"),
-        (r"\\Sigma\b", "Σ"),
-        (r"\\tau\b", "τ"),
-        (r"\\phi\b", "φ"),
-        (r"\\Phi\b", "Φ"),
-        (r"\\omega\b", "ω"),
-        (r"\\Omega\b", "Ω"),
-        (r"\\degree\b", "°"),
-        (r"\\left\(", "("),
-        (r"\\right\)", ")"),
-        (r"\\left\[", "["),
-        (r"\\right\]", "]"),
-        (r"\\left\\\{", "{"),
-        (r"\\right\\\}", "}"),
-        (r"\\\{", "{"),
-        (r"\\\}", "}"),
-        (r"\\left\|", "|"),
-        (r"\\right\|", "|"),
-        (r"\\text\{([^}]*)\}", r"\1"),
-        (r"\\mathrm\{([^}]*)\}", r"\1"),
-        (r"\\mathbf\{([^}]*)\}", r"\1"),
-    ]
-    for pattern, repl in latex_syms:
-        text = re.sub(pattern, repl, text)
-
-    # 3. Handle fractions: \frac{a}{b} -> (a)/(b) with arbitrarily nested braces
-    idx = text.find(r"\frac")
-    while idx != -1:
-        p = idx + 5
-        while p < len(text) and text[p].isspace():
-            p += 1
-        if p >= len(text) or text[p] != "{":
-            idx = text.find(r"\frac", idx + 5)
-            continue
-        num_start = p + 1
-        depth = 1
-        p += 1
-        while p < len(text) and depth > 0:
-            if text[p] == "{":
-                depth += 1
-            elif text[p] == "}":
-                depth -= 1
-            p += 1
-        if depth != 0:
-            idx = text.find(r"\frac", idx + 5)
-            continue
-        num_str = text[num_start : p - 1]
-        while p < len(text) and text[p].isspace():
-            p += 1
-        if p >= len(text) or text[p] != "{":
-            idx = text.find(r"\frac", idx + 5)
-            continue
-        den_start = p + 1
-        depth = 1
-        p += 1
-        while p < len(text) and depth > 0:
-            if text[p] == "{":
-                depth += 1
-            elif text[p] == "}":
-                depth -= 1
-            p += 1
-        if depth != 0:
-            idx = text.find(r"\frac", idx + 5)
-            continue
-        den_str = text[den_start : p - 1]
-        text = text[:idx] + f"({num_str})/({den_str})" + text[p:]
-        idx = text.find(r"\frac")
-
-    # 4. Handle roots: \sqrt[n]{x} -> (n)√(x), \sqrt{x} -> √(x) with arbitrarily nested braces
-    text = re.sub(r"\\sqrt\[([^\]]+)\]\{([^{}]+)\}", r"(\1)√(\2)", text)
-    idx = text.find(r"\sqrt")
-    while idx != -1:
-        p = idx + 5
-        while p < len(text) and text[p].isspace():
-            p += 1
-        if p >= len(text) or text[p] != "{":
-            idx = text.find(r"\sqrt", idx + 5)
-            continue
-        start = p + 1
-        depth = 1
-        p += 1
-        while p < len(text) and depth > 0:
-            if text[p] == "{":
-                depth += 1
-            elif text[p] == "}":
-                depth -= 1
-            p += 1
-        if depth != 0:
-            idx = text.find(r"\sqrt", idx + 5)
-            continue
-        content = text[start : p - 1]
-        text = text[:idx] + f"√({content})" + text[p:]
-        idx = text.find(r"\sqrt")
-
-    # 5. Handle explicit braced superscripts/subscripts like ^{...} and _{...}
-    text = re.sub(r"\^\{([^{}]+)\}", r"<sup>\1</sup>", text)
-    text = re.sub(r"_\{([^{}]+)\}", r"<sub>\1</sub>", text)
-
-    # 6. Escape HTML characters (preserving <sup>, <sub> tags)
-    parts = re.split(r"(</?(?:sup|sub)>)", text)
-    escaped_parts = [p if p in ("<sup>", "</sup>", "<sub>", "</sub>") else escape(p) for p in parts]
-    text = "".join(escaped_parts)
-
-    return text.replace("\n", "<br/>")
+def _selected_answer_text(question: dict[str, Any]) -> str:
+    """Decode snapshot selections to printable text, without exposing internal keys."""
+    raw_keys = question.get("selected_choice_keys") or question.get("selected_choice_ids") or []
+    keys = {str(key).strip() for key in raw_keys if key}
+    selected = []
+    for choice in question.get("choices") or []:
+        key = str(choice.get("choice_key") or choice.get("choice_id") or "").strip()
+        if choice.get("is_selected") or (key and key in keys):
+            text = str(choice.get("content") or "").strip()
+            text = re.sub(r"^\[\[PWD301:G:(?:DRAG|MATCH):[1-9]\d*\]\]", "", text)
+            if text:
+                selected.append(text.replace("|||", " → "))
+    if selected:
+        return "; ".join(selected)
+    if question.get("student_answer_text"):
+        return str(question["student_answer_text"]).strip()
+    return "(Đã chọn đáp án)" if keys else "(Chưa trả lời)"
 
 
 def _display_title(value: Any, fallback: str) -> str:
@@ -787,18 +630,13 @@ def build_attempt_result_pdf(result_data: dict[str, Any]) -> bytes:
     allow_view = bool(result_data.get("allow_student_view_results", True))
 
     is_passed = bool(result_data.get("is_passed", result_data.get("passed", percent >= 50.0)))
-    if allow_view:
-        badge_fill = "#ECF8F0" if is_passed else "#FFF0F1"
-        badge_color = colors.HexColor("#15803D") if is_passed else colors.HexColor("#B91C1C")
-        badge_label = "ĐẠT CHUẨN MÔN HỌC" if is_passed else "CHƯA ĐẠT YÊU CẦU"
-        if result_data.get("is_passed", result_data.get("passed")) is None:
-            badge_label = "CHƯA CÓ KẾT LUẬN"
-            badge_fill = "#F1F5F9"
-            badge_color = colors.HexColor("#475569")
-    else:
-        badge_fill = "#EAF3FE"
-        badge_color = colors.HexColor("#1E3A8A")
-        badge_label = "ĐÃ GHI NHẬN BÀI NỘP"
+    badge_fill = "#ECF8F0" if is_passed else "#FFF0F1"
+    badge_color = colors.HexColor("#15803D") if is_passed else colors.HexColor("#B91C1C")
+    badge_label = "ĐẠT CHUẨN MÔN HỌC" if is_passed else "CHƯA ĐẠT YÊU CẦU"
+    if result_data.get("is_passed", result_data.get("passed")) is None:
+        badge_label = "CHƯA CÓ KẾT LUẬN"
+        badge_fill = "#F1F5F9"
+        badge_color = colors.HexColor("#475569")
 
     percent_display = _format_score(percent)
     if percent_val is None and (_format_score(raw_score) == "-" or _format_score(max_score) == "-"):
@@ -821,35 +659,21 @@ def build_attempt_result_pdf(result_data: dict[str, Any]) -> bytes:
         alignment=1,
     )
 
-    if allow_view:
-        score_card_data = [
-            [
-                Paragraph("<b>TỔNG ĐIỂM ĐẠT ĐƯỢC</b>", style_info_label),
-                Paragraph("<b>TỶ LỆ HOÀN THÀNH</b>", style_info_label),
-                Paragraph("<b>KẾT QUẢ ĐÁNH GIÁ</b>", style_info_label),
-            ],
-            [
-                Paragraph(
-                    f"<b>{_format_score(raw_score)} / {_format_score(max_score)}</b>",
-                    style_score_big,
-                ),
-                Paragraph(f"<b>{percent_display}%</b>", style_score_big),
-                Paragraph(f"<b>{badge_label}</b>", style_badge),
-            ],
-        ]
-    else:
-        score_card_data = [
-            [
-                Paragraph("<b>TỔNG ĐIỂM ĐẠT ĐƯỢC</b>", style_info_label),
-                Paragraph("<b>TỶ LỆ HOÀN THÀNH</b>", style_info_label),
-                Paragraph("<b>TRẠNG THÁI BÀI THI</b>", style_info_label),
-            ],
-            [
-                Paragraph("<b>-</b>", style_score_big),
-                Paragraph("<b>-</b>", style_score_big),
-                Paragraph(f"<b>{badge_label}</b>", style_badge),
-            ],
-        ]
+    score_card_data = [
+        [
+            Paragraph("<b>TỔNG ĐIỂM ĐẠT ĐƯỢC</b>", style_info_label),
+            Paragraph("<b>TỶ LỆ HOÀN THÀNH</b>", style_info_label),
+            Paragraph("<b>KẾT QUẢ ĐÁNH GIÁ</b>", style_info_label),
+        ],
+        [
+            Paragraph(
+                f"<b>{_format_score(raw_score)} / {_format_score(max_score)}</b>",
+                style_score_big,
+            ),
+            Paragraph(f"<b>{percent_display}%</b>", style_score_big),
+            Paragraph(f"<b>{badge_label}</b>", style_badge),
+        ],
+    ]
     for label in score_card_data[0]:
         label.style = ParagraphStyle("MetricLabel", parent=style_info_label, alignment=1)
 
@@ -858,13 +682,19 @@ def build_attempt_result_pdf(result_data: dict[str, Any]) -> bytes:
         score_card_data,
         doc.width,
         ["#EAF3FE", "#EAF8F9", badge_fill],
-        ["trophy", "pie", "check" if (is_passed or not allow_view) else "alert"],
+        ["trophy", "pie", "check" if is_passed else "alert"],
     )
     story.append(score_table)
     story.append(Spacer(1, 18))
 
     # 4. Question Breakdown Section
     questions = result_data.get("questions") or []
+    if result_data.get("answer_visibility_policy") == "NEVER":
+        questions = []
+    math_values = [str(question.get("content") or "") for question in questions]
+    if allow_view:
+        math_values.extend(_selected_answer_text(question) for question in questions)
+    rendered_math = prepare_math(math_values)
     if questions:
         story.append(_SectionBand("CHI TIẾT ĐÁNH GIÁ TỪNG CÂU HỎI (QUESTION BREAKDOWN)", doc.width))
         story.append(Spacer(1, 6))
@@ -882,33 +712,7 @@ def build_attempt_result_pdf(result_data: dict[str, Any]) -> bytes:
         for idx, q in enumerate(questions, start=1):
             q_text = str(q.get("content") or f"Câu hỏi số {idx}").strip()
 
-            # Extract selected answer text (decode from choices instead of raw UUID keys)
-            choices = q.get("choices") or []
-            raw_keys = q.get("selected_choice_keys") or q.get("selected_choice_ids") or []
-            selected_keys = {str(k).strip() for k in raw_keys if k}
-
-            selected_texts: list[str] = []
-            for c in choices:
-                c_key = str(c.get("choice_key") or c.get("choice_id") or "").strip()
-                is_sel = bool(c.get("is_selected")) or (bool(c_key) and c_key in selected_keys)
-                if is_sel:
-                    content = str(c.get("content") or "").strip()
-                    if content:
-                        selected_texts.append(content)
-
-            if selected_texts:
-                selected_str = "; ".join(selected_texts)
-            elif q.get("student_answer_text"):
-                selected_str = str(q.get("student_answer_text")).strip()
-            else:
-                if selected_keys:
-                    first_key = next(iter(selected_keys))
-                    if len(first_key) == 36 and first_key.count("-") == 4:
-                        selected_str = "(Đã chọn đáp án)"
-                    else:
-                        selected_str = ", ".join(sorted(selected_keys))
-                else:
-                    selected_str = "(Chưa trả lời)"
+            selected_str = _selected_answer_text(q)
 
             if allow_view:
                 is_correct = bool(q.get("is_correct"))
@@ -922,17 +726,17 @@ def build_attempt_result_pdf(result_data: dict[str, Any]) -> bytes:
 
                 awarded = _format_score(q.get("awarded_points"))
                 assigned = _format_score(q.get("points_assigned"))
-                selected_cell = Paragraph(_render_math_and_plain(selected_str), style_td)
+                selected_cell = math_paragraph(selected_str, style_td, rendered_math)
                 score_cell = Paragraph(f"{awarded} / {assigned}", style_td_bold)
             else:
-                selected_cell = Paragraph("-", style_td_bold)
-                res_cell = Paragraph("-", style_td_bold)
-                score_cell = Paragraph("-", style_td_bold)
+                selected_cell = Paragraph("", style_td_bold)
+                res_cell = Paragraph("", style_td_bold)
+                score_cell = Paragraph("", style_td_bold)
 
             breakdown_rows.append(
                 [
                     Paragraph(f"<b>#{idx}</b>", style_td_bold),
-                    Paragraph(_render_math_and_plain(q_text), style_td),
+                    math_paragraph(q_text, style_td, rendered_math),
                     selected_cell,
                     res_cell,
                     score_cell,
@@ -945,14 +749,15 @@ def build_attempt_result_pdf(result_data: dict[str, Any]) -> bytes:
             repeatRows=1,
             splitInRow=1,
         )
+        row_padding = 9 if allow_view else 4
         breakdown_table.setStyle(
             TableStyle(
                 [
                     ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E3A8A")),
                     ("BOX", (0, 0), (-1, -1), 0.75, colors.HexColor("#CBD5E1")),
                     ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
-                    ("TOPPADDING", (0, 0), (-1, -1), 9),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
+                    ("TOPPADDING", (0, 0), (-1, -1), row_padding),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), row_padding),
                     ("LEFTPADDING", (0, 0), (-1, -1), 4),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 4),
                     ("VALIGN", (0, 0), (-1, -1), "TOP"),

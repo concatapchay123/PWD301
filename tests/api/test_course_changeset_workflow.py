@@ -66,8 +66,6 @@ def changeset_env(app: Flask) -> dict[str, Any]:
         },
         session=sess,
     )
-    course.status = "PUBLISHED"
-    sess.flush()
 
     # 3. Create 2 initial published lessons
     lesson1 = create_lesson(
@@ -95,6 +93,7 @@ def changeset_env(app: Flask) -> dict[str, Any]:
         session=sess,
     )
     lesson2.status = "PUBLISHED"
+    course.status = "PUBLISHED"
     sess.commit()
 
     return {
@@ -221,7 +220,12 @@ def test_submit_changeset_and_admin_approval_lifecycle(
     # Step 5: Admin approves the changeset
     res_approve = client.post(
         f"/admin/change-requests/{req_id}/review",
-        json={"action": "approve", "reason": "Noi dung cap nhat tot, phe duyet toan bo."},
+        json={
+            "action": "approve",
+            "reason": "Noi dung cap nhat tot, phe duyet toan bo.",
+            "request_id": req_id,
+            "review_version": req_item["review_version"],
+        },
         headers={"X-CSRF-Token": csrf_admin},
     )
     assert res_approve.status_code == 200, f"Approve failed: {res_approve.get_json()}"

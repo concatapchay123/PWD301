@@ -21,7 +21,7 @@
 | Course no Student history | active/trash | TRASH | ~30d | yes if no dependencies | optional audit only | n/a | prerequisite FK may block |
 | Course with Student history | active → archive/trash | TRASH then ARCHIVED historical | ~30d restore | not in way that breaks history | retain minimal Course identity | owner user may anonymize | disappears from discovery |
 | CoursePrerequisite | active relation | remove explicitly | n/a | yes relation | audit if material | n/a | active dependency blocks archive |
-| CourseChangeRequest | until reviewed/applied | status | n/a | cleanup old staging | audit + applied source data remain | actor may anonymize | proposed JSON not permanent content source |
+| CourseChangeRequest | draft through sealed decision and retained history | status | reject/withdraw retains full successor proposal | never purge active proposal or referenced historical data | terminal request + mandatory audit retained | actor may anonymize under retention policy | one active COURSE_VERSION_CHANGESET/DRAFT or PENDING; no automatic historical rewrite |
 | Lesson unused | active/trash | TRASH | ~30d | yes | none required | n/a | only if no learning history |
 | Lesson learned | active/hidden/trash | HIDDEN/TRASH→HISTORICAL | ~30d | keep minimal record | completion links/history | n/a | removed from new learners |
 | Enrollment | long-lived User-Course identity | status LEFT/DETAIL_PURGED | re-enroll uses same row | generally no | keep logical relation + summary | user anonymization | unique User-Course |
