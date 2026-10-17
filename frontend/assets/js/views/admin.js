@@ -1986,6 +1986,142 @@ class AdminView {
     return selected.size === correct.length && correct.every(index => selected.has(index));
   }
 
+  // Proprietary Clean Player Shell for Reviewer YouTube Video Previews
+  static _getCleanYouTubeShellHtml(id, playerId = 'reviewer-yt-player') {
+    if (!id) return '';
+    const embedUrl = (typeof UI !== 'undefined' && UI.getYouTubeEmbedUrl)
+      ? UI.getYouTubeEmbedUrl(id)
+      : `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?enablejsapi=1&controls=0&rel=0&iv_load_policy=3&disablekb=1&fs=0&playsinline=1`;
+    return `
+      <div class="relative group w-full rounded-xl bg-slate-950 flex flex-col select-none overflow-hidden my-4" id="${playerId}-container" data-custom-player="true" data-player-type="youtube" data-yt-id="${id}" tabindex="0">
+        <div class="relative w-full aspect-video overflow-hidden bg-slate-950" id="${playerId}-viewport">
+          <!-- Scaled container to crop out YouTube top header (title, share, avatar) and bottom branding -->
+          <div style="position: absolute; top: -14%; left: 0; width: 100%; height: 128%; pointer-events: none;" class="pointer-events-none">
+            <iframe id="${playerId}-iframe" class="w-full h-full border-0 pointer-events-none" src="${UI.escapeHtml(embedUrl)}" title="Video bài học YouTube" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen tabindex="-1"></iframe>
+          </div>
+          <!-- Click shield to handle play/pause without passing click through to YouTube iframe -->
+          <div id="${playerId}-shield" class="absolute inset-0 z-10 cursor-pointer bg-transparent" style="position: absolute; inset: 0; z-index: 10; cursor: pointer;" title="Nhấp để Phát/Tạm dừng"></div>
+          <!-- Poster/Backdrop Shield to cover YouTube native thumbnail & red play button before playback -->
+          <div id="${playerId}-poster-shield" class="absolute inset-0 z-15 bg-slate-950 flex flex-col items-center justify-center transition-opacity duration-300 pointer-events-auto cursor-pointer" style="position: absolute; inset: 0; z-index: 15;" title="Nhấp để phát video">
+            <div class="flex flex-col items-center gap-2 text-slate-400 pointer-events-none select-none">
+              <span class="material-symbols-outlined text-[48px] text-slate-600">smart_display</span>
+              <span class="text-xs font-medium tracking-wide text-slate-400">Xem trước video bài học</span>
+            </div>
+          </div>
+          <!-- Big Play Button Overlay -->
+          <button type="button" id="${playerId}-big-play" class="absolute inset-0 m-auto w-16 h-16 rounded-full bg-slate-900/80 hover:bg-slate-900 border border-white/20 text-white flex items-center justify-center backdrop-blur-sm transition-all shadow-xl group-hover:scale-105 z-20 cursor-pointer" aria-label="Phát video">
+            <span class="material-symbols-outlined text-[34px] ml-0.5 pointer-events-none">play_arrow</span>
+          </button>
+        </div>
+        <!-- Flat Warm Editorial Custom Control Bar -->
+        <div class="relative bg-slate-950 p-3 flex flex-col gap-2 z-20 transition-opacity duration-200" id="${playerId}-controls">
+          <!-- Scrubber Track -->
+          <div class="relative w-full h-2.5 bg-slate-700/60 rounded-full cursor-pointer group/track hover:h-3 transition-all" id="${playerId}-progress-track" title="Tiến độ bài học">
+            <div id="${playerId}-buffered-bar" class="absolute left-0 top-0 bottom-0 bg-slate-500/40 rounded-full w-0 transition-all pointer-events-none"></div>
+            <div id="${playerId}-played-bar" class="absolute left-0 top-0 bottom-0 bg-indigo-500 rounded-full w-0 pointer-events-none"></div>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-200">
+            <div class="flex items-center gap-3">
+              <button type="button" id="${playerId}-play-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Phát/Tạm dừng">
+                <span class="material-symbols-outlined text-[20px] align-middle">play_arrow</span>
+              </button>
+              <button type="button" id="${playerId}-mute-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Bật/Tắt âm">
+                <span class="material-symbols-outlined text-[20px] align-middle">volume_up</span>
+              </button>
+              <input id="${playerId}-volume" type="range" min="0" max="100" value="100" aria-label="Âm lượng" class="w-20" />
+              <span id="${playerId}-time" class="font-mono text-[11px] text-slate-300">00:00 / 00:00</span>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button type="button" id="${playerId}-speed-btn" class="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[11px] font-mono text-slate-200 transition-colors cursor-pointer" title="Tốc độ học">
+                1.0x
+              </button>
+              <button type="button" id="${playerId}-fullscreen-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Toàn màn hình">
+                <span class="material-symbols-outlined text-[20px] align-middle">fullscreen</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  static setupReviewerVideoPlayer(playerId) {
+    if (typeof window !== 'undefined' && window.StudentView?.setupCustomVideoPlayer) {
+      return window.StudentView.setupCustomVideoPlayer(playerId, { preview: true, isPreview: true });
+    }
+    if (typeof document === 'undefined') return null;
+    const container = document.getElementById(`${playerId}-container`);
+    if (!container) return null;
+    const iframe = document.getElementById(`${playerId}-iframe`);
+    const poster = document.getElementById(`${playerId}-poster-shield`);
+    const bigPlay = document.getElementById(`${playerId}-big-play`);
+    const playBtn = document.getElementById(`${playerId}-play-btn`);
+    const muteBtn = document.getElementById(`${playerId}-mute-btn`);
+    const shield = document.getElementById(`${playerId}-shield`);
+    const speedBtn = document.getElementById(`${playerId}-speed-btn`);
+    const fsBtn = document.getElementById(`${playerId}-fullscreen-btn`);
+    let isPlaying = false;
+    let isMuted = false;
+    let playbackRate = 1;
+    const rates = [0.75, 1, 1.25, 1.5, 2];
+
+    const postCommand = (func, args = []) => {
+      try {
+        iframe?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func, args }), '*');
+      } catch (_) {}
+    };
+
+    const togglePlay = () => {
+      isPlaying = !isPlaying;
+      if (isPlaying) {
+        postCommand('playVideo');
+        if (poster) poster.classList.add('opacity-0', 'pointer-events-none');
+        if (bigPlay) bigPlay.classList.add('hidden');
+        const icon = playBtn?.querySelector('.material-symbols-outlined');
+        if (icon) icon.textContent = 'pause';
+      } else {
+        postCommand('pauseVideo');
+        if (bigPlay) bigPlay.classList.remove('hidden');
+        const icon = playBtn?.querySelector('.material-symbols-outlined');
+        if (icon) icon.textContent = 'play_arrow';
+      }
+    };
+
+    if (shield) shield.onclick = togglePlay;
+    if (poster) poster.onclick = togglePlay;
+    if (bigPlay) bigPlay.onclick = togglePlay;
+    if (playBtn) playBtn.onclick = togglePlay;
+    if (muteBtn) {
+      muteBtn.onclick = () => {
+        isMuted = !isMuted;
+        postCommand(isMuted ? 'mute' : 'unMute');
+        const icon = muteBtn.querySelector('.material-symbols-outlined');
+        if (icon) icon.textContent = isMuted ? 'volume_off' : 'volume_up';
+      };
+    }
+    if (speedBtn) {
+      speedBtn.onclick = () => {
+        const next = rates[(rates.indexOf(playbackRate) + 1) % rates.length] || 1;
+        playbackRate = next;
+        postCommand('setPlaybackRate', [next]);
+        speedBtn.textContent = `${next}x`;
+      };
+    }
+    if (fsBtn) {
+      fsBtn.onclick = () => {
+        if (document.fullscreenElement) void document.exitFullscreen?.();
+        else void container.requestFullscreen?.();
+      };
+    }
+    return {
+      destroy: () => {
+        if (isPlaying) postCommand('pauseVideo');
+      }
+    };
+  }
+
   // Reviewer rendering is read-only: local quiz feedback and media never call progress APIs.
   static renderReviewerCoursePreview(container, course, initialLessonId = null) {
     if (!container) return;
@@ -2013,6 +2149,11 @@ class AdminView {
     const buttons = container.querySelectorAll('.reviewer-lesson-btn');
     const renderLesson = index => {
       workspace.querySelectorAll('video').forEach(video => video.pause());
+      workspace.querySelectorAll('[id$="-iframe"]').forEach(iframe => {
+        try {
+          iframe.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*');
+        } catch (_) {}
+      });
       const lesson = lessons[index];
       if (!lesson) { workspace.innerHTML = '<p class="text-slate-600 dark:text-slate-300">Chưa có bài học để xem trước.</p>'; return; }
       const markdown = String(lesson.markdown_content || '');
@@ -2030,11 +2171,17 @@ class AdminView {
       const documents = resources.filter(resource => !videos.includes(resource));
       workspace.innerHTML = `<p class="text-sm text-slate-600 dark:text-slate-300">Xem trước · Không ghi tiến độ học tập</p>
         <header class="space-y-3"><h2 class="text-2xl font-semibold text-slate-900 dark:text-slate-100 break-words">${UI.escapeHtml(lesson.title || 'Bài học')}</h2>${lesson.summary ? `<p class="text-slate-700 dark:text-slate-200">${UI.escapeHtml(lesson.summary)}</p>` : ''}</header>
-        ${youtube.map(url => { const id = UI.parseYouTubeId(url); return id ? `<iframe class="w-full aspect-video rounded-xl" src="${UI.escapeHtml(UI.getYouTubeEmbedUrl(id))}" title="Video bài học YouTube" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>` : ''; }).join('')}
+        ${youtube.map((url, yIdx) => { const id = UI.parseYouTubeId(url); return id ? AdminView._getCleanYouTubeShellHtml(id, `reviewer-player-${index}-${yIdx}`) : ''; }).join('')}
         ${videos.map(resource => { const id = resource.asset_id || resource.file_asset?.public_id; return id ? `<video controls playsinline preload="metadata" class="w-full max-h-[460px] bg-slate-950 rounded-xl" src="/api/files/${encodeURIComponent(id)}/stream" aria-label="${UI.escapeHtml(resource.filename || resource.title || 'Video bài học')}"></video>` : '<p class="text-slate-600 dark:text-slate-300">Video chưa có tài nguyên xem trước hợp lệ.</p>'; }).join('')}
         <article class="prose dark:prose-invert max-w-none break-words">${UI.renderMarkdown(markdown.replace(/<!--\s*(?:video_urls?|mini_quiz(?:_passing)?):.*?-->\s*/gs, ''))}</article>
         ${documents.length ? `<section class="space-y-3"><h3 class="text-lg font-semibold">Tài liệu đính kèm</h3>${documents.map(resource => { const id = resource.asset_id || resource.file_asset?.public_id; const url = id ? `/api/files/${encodeURIComponent(id)}/download` : resource.file_url; const title = resource.filename || resource.title || resource.label || 'Tài liệu'; return url && /^(?:\/[^/]|https?:\/\/)/i.test(url) ? `<button type="button" class="reviewer-document-btn block px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-primary" data-url="${UI.escapeHtml(url)}" data-title="${UI.escapeHtml(title)}" data-mime="${UI.escapeHtml(resource.mime_type || '')}">Xem ${UI.escapeHtml(title)}</button>` : `<p>${UI.escapeHtml(title)} · Chưa có liên kết xem trước</p>`; }).join('')}</section>` : ''}
         ${quiz.map((question, qIndex) => `<fieldset class="reviewer-quiz border border-slate-200 dark:border-slate-700 rounded-xl p-4 space-y-3" data-question-index="${qIndex}"><legend class="font-semibold px-2">${UI.escapeHtml(question.question || 'Câu hỏi')}</legend>${AdminView.reviewerQuizInputs(question, `reviewer-${index}-${qIndex}`)}<button type="button" class="reviewer-check-answer px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-primary">Kiểm tra đáp án</button><p aria-live="polite" class="reviewer-quiz-feedback text-sm"></p></fieldset>`).join('')}`;
+      youtube.forEach((url, yIdx) => {
+        const id = UI.parseYouTubeId(url);
+        if (id) {
+          AdminView.setupReviewerVideoPlayer(`reviewer-player-${index}-${yIdx}`);
+        }
+      });
       buttons.forEach((button, buttonIndex) => button.setAttribute('aria-current', buttonIndex === index ? 'true' : 'false'));
       workspace.querySelectorAll('.reviewer-document-btn').forEach(button => { button.onclick = () => AdminView.openDocumentPreviewModal(button.dataset.title, button.dataset.url, button.dataset.mime); });
       workspace.querySelectorAll('.reviewer-quiz').forEach(fieldset => {

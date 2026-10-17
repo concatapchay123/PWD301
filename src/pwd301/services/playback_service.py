@@ -7,6 +7,7 @@ serializes session creation and heartbeat writes across Gunicorn processes.
 from __future__ import annotations
 
 import json
+import logging
 import math
 import re
 import uuid
@@ -28,6 +29,9 @@ from pwd301.services.lesson_service import (
 )
 from pwd301.services.youtube_validator_service import extract_youtube_id, get_youtube_metadata
 
+logger = logging.getLogger(__name__)
+
+DEFAULT_YOUTUBE_FALLBACK_DURATION: float = 1800.0  # 30 minutes safe default
 STATES = {"playing", "paused", "buffering", "hidden", "blackout", "error"}
 
 
@@ -86,14 +90,86 @@ def _context(actor: Any, lesson_id: Any, sess: Any) -> tuple[Any, Any, Any]:
     return lesson, enrollment, period
 
 
-def _duration(lesson: Any, media_id: str) -> float:
+def _duration(lesson: Any, media_id: str, client_duration: float | None = None) -> float:
     if media_id.startswith("youtube:"):
-        metadata = get_youtube_metadata(media_id.split(":", 1)[1])
-        if not metadata.get("valid") or not metadata.get("embeddable"):
-            raise LessonValidationError(
-                "Trusted YouTube duration is unavailable. Please retry later."
-            )
-        duration = float(metadata.get("duration_seconds") or 0)
+        yt_id = media_id.split(":", 1)[1]
+        metadata = get_youtube_metadata(yt_id)
+        if (
+            metadata.get("valid")
+            and metadata.get("embeddable")
+            and metadata.get("duration_seconds")
+        ):
+            try:
+                dur_val = float(metadata["duration_seconds"])
+                if math.isfinite(dur_val) and dur_val > 0:
+                    return dur_val
+            except (ValueError, TypeError):
+                pass
+
+        logger.warning(
+            "Trusted YouTube metadata unavailable for %s (reason=%s). Triggering resilient fallback.",
+            yt_id,
+            metadata.get("reason"),
+        )
+        # 3-tier fallback:
+        # Tier 1: Client-reported duration if provided and valid (5.0s to 86400.0s)
+        if client_duration is not None:
+            try:
+                cd = float(client_duration)
+                if math.isfinite(cd) and 5.0 <= cd <= 86400.0:
+                    logger.info(
+                        "Resilient YouTube fallback using client duration for %s: %.1fs", yt_id, cd
+                    )
+                    return cd
+            except (ValueError, TypeError):
+                pass
+
+        # Optional oEmbed check (preserves compatibility if oEmbed provides duration)
+        try:
+            from pwd301.services.youtube_validator_service import verify_youtube_embeddability
+
+            oembed = verify_youtube_embeddability(yt_id)
+            if oembed.get("duration_seconds") and float(oembed["duration_seconds"]) > 0:
+                oembed_dur = float(oembed["duration_seconds"])
+                logger.info(
+                    "Resilient YouTube fallback using oEmbed duration for %s: %.1fs",
+                    yt_id,
+                    oembed_dur,
+                )
+                return oembed_dur
+        except Exception as exc:
+            logger.warning("Resilient oEmbed check failed for %s: %s", yt_id, exc)
+
+        # Tier 2: Lesson estimated duration
+        if hasattr(lesson, "estimated_duration_minutes") and lesson.estimated_duration_minutes:
+            try:
+                est_min = float(lesson.estimated_duration_minutes)
+                if math.isfinite(est_min) and est_min > 0:
+                    est_sec = est_min * 60.0
+                    logger.info(
+                        "Resilient YouTube fallback using lesson estimated duration for %s: %.1fs",
+                        yt_id,
+                        est_sec,
+                    )
+                    return est_sec
+            except (ValueError, TypeError):
+                pass
+
+        if hasattr(lesson, "duration_seconds") and lesson.duration_seconds:
+            try:
+                ls_sec = float(lesson.duration_seconds)
+                if math.isfinite(ls_sec) and ls_sec > 0:
+                    return ls_sec
+            except (ValueError, TypeError):
+                pass
+
+        # Tier 3: Default fallback duration (1800.0s)
+        logger.info(
+            "Resilient YouTube fallback using default duration for %s: %.1fs",
+            yt_id,
+            DEFAULT_YOUTUBE_FALLBACK_DURATION,
+        )
+        return DEFAULT_YOUTUBE_FALLBACK_DURATION
     elif media_id.startswith("hls:"):
         from pwd301.services.video_drm_service import get_asset_hls_directory
 
@@ -161,7 +237,12 @@ def _snapshot(
 
 
 def start_playback_session(
-    actor: Any, lesson_id: Any, media_id: Any, session: Any = None, now: Any = None
+    actor: Any,
+    lesson_id: Any,
+    media_id: Any,
+    client_duration: float | None = None,
+    session: Any = None,
+    now: Any = None,
 ) -> dict[str, Any]:
     sess = session if session is not None else db.session
     try:
@@ -178,7 +259,7 @@ def start_playback_session(
             .first()
         )
         if media is None:
-            duration = _duration(lesson, media_id)
+            duration = _duration(lesson, media_id, client_duration=client_duration)
             existing_progress = get_lesson_progress(actor, lesson.id, session=sess)
             historically_complete = bool(
                 existing_progress and existing_progress.completed_at and ids and media_id in ids
@@ -192,6 +273,18 @@ def start_playback_session(
                 updated_at=at,
             )
             sess.add(media)
+        elif client_duration is not None and str(media_id).startswith("youtube:"):
+            try:
+                cd_val = float(client_duration)
+                if (
+                    math.isfinite(cd_val)
+                    and 5.0 <= cd_val <= 86400.0
+                    and cd_val != media.duration_seconds
+                ):
+                    media.duration_seconds = max(media.frontier_seconds, cd_val)
+                    media.updated_at = at
+            except (ValueError, TypeError):
+                pass
         lease = (
             sess.query(PlaybackSession)
             .filter_by(enrollment_period_id=period.id, lesson_id=lesson.id)
@@ -325,6 +418,23 @@ def record_playback_heartbeat(
             .one()
         )
         at = now if now is not None else utc_now()
+        reported_duration = (
+            payload.get("client_duration")
+            if payload.get("client_duration") is not None
+            else payload.get("duration")
+        )
+        if reported_duration is not None and str(media.media_id).startswith("youtube:"):
+            try:
+                rep_d = float(reported_duration)
+                if (
+                    math.isfinite(rep_d)
+                    and 5.0 <= rep_d <= 86400.0
+                    and rep_d != media.duration_seconds
+                ):
+                    media.duration_seconds = max(media.frontier_seconds, rep_d)
+                    media.updated_at = at
+            except (ValueError, TypeError):
+                pass
         elapsed = (
             (_to_naive_utc(at) - _to_naive_utc(lease.last_heartbeat_at)).total_seconds()
             if lease.last_heartbeat_at

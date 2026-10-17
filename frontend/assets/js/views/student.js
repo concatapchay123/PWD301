@@ -1674,6 +1674,7 @@ class StudentView {
       const courseCode = course.code || course.course_code || 'PWD301';
       const courseTitle = course.title || 'Khóa học Đào tạo Chuyên sâu';
       const plainDesc = rawDesc || 'Khóa học trang bị kiến thức nền tảng và kỹ năng thực hành chuyên sâu theo giáo trình chuẩn quốc tế, giúp học viên làm chủ công nghệ và ứng dụng thực tiễn.';
+      const ytHeroId = videoUrl ? UI.parseYouTubeId(videoUrl) : null;
 
       // Full Page Shell matching standard layout
       container.innerHTML = `
@@ -1748,21 +1749,91 @@ class StudentView {
 
               <!-- Media Preview Box (Col 5) with Active Video Player Support -->
               <div class="lg:col-span-5">
-                <div id="course-hero-media-box" class="aspect-video w-full rounded-2xl overflow-hidden bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-2xl relative flex items-center justify-center group">
-                  ${course.thumbnail_url ? `
-                    <img src="${UI.escapeHtml(course.thumbnail_url)}" alt="${UI.escapeHtml(courseTitle)}" class="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform duration-500" />
-                  ` : `
-                    <div class="absolute inset-0 bg-gradient-to-tr from-emerald-950/60 via-slate-900 to-slate-950 opacity-90"></div>
-                  `}
-                  <div class="relative z-10 text-center space-y-3 p-6 flex flex-col items-center">
-                    <button type="button" id="btn-play-hero-trailer" class="w-16 h-16 rounded-full bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 flex items-center justify-center shadow-xl shadow-emerald-500/40 group-hover:scale-110 transition-transform cursor-pointer border-0">
-                      <span class="material-symbols-outlined text-3xl font-black">play_arrow</span>
-                    </button>
-                    <div>
-                      <p class="text-xs font-extrabold text-emerald-400 tracking-wider uppercase">Xem giới thiệu khóa học</p>
-                      <p class="text-[11px] text-slate-300 mt-0.5">${videoUrl ? 'Video giới thiệu chính thức • Bấm để phát trực tiếp' : 'Thời lượng bài giảng: Chuẩn đầu ra quốc tế'}</p>
+                <div id="course-hero-media-box" class="aspect-video w-full rounded-2xl overflow-hidden bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-2xl relative flex items-center justify-center group select-none">
+                  ${ytHeroId ? `
+                    <div class="relative w-full h-full overflow-hidden bg-slate-950 rounded-2xl select-none" id="hero-trailer-clean-shell">
+                      <div style="position: absolute; top: -14%; left: 0; width: 100%; height: 128%; pointer-events: none;" class="pointer-events-none">
+                        <iframe
+                          id="hero-trailer-iframe"
+                          src="https://www.youtube-nocookie.com/embed/${ytHeroId}?autoplay=1&mute=1&loop=1&playlist=${ytHeroId}&controls=0&showinfo=0&rel=0&iv_load_policy=3&disablekb=1&modestbranding=1&playsinline=1&enablejsapi=1"
+                          class="w-full h-full border-0 pointer-events-none"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          tabindex="-1"
+                        ></iframe>
+                      </div>
+                      <!-- Click shield prevents direct interaction with YouTube -->
+                      <div id="hero-trailer-shield" class="absolute inset-0 z-10 cursor-pointer bg-transparent" title="Trailer Giới Thiệu Khóa Học - Bấm để phóng to"></div>
+                      <!-- Subtle overlay buttons on corner -->
+                      <div class="absolute top-3 right-3 flex items-center gap-2 z-20">
+                        <button
+                          type="button"
+                          id="btn-trailer-toggle-mute"
+                          class="px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-white text-xs font-bold border border-slate-700/80 flex items-center gap-1.5 shadow-xl backdrop-blur-md cursor-pointer transition-all hover:scale-105"
+                          title="Bật/Tắt âm thanh trailer"
+                        >
+                          <span class="material-symbols-outlined text-[16px]">volume_off</span>
+                          <span class="mute-text">Bật tiếng</span>
+                        </button>
+                        <button
+                          type="button"
+                          id="btn-hero-video-expand"
+                          class="px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-white text-xs font-bold border border-slate-700/80 flex items-center gap-1.5 shadow-xl backdrop-blur-md cursor-pointer transition-all hover:scale-105"
+                          title="Xem phóng to rạp chiếu"
+                        >
+                          <span class="material-symbols-outlined text-[16px]">open_in_full</span>
+                          <span>Phóng to</span>
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  ` : videoUrl ? `
+                    <div class="relative w-full h-full bg-black flex items-center justify-center">
+                      <video
+                        id="hero-trailer-video"
+                        src="${UI.escapeHtml(videoUrl)}"
+                        autoplay
+                        muted
+                        loop
+                        playsinline
+                        class="w-full h-full object-contain pointer-events-none"
+                      ></video>
+                      <div id="hero-trailer-shield" class="absolute inset-0 z-10 cursor-pointer bg-transparent" title="Trailer Giới Thiệu Khóa Học - Bấm để phóng to"></div>
+                      <div class="absolute top-3 right-3 flex items-center gap-2 z-20">
+                        <button
+                          type="button"
+                          id="btn-trailer-toggle-mute"
+                          class="px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-white text-xs font-bold border border-slate-700/80 flex items-center gap-1.5 shadow-xl backdrop-blur-md cursor-pointer transition-all hover:scale-105"
+                          title="Bật/Tắt âm thanh trailer"
+                        >
+                          <span class="material-symbols-outlined text-[16px]">volume_off</span>
+                          <span class="mute-text">Bật tiếng</span>
+                        </button>
+                        <button
+                          type="button"
+                          id="btn-hero-video-expand"
+                          class="px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-white text-xs font-bold border border-slate-700/80 flex items-center gap-1.5 shadow-xl backdrop-blur-md cursor-pointer transition-all hover:scale-105"
+                          title="Xem phóng to rạp chiếu"
+                        >
+                          <span class="material-symbols-outlined text-[16px]">open_in_full</span>
+                          <span>Phóng to</span>
+                        </button>
+                      </div>
+                    </div>
+                  ` : `
+                    ${course.thumbnail_url ? `
+                      <img src="${UI.escapeHtml(course.thumbnail_url)}" alt="${UI.escapeHtml(courseTitle)}" class="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform duration-500" />
+                    ` : `
+                      <div class="absolute inset-0 bg-gradient-to-tr from-emerald-950/60 via-slate-900 to-slate-950 opacity-90"></div>
+                    `}
+                    <div class="relative z-10 text-center space-y-3 p-6 flex flex-col items-center">
+                      <button type="button" id="btn-play-hero-trailer" class="w-16 h-16 rounded-full bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 flex items-center justify-center shadow-xl shadow-emerald-500/40 group-hover:scale-110 transition-transform cursor-pointer border-0">
+                        <span class="material-symbols-outlined text-3xl font-black">play_arrow</span>
+                      </button>
+                      <div>
+                        <p class="text-xs font-extrabold text-emerald-400 tracking-wider uppercase">Xem giới thiệu khóa học</p>
+                        <p class="text-[11px] text-slate-300 mt-0.5">Thời lượng bài giảng: Chuẩn đầu ra quốc tế</p>
+                      </div>
+                    </div>
+                  `}
                 </div>
               </div>
             </div>
@@ -2006,27 +2077,11 @@ class StudentView {
         </div>
       `;
 
-      // Helper: Open Trailer Lightbox Modal
+      // Helper: Open Trailer Lightbox Modal with Clean Player Shell
       const openTrailerLightbox = (url, ytId) => {
-        let contentHtml = '';
-        if (ytId) {
-          contentHtml = `
-            <div class="aspect-video w-full rounded-2xl overflow-hidden bg-black shadow-2xl">
-              <iframe
-                src="https://www.youtube-nocookie.com/embed/${ytId}?autoplay=1&rel=0&modestbranding=1&iv_load_policy=3&playsinline=1&enablejsapi=1"
-                class="w-full h-full border-0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                allowfullscreen
-              ></iframe>
-            </div>
-          `;
-        } else {
-          contentHtml = `
-            <div class="aspect-video w-full rounded-2xl overflow-hidden bg-black shadow-2xl flex items-center justify-center">
-              <video src="${url}" controls autoplay playsinline class="w-full h-full object-contain"></video>
-            </div>
-          `;
-        }
+        const playerId = 'trailer-lightbox-player';
+        const contentHtml = StudentView._getEmbedVideoHtml(url, playerId, false);
+        let playerController = null;
 
         UI.openModal({
           title: `
@@ -2035,16 +2090,33 @@ class StudentView {
               <span class="font-bold text-sm sm:text-base text-slate-900 dark:text-white">Trailer Giới thiệu: ${UI.escapeHtml(courseTitle)}</span>
             </div>
           `,
-          bodyHtml: contentHtml,
+          bodyHtml: `<div class="w-full">${contentHtml}</div>`,
           footerHtml: `
             <div class="flex justify-end w-full">
-              <button type="button" class="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold cursor-pointer transition-colors" onclick="UI.closeModal()">
+              <button type="button" id="btn-close-trailer-modal" class="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold cursor-pointer transition-colors" onclick="UI.closeModal()">
                 Đóng
               </button>
             </div>
           `,
           size: 'xl'
         });
+
+        // Initialize custom player controller for clean trailer playback
+        setTimeout(() => {
+          playerController = StudentView.setupCustomVideoPlayer(playerId, { preview: true, isPreview: true });
+        }, 50);
+
+        window._modalOnClose = () => {
+          playerController?.destroy?.();
+        };
+
+        const closeBtn = document.getElementById('btn-close-trailer-modal');
+        if (closeBtn) {
+          closeBtn.onclick = () => {
+            playerController?.destroy?.();
+            UI.closeModal();
+          };
+        }
       };
 
       // Wire Scroll to Syllabus Button (BUG-04)
@@ -2058,71 +2130,54 @@ class StudentView {
         };
       }
 
-      // Wire Active Hero Trailer Play Button
-      const playHeroBtn = document.getElementById('btn-play-hero-trailer');
-      const heroMediaBox = document.getElementById('course-hero-media-box');
-      if (playHeroBtn && heroMediaBox) {
+      // Wire Trailer mute toggle and expand button
+      let isTrailerMuted = true;
+      const trailerMuteBtn = container.querySelector('#btn-trailer-toggle-mute') || document.getElementById('btn-trailer-toggle-mute');
+      if (trailerMuteBtn) {
+        trailerMuteBtn.onclick = (e) => {
+          e.stopPropagation();
+          isTrailerMuted = !isTrailerMuted;
+          const iframe = document.getElementById('hero-trailer-iframe');
+          if (iframe && iframe.contentWindow) {
+            const func = isTrailerMuted ? 'mute' : 'unMute';
+            iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func, args: [] }), '*');
+            if (!isTrailerMuted) {
+              iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [100] }), '*');
+            }
+          }
+          const nativeVideo = document.getElementById('hero-trailer-video');
+          if (nativeVideo) {
+            nativeVideo.muted = isTrailerMuted;
+          }
+          const icon = trailerMuteBtn.querySelector('.material-symbols-outlined');
+          const label = trailerMuteBtn.querySelector('.mute-text');
+          if (icon) icon.textContent = isTrailerMuted ? 'volume_off' : 'volume_up';
+          if (label) label.textContent = isTrailerMuted ? 'Bật tiếng' : 'Tắt tiếng';
+        };
+      }
+
+      const heroShield = container.querySelector('#hero-trailer-shield') || document.getElementById('hero-trailer-shield');
+      const heroExpandBtn = container.querySelector('#btn-hero-video-expand') || document.getElementById('btn-hero-video-expand');
+      const handleOpenTrailer = (e) => {
+        if (e) e.stopPropagation();
+        if (videoUrl) {
+          const yt = UI.parseYouTubeId(videoUrl);
+          openTrailerLightbox(videoUrl.trim(), yt);
+        }
+      };
+      if (heroShield) heroShield.onclick = handleOpenTrailer;
+      if (heroExpandBtn) heroExpandBtn.onclick = handleOpenTrailer;
+
+      const playHeroBtn = container.querySelector('#btn-play-hero-trailer') || document.getElementById('btn-play-hero-trailer');
+      if (playHeroBtn) {
         playHeroBtn.onclick = () => {
           if (!videoUrl || !videoUrl.trim()) {
             UI.showToast('Khóa học hiện đang hoàn thiện video trailer giới thiệu. Thầy/Cô sẽ sớm cập nhật video.', 'info');
             return;
           }
           const cleanUrl = videoUrl.trim();
-          const ytMatch = cleanUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/i);
-
-          if (ytMatch) {
-            const heroEmbedUrl = `https://www.youtube-nocookie.com/embed/${ytMatch[1]}?autoplay=1&mute=1&loop=1&playlist=${ytMatch[1]}&controls=0&showinfo=0&rel=0&iv_load_policy=3&disablekb=1&modestbranding=1&playsinline=1`;
-            heroMediaBox.innerHTML = `
-              <div class="relative w-full h-full overflow-hidden bg-slate-950 rounded-2xl select-none" id="hero-trailer-clean-shell">
-                <div style="position: absolute; top: -14%; left: 0; width: 100%; height: 128%; pointer-events: none;" class="pointer-events-none">
-                  <iframe
-                    id="hero-trailer-iframe"
-                    src="${heroEmbedUrl}"
-                    class="w-full h-full border-0 pointer-events-none"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    tabindex="-1"
-                  ></iframe>
-                </div>
-                <!-- Click shield prevents direct interaction with YouTube -->
-                <div id="hero-trailer-shield" class="absolute inset-0 z-10 cursor-pointer bg-transparent" title="Trailer Giới Thiệu Khóa Học"></div>
-              </div>
-            `;
-            const shield = document.getElementById('hero-trailer-shield');
-            if (shield) {
-              shield.onclick = () => {
-                openTrailerLightbox(cleanUrl, ytMatch[1]);
-              };
-            }
-          } else {
-            heroMediaBox.innerHTML = `
-              <div class="relative w-full h-full bg-black flex items-center justify-center">
-                <video
-                  id="hero-trailer-video"
-                  src="${cleanUrl}"
-                  controls
-                  autoplay
-                  playsinline
-                  class="w-full h-full object-contain"
-                ></video>
-                <button
-                  type="button"
-                  id="btn-hero-video-expand"
-                  class="absolute top-3 right-3 px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-white text-xs font-bold border border-slate-700/80 flex items-center gap-1.5 shadow-xl backdrop-blur-md cursor-pointer transition-all hover:scale-105 z-20"
-                  title="Xem phóng to rạp chiếu"
-                >
-                  <span class="material-symbols-outlined text-[16px]">open_in_full</span>
-                  <span>Phóng to</span>
-                </button>
-              </div>
-            `;
-          }
-
-          const expandBtn = document.getElementById('btn-hero-video-expand');
-          if (expandBtn) {
-            expandBtn.onclick = () => {
-              openTrailerLightbox(cleanUrl, ytMatch ? ytMatch[1] : null);
-            };
-          }
+          const yt = UI.parseYouTubeId(cleanUrl);
+          openTrailerLightbox(cleanUrl, yt);
         };
       }
       // Wire individual syllabus module toggles
@@ -5614,6 +5669,13 @@ class StudentView {
             </div>
             <!-- Click shield to handle play/pause without passing click through to YouTube iframe -->
             <div id="${playerId}-shield" class="absolute inset-0 z-10 cursor-pointer bg-transparent" style="position: absolute; inset: 0; z-index: 10; cursor: pointer;" title="Nhấp để Phát/Tạm dừng"></div>
+            <!-- Poster/Backdrop Shield to 100% cover YouTube native thumbnail & red play button before playback -->
+            <div id="${playerId}-poster-shield" class="absolute inset-0 z-15 bg-slate-950 flex flex-col items-center justify-center transition-opacity duration-300 pointer-events-auto cursor-pointer" style="position: absolute; inset: 0; z-index: 15;" title="Nhấp để phát video">
+              <div class="flex flex-col items-center gap-2 text-slate-400 pointer-events-none select-none">
+                <span class="material-symbols-outlined text-[48px] text-slate-600">smart_display</span>
+                <span class="text-xs font-medium tracking-wide text-slate-400">Bấm để phát video bài học</span>
+              </div>
+            </div>
             <!-- Big Play Button Overlay -->
             <button type="button" id="${playerId}-big-play" class="absolute inset-0 m-auto w-16 h-16 rounded-full bg-slate-900/80 hover:bg-slate-900 border border-white/20 text-white flex items-center justify-center backdrop-blur-sm transition-all shadow-xl group-hover:scale-105 z-20 cursor-pointer" aria-label="Phát video">
               <span class="material-symbols-outlined text-[34px] ml-0.5 pointer-events-none">play_arrow</span>
@@ -5769,7 +5831,14 @@ class StudentView {
       if (flight) { flushQueued = true; return flight.then(() => pending ? null : flight); }
       const capturedSample = { ...sample };
       flight = ready.then(() => {
-        if (!pending) pending = { playback_session_id: session.session_id, sequence: session.next_sequence, media_id: mediaId, ...capturedSample };
+        if (!pending) {
+          const repDuration = typeof options.getDuration === 'function' ? options.getDuration() : (Number(options.duration) || null);
+          pending = { playback_session_id: session.session_id, sequence: session.next_sequence, media_id: mediaId, ...capturedSample };
+          if (repDuration && Number.isFinite(repDuration) && repDuration >= 5) {
+            pending.client_duration = repDuration;
+            pending.duration = repDuration;
+          }
+        }
         return ApiClient.recordPlaybackHeartbeat(lessonId, pending);
       }).then(result => { pending = null; return apply(result); }).catch(async error => {
         const msg = String(error?.rawMessage || error?.message || '');
@@ -5845,6 +5914,7 @@ class StudentView {
     let initialization = 0, nativeBound = false;
     let frontier = 0, unlocked = !!options.isCompleted, duration = 0, resumed = false, verifiedIp = options.clientIp || '';
     let observedPosition = 0, observedAt = Date.now(), confirmedRate = 1, changingRate = false;
+    let pendingPlay = false, hasStartedPlaying = false;
     const listen = (element, name, handler) => { if (element) { element.addEventListener(name, handler); listeners.push([element, name, handler]); } };
     const click = (suffix, handler) => {
       const el = get(suffix);
@@ -5898,7 +5968,15 @@ class StudentView {
     const startTracker = () => {
       if (!options.lessonId || !mediaId || options.preview) return;
       tracker?.destroy();
-      tracker = StudentView.createPlaybackTracker(options.lessonId, mediaId, { onConfirmed: confirmed, onError: reportError, onHidden: pause });
+      tracker = StudentView.createPlaybackTracker(options.lessonId, mediaId, {
+        onConfirmed: confirmed,
+        onError: reportError,
+        onHidden: pause,
+        getDuration: () => {
+          const d = (youtube ? driver?.getDuration?.() : video?.duration) || duration || 0;
+          return Number(d) || 0;
+        }
+      });
     };
     const transition = state => {
       if (disposed || container.isConnected === false || changingRate) return;
@@ -5908,6 +5986,13 @@ class StudentView {
         if (!tracker) startTracker();
       }
       playing = active;
+      if (playing) {
+        hasStartedPlaying = true;
+        const poster = get('poster-shield');
+        if (poster) {
+          poster.classList.add('opacity-0', 'pointer-events-none');
+        }
+      }
       tracker?.update(active ? 'playing' : 'paused', position(), rate());
       void tracker?.flush();
       const icon = get('play-btn')?.querySelector('.material-symbols-outlined');
@@ -5915,6 +6000,18 @@ class StudentView {
       get('big-play')?.classList.toggle('hidden', playing);
     };
     const toggle = () => {
+      if (youtube && !driver) {
+        pendingPlay = !pendingPlay;
+        get('big-play')?.classList.toggle('hidden', pendingPlay);
+        const icon = get('play-btn')?.querySelector('.material-symbols-outlined');
+        if (icon) icon.textContent = pendingPlay ? 'pause' : 'play_arrow';
+        if (pendingPlay) {
+          status('Đang nạp trình phát video...');
+        } else {
+          status('');
+        }
+        return;
+      }
       const isPlaying = youtube ? (playing || driver?.getPlayerState?.() === 1) : (playing && !video?.paused);
       if (isPlaying) {
         pause();
@@ -5974,6 +6071,7 @@ class StudentView {
     };
     click('play-btn', toggle); click('big-play', toggle);
     click('shield', toggle);
+    click('poster-shield', toggle);
     click('progress-retry', () => { if (!tracker) startTracker(); void tracker?.flush(); });
     click('mute-btn', () => { if (youtube) { if (driver?.isMuted()) driver.unMute(); else driver?.mute(); } else if (video) video.muted = !video.muted; });
     listen(get('volume'), 'input', event => { const value = Number(event.target.value); if (youtube) driver?.setVolume?.(value); else if (video) video.volume = value / 100; });
@@ -6023,11 +6121,42 @@ class StudentView {
             youtubeHost.appendChild(mount);
           }
           driver = new YT.Player(`${playerId}-yt`, {
+            host: 'https://www.youtube-nocookie.com',
             videoId: container.getAttribute('data-yt-id'),
-            playerVars: { controls: 0, rel: 0, playsinline: 1, enablejsapi: 1, origin: window.location.origin },
+            playerVars: {
+              controls: 0,
+              rel: 0,
+              playsinline: 1,
+              enablejsapi: 1,
+              modestbranding: 1,
+              iv_load_policy: 3,
+              disablekb: 1,
+              fs: 0
+            },
             events: {
-              onReady: () => { if (!disposed && generation === initialization) { status(''); get('retry')?.classList.add('hidden'); startTracker(); paint(); } },
-              onStateChange: event => { if (!disposed && generation === initialization) transition(event.data === 1 ? 'playing' : event.data === 0 ? 'ended' : 'paused'); },
+              onReady: () => {
+                if (!disposed && generation === initialization) {
+                  status('');
+                  get('retry')?.classList.add('hidden');
+                  startTracker();
+                  paint();
+                  if (pendingPlay) {
+                    pendingPlay = false;
+                    driver?.playVideo?.();
+                    transition('playing');
+                  }
+                }
+              },
+              onStateChange: event => {
+                if (!disposed && generation === initialization) {
+                  if (event.data === 1) {
+                    hasStartedPlaying = true;
+                    const poster = get('poster-shield');
+                    if (poster) poster.classList.add('opacity-0', 'pointer-events-none');
+                  }
+                  transition(event.data === 1 ? 'playing' : event.data === 0 ? 'ended' : 'paused');
+                }
+              },
               onPlaybackRateChange: () => { if (!disposed && generation === initialization) void handleRateChange(); },
               onError: event => {
                 if (disposed || generation !== initialization) return;
@@ -6099,7 +6228,9 @@ class StudentView {
     };
     click('retry', () => {
       if (disposed) return;
-      pause(true); playing = false; resumed = false;
+      pause(true); playing = false; resumed = false; pendingPlay = false; hasStartedPlaying = false;
+      const poster = get('poster-shield');
+      if (poster) poster.classList.remove('opacity-0', 'pointer-events-none');
       hls?.destroy(); hls = null; driver?.destroy?.(); driver = null;
       get('retry')?.classList.add('hidden'); initializeSafely();
     });

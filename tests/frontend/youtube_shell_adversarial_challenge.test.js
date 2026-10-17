@@ -17,8 +17,8 @@ function createMockEnvironment() {
       this.attributes = new Map();
       this.className = '';
       this.classList = {
-        add: (c) => { if (!this.className.includes(c)) this.className += ' ' + c; },
-        remove: (c) => { this.className = this.className.replace(c, '').trim(); },
+        add: (...classes) => { for (const c of classes) { if (!this.className.includes(c)) this.className += ' ' + c; } },
+        remove: (...classes) => { for (const c of classes) { this.className = this.className.replace(c, '').trim(); } },
         toggle: (c, force) => {
           const has = this.className.includes(c);
           if (force === true || (force === undefined && !has)) this.classList.add(c);
@@ -127,6 +127,11 @@ test('Challenge 2.1: YouTube HTML shell structural invariants and pointer-events
   assert.match(html, /z-index:\s*10/, 'Shield must have z-index 10 above iframe wrapper');
   assert.match(html, /cursor:\s*pointer/, 'Shield must show pointer cursor for user interaction');
   assert.match(html, /inset:\s*0|top:\s*0/, 'Shield must cover entire viewport area');
+
+  // 4b. Poster/Backdrop Shield (z-index 15, bg-slate-950)
+  assert.match(html, /id="yt-test-player-poster-shield"/, 'Poster backdrop shield must exist');
+  assert.match(html, /z-index:\s*15/, 'Poster shield must have z-index 15 above iframe wrapper and below big play');
+  assert.match(html, /bg-slate-950/, 'Poster shield must have dark background');
 
   // 5. Big Play Button
   assert.match(html, /id="yt-test-player-big-play"/, 'Big play button must exist');
@@ -300,3 +305,127 @@ test('Challenge 2.3: Crop geometry analysis across responsive viewports eliminat
     }
   }
 });
+
+test('Challenge 2.4: Poster shield behavior, pending play queueing, and secure YT.Player configuration', async () => {
+  const { StudentView, MockElement } = createMockEnvironment();
+
+  const container = new MockElement('div', 'p-container');
+  container.setAttribute('data-custom-player', 'true');
+  container.setAttribute('data-player-type', 'youtube');
+  container.setAttribute('data-yt-id', 'test1234567');
+
+  const viewport = new MockElement('div', 'p-viewport');
+  const ytHost = new MockElement('div', 'p-yt');
+  const shield = new MockElement('div', 'p-shield');
+  const posterShield = new MockElement('div', 'p-poster-shield');
+  const bigPlay = new MockElement('button', 'p-big-play');
+  const playBtn = new MockElement('button', 'p-play-btn');
+  const statusEl = new MockElement('p', 'p-status');
+
+  viewport.appendChild(ytHost);
+  viewport.appendChild(shield);
+  viewport.appendChild(posterShield);
+  viewport.appendChild(bigPlay);
+  container.appendChild(viewport);
+  container.appendChild(playBtn);
+  container.appendChild(statusEl);
+
+  let playCalled = 0;
+  let pauseCalled = 0;
+  let playerConfig = null;
+  let onStateChangeFn = null;
+  let onReadyFn = null;
+
+  const mockDriver = {
+    getPlayerState: () => 2,
+    playVideo: () => { playCalled++; },
+    pauseVideo: () => { pauseCalled++; },
+    getCurrentTime: () => 0,
+    getDuration: () => 100,
+    getVideoLoadedFraction: () => 0,
+    seekTo: () => {},
+    isMuted: () => false,
+    mute: () => {},
+    unMute: () => {},
+    setVolume: () => {},
+    setPlaybackRate: () => {}
+  };
+
+  // Mock global YT.Player that captures config
+  global.YT = {
+    Player: function(id, config) {
+      playerConfig = config;
+      onStateChangeFn = config.events?.onStateChange;
+      onReadyFn = config.events?.onReady;
+      return mockDriver;
+    }
+  };
+
+  // 1. Click big play BEFORE onReady fires -> should queue pending play
+  const handle = StudentView.setupCustomVideoPlayer('p', { youtube: true });
+  assert.equal(playCalled, 0, 'playVideo should not be called before YT is ready');
+
+  bigPlay.click();
+  assert.equal(playCalled, 0, 'Clicking before ready queues pending play without crashing');
+
+  // Allow event loop tick for async ensureYouTubeAPI and new YT.Player instantiation
+  await new Promise(r => setTimeout(r, 20));
+
+  // Trigger onReady -> queued play should now be executed
+  onReadyFn?.();
+  assert.equal(playCalled, 1, 'Pending play action executed immediately upon onReady');
+
+  // Verify secure YT.Player configuration
+  assert.equal(playerConfig.host, 'https://www.youtube-nocookie.com', 'Must use youtube-nocookie.com host');
+  assert.equal(playerConfig.playerVars?.origin, undefined, 'Origin parameter must be omitted to prevent Error 153');
+  assert.equal(playerConfig.playerVars?.modestbranding, 1, 'Must include modestbranding: 1');
+  assert.equal(playerConfig.playerVars?.iv_load_policy, 3, 'Must include iv_load_policy: 3');
+  assert.equal(playerConfig.playerVars?.disablekb, 1, 'Must include disablekb: 1');
+  assert.equal(playerConfig.playerVars?.fs, 0, 'Must include fs: 0');
+
+  // 2. Trigger onStateChange with 1 (PLAYING) -> poster shield must be hidden
+  onStateChangeFn?.({ data: 1 });
+  assert.ok(posterShield.classList.contains('opacity-0'), 'Poster shield must have opacity-0 when playing');
+  assert.ok(posterShield.classList.contains('pointer-events-none'), 'Poster shield must have pointer-events-none when playing');
+
+  // 3. Trigger onStateChange with 2 (PAUSED) -> poster shield must NOT be shown again
+  onStateChangeFn?.({ data: 2 });
+  assert.ok(posterShield.classList.contains('opacity-0'), 'Poster shield must remain hidden with opacity-0 when paused');
+
+  if (handle && handle.dispose) handle.dispose();
+});
+
+test('Challenge 2.5: Course Hero Trailer embeds Clean Player Shell with autoplay muted loop and upgraded lightbox', () => {
+  const fs = require('node:fs');
+  const studentSource = fs.readFileSync('frontend/assets/js/views/student.js', 'utf8');
+
+  // 1. Initial Hero Box Autoplay Muted & Loop
+  assert.match(studentSource, /id="hero-trailer-clean-shell"/, 'Must contain #hero-trailer-clean-shell in initial render');
+  assert.match(studentSource, /id="btn-trailer-toggle-mute"/, 'Must contain #btn-trailer-toggle-mute button');
+  assert.match(studentSource, /id="btn-hero-video-expand"/, 'Must contain #btn-hero-video-expand button');
+  assert.match(studentSource, /https:\/\/www\.youtube-nocookie\.com\/embed\/\$\{ytHeroId\}\?autoplay=1&mute=1&loop=1/, 'Hero trailer embed URL must enforce autoplay, mute, and loop');
+
+  // 2. Upgraded Lightbox using Clean Player Shell
+  assert.match(studentSource, /StudentView\._getEmbedVideoHtml\(url,\s*playerId,\s*false\)/, 'Lightbox modal must use Clean Player Shell');
+  assert.match(studentSource, /StudentView\.setupCustomVideoPlayer\(playerId,\s*\{\s*preview:\s*true/, 'Lightbox modal must initialize setupCustomVideoPlayer');
+  assert.match(studentSource, /window\._modalOnClose\s*=/, 'Modal cleanup must destroy lightbox player controller');
+});
+
+test('Challenge 2.6: Teacher Reviewer Course Preview renders Clean Player Shell without native YouTube UI', () => {
+  const fs = require('node:fs');
+  const adminSource = fs.readFileSync('frontend/assets/js/views/admin.js', 'utf8');
+
+  // 1. Helper _getCleanYouTubeShellHtml
+  assert.match(adminSource, /_getCleanYouTubeShellHtml\(id,/, 'AdminView must contain _getCleanYouTubeShellHtml');
+  assert.match(adminSource, /top:\s*-14%/, 'Reviewer shell must crop top by -14%');
+  assert.match(adminSource, /height:\s*128%/, 'Reviewer shell must have 128% height');
+  assert.match(adminSource, /id="\$\{playerId\}-poster-shield"/, 'Reviewer shell must contain poster-shield');
+  assert.match(adminSource, /id="\$\{playerId\}-shield"/, 'Reviewer shell must contain click-shield');
+  assert.match(adminSource, /id="\$\{playerId\}-big-play"/, 'Reviewer shell must contain big-play');
+  assert.match(adminSource, /id="\$\{playerId\}-controls"/, 'Reviewer shell must contain custom controls');
+
+  // 2. Controller setupReviewerVideoPlayer
+  assert.match(adminSource, /setupReviewerVideoPlayer\(playerId\)/, 'AdminView must contain setupReviewerVideoPlayer');
+  assert.match(adminSource, /AdminView\.setupReviewerVideoPlayer\(`reviewer-player-\${index}-\${yIdx}`\)/, 'renderLesson must initialize setupReviewerVideoPlayer');
+});
+

@@ -190,6 +190,7 @@ def record_progress_api(lesson_id: str) -> tuple[Response, int] | Response:
 
 
 @api_lesson_bp.route("/<lesson_id>/playback-sessions", methods=["POST"])
+@api_lesson_bp.route("/<lesson_id>/playback/start", methods=["POST"])
 @jwt_required
 @student_required
 def start_playback_api(lesson_id: str) -> Any:
@@ -198,8 +199,16 @@ def start_playback_api(lesson_id: str) -> Any:
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
         raise LessonValidationError("Invalid JSON payload.")
+    client_duration = (
+        payload.get("client_duration")
+        if payload.get("client_duration") is not None
+        else payload.get("duration")
+    )
     result = start_playback_session(
-        require_authenticated_actor(), lesson_id, payload.get("media_id")
+        require_authenticated_actor(),
+        lesson_id,
+        payload.get("media_id"),
+        client_duration=client_duration,
     )
     result["client_ip"] = request.remote_addr
     return jsonify({"success": True, "data": result, "error": None, **result}), 200

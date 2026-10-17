@@ -148,15 +148,212 @@ def test_legacy_video_payload_cannot_credit(playback_setup):
         record_lesson_progress(actor, lesson.id, 60, 1, now=t)
 
 
-def test_duration_unavailable_is_fail_closed(playback_setup, monkeypatch):
+def test_duration_unavailable_falls_back_resiliently(playback_setup, monkeypatch):
+    from pwd301.models.playback import MediaProgress
     from pwd301.services import playback_service
 
     actor, lesson, t = playback_setup
-    monkeypatch.setattr(playback_service, "get_youtube_metadata", lambda _: {"valid": False})
-    with pytest.raises(LessonValidationError):
-        playback_service.start_playback_session(
-            actor, lesson.public_id, "youtube:abcdefghijk", now=t
-        )
+    monkeypatch.setattr(
+        playback_service,
+        "get_youtube_metadata",
+        lambda _: {"valid": False, "reason": "metadata_not_configured"},
+    )
+    start = playback_service.start_playback_session(
+        actor, lesson.public_id, "youtube:abcdefghijk", now=t
+    )
+    assert start["session_id"] is not None
+    assert start["frontier"] == 0
+    assert start["duration"] == 1800.0
+    assert start["is_video_complete"] is False
+
+    media = (
+        db.session.query(MediaProgress)
+        .filter_by(media_id="youtube:abcdefghijk", lesson_id=lesson.id)
+        .first()
+    )
+    assert media is not None
+    assert media.duration_seconds == 1800.0
+
+
+# Backward compatibility alias
+test_duration_unavailable_uses_resilient_fallback = test_duration_unavailable_falls_back_resiliently
+
+
+def test_playback_fallback_missing_api_key(playback_setup, app, monkeypatch):
+    from pwd301.services import playback_service, youtube_validator_service
+
+    actor, lesson, t = playback_setup
+    app.config["YOUTUBE_API_KEY"] = ""
+    monkeypatch.setattr(
+        playback_service,
+        "get_youtube_metadata",
+        youtube_validator_service.get_youtube_metadata,
+    )
+    start = playback_service.start_playback_session(
+        actor, lesson.public_id, "youtube:abcdefghijk", now=t
+    )
+    assert start["session_id"] is not None
+    assert start["duration"] == 1800.0
+    assert start["is_video_complete"] is False
+
+
+def test_playback_fallback_network_timeout(playback_setup, app, monkeypatch):
+    import urllib.error
+
+    from pwd301.services import playback_service, youtube_validator_service
+
+    actor, lesson, t = playback_setup
+    app.config["YOUTUBE_API_KEY"] = "mock-key-for-test"
+
+    def _timeout(*args, **kwargs):
+        raise urllib.error.URLError("Connection timed out")
+
+    monkeypatch.setattr("urllib.request.urlopen", _timeout)
+    monkeypatch.setattr(
+        playback_service,
+        "get_youtube_metadata",
+        youtube_validator_service.get_youtube_metadata,
+    )
+    start = playback_service.start_playback_session(
+        actor, lesson.public_id, "youtube:abcdefghijk", now=t
+    )
+    assert start["session_id"] is not None
+    assert start["duration"] == 1800.0
+    assert start["is_video_complete"] is False
+
+
+def test_playback_fallback_client_duration_honored(playback_setup, monkeypatch):
+    from pwd301.models.playback import MediaProgress
+    from pwd301.services import playback_service
+
+    actor, lesson, t = playback_setup
+    monkeypatch.setattr(
+        playback_service,
+        "get_youtube_metadata",
+        lambda _: {"valid": False, "reason": "metadata_not_configured"},
+    )
+    start = playback_service.start_playback_session(
+        actor, lesson.public_id, "youtube:abcdefghijk", client_duration=420.0, now=t
+    )
+    assert start["duration"] == 420.0
+    media = (
+        db.session.query(MediaProgress)
+        .filter_by(media_id="youtube:abcdefghijk", lesson_id=lesson.id)
+        .first()
+    )
+    assert media is not None
+    assert media.duration_seconds == 420.0
+
+
+def test_playback_fallback_lesson_estimated_duration_honored(playback_setup, monkeypatch):
+    from pwd301.models.playback import MediaProgress
+    from pwd301.services import playback_service
+
+    actor, lesson, t = playback_setup
+    lesson.estimated_duration_minutes = 15
+    db.session.commit()
+
+    monkeypatch.setattr(
+        playback_service,
+        "get_youtube_metadata",
+        lambda _: {"valid": False, "reason": "metadata_not_configured"},
+    )
+    start = playback_service.start_playback_session(
+        actor, lesson.public_id, "youtube:abcdefghijk", now=t
+    )
+    # 15 minutes * 60 = 900.0s
+    assert start["duration"] == 900.0
+    media = (
+        db.session.query(MediaProgress)
+        .filter_by(media_id="youtube:abcdefghijk", lesson_id=lesson.id)
+        .first()
+    )
+    assert media is not None
+    assert media.duration_seconds == 900.0
+
+
+def test_heartbeat_dynamic_duration_refinement_preserves_frontier(playback_setup, monkeypatch):
+    from pwd301.models.playback import MediaProgress
+    from pwd301.services.playback_service import start_playback_session
+
+    actor, lesson, t = playback_setup
+    monkeypatch.setattr(
+        "pwd301.services.playback_service.get_youtube_metadata",
+        lambda _: {"valid": False, "reason": "metadata_not_configured"},
+    )
+    start = start_playback_session(actor, lesson.public_id, "youtube:abcdefghijk", now=t)
+    assert start["duration"] == 1800.0
+
+    send(actor, lesson, start, 1, t, 0)
+    for idx in range(1, 4):
+        send(actor, lesson, start, idx + 1, t + timedelta(seconds=10 * idx), idx * 10)
+
+    media = (
+        db.session.query(MediaProgress)
+        .filter_by(media_id="youtube:abcdefghijk", lesson_id=lesson.id)
+        .first()
+    )
+    assert media.frontier_seconds == 30.0
+    assert media.duration_seconds == 1800.0
+
+    t_refine = t + timedelta(seconds=40)
+    res = send(
+        actor,
+        lesson,
+        start,
+        5,
+        t_refine,
+        40,
+        client_duration=120.0,
+    )
+    assert res["duration"] == 120.0
+    db.session.refresh(media)
+    assert media.duration_seconds == 120.0
+    assert media.frontier_seconds == 40.0
+    assert media.frontier_seconds <= media.duration_seconds
+
+    t_clamp = t + timedelta(seconds=50)
+    send(
+        actor,
+        lesson,
+        start,
+        6,
+        t_clamp,
+        45,
+        client_duration=25.0,
+    )
+    db.session.refresh(media)
+    assert media.frontier_seconds <= media.duration_seconds
+    assert media.duration_seconds >= media.frontier_seconds
+
+
+def test_duration_resilient_fallback_with_oembed(playback_setup, monkeypatch):
+    import pwd301.services.youtube_validator_service as yvs
+    from pwd301.models.playback import MediaProgress
+    from pwd301.services import playback_service
+
+    actor, lesson, t = playback_setup
+    monkeypatch.setattr(
+        playback_service,
+        "get_youtube_metadata",
+        lambda _: {"valid": False, "reason": "metadata_network_error"},
+    )
+    monkeypatch.setattr(
+        yvs,
+        "verify_youtube_embeddability",
+        lambda _: {"valid": True, "duration_seconds": 650.0},
+    )
+    start = playback_service.start_playback_session(
+        actor, lesson.public_id, "youtube:abcdefghijk", now=t
+    )
+    assert start["session_id"] is not None
+    media = (
+        db.session.query(MediaProgress)
+        .filter_by(media_id="youtube:abcdefghijk", lesson_id=lesson.id)
+        .first()
+    )
+    assert media is not None
+    assert media.duration_seconds == 650.0
 
 
 def test_zero_reconciliation_cannot_forge_video_completion(playback_setup):
@@ -248,6 +445,34 @@ def test_web_session_contract_and_replay_after_session_restart(playback_setup, c
     )
     assert legacy.status_code == 400
     assert db.session.get(User, actor_id) is not None
+
+
+def test_web_routes_forward_client_duration_and_support_start_alias(
+    playback_setup, client, monkeypatch
+):
+    from tests.conftest import login_web_user
+
+    actor, lesson, t = playback_setup
+    lesson_id = str(lesson.public_id)
+    login_web_user(client, actor)
+
+    monkeypatch.setattr(
+        "pwd301.services.playback_service.get_youtube_metadata",
+        lambda _: {"valid": False, "reason": "metadata_not_configured"},
+    )
+    res_alias = client.post(
+        f"/student/lessons/{lesson_id}/playback/start",
+        json={"media_id": "youtube:abcdefghijk", "client_duration": 480.0},
+    )
+    assert res_alias.status_code == 200
+    assert res_alias.get_json()["data"]["duration"] == 480.0
+
+    res_sess = client.post(
+        f"/student/lessons/{lesson_id}/playback-sessions",
+        json={"media_id": "youtube:abcdefghijk", "client_duration": 500.0},
+    )
+    assert res_sess.status_code == 200
+    assert res_sess.get_json()["data"]["duration"] == 500.0
 
 
 def test_video_completion_preserves_minimum_and_quiz(playback_setup):
@@ -465,5 +690,3 @@ def test_single_video_90_percent_does_not_complete(playback_setup):
     progress = get_lesson_progress(actor, lesson.id)
     assert progress.completed_at is not None
     assert float(progress.max_view_fraction) >= 1.0
-
-

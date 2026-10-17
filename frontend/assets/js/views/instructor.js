@@ -21,7 +21,7 @@ class InstructorView {
       isYt = true;
       const ytMatch = src.match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/i);
       if (ytMatch) {
-        cleanSrc = `https://www.youtube-nocookie.com/embed/${ytMatch[1]}?autoplay=1&rel=0&modestbranding=1&iv_load_policy=3&playsinline=1&enablejsapi=1`;
+        cleanSrc = `https://www.youtube-nocookie.com/embed/${ytMatch[1]}?autoplay=1&controls=0&rel=0&iv_load_policy=3&disablekb=1&modestbranding=1&playsinline=1&enablejsapi=1`;
       }
     }
 
@@ -44,15 +44,21 @@ class InstructorView {
             <span class="material-symbols-outlined text-[20px]">close</span>
           </button>
         </div>
-        <div class="aspect-video w-full bg-black flex items-center justify-center relative">
+        <div class="aspect-video w-full bg-slate-950 flex items-center justify-center relative overflow-hidden">
           ${isYt ? `
-            <iframe
-              src="${cleanSrc}"
-              title="${UI.escapeHtml(title)}"
-              class="w-full h-full border-0"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowfullscreen
-            ></iframe>
+            <div class="relative w-full h-full overflow-hidden bg-slate-950 select-none" id="instructor-preview-shell">
+              <div style="position: absolute; top: -14%; left: 0; width: 100%; height: 128%; pointer-events: none;" class="pointer-events-none">
+                <iframe
+                  id="instructor-preview-iframe"
+                  src="${cleanSrc}"
+                  title="${UI.escapeHtml(title)}"
+                  class="w-full h-full border-0 pointer-events-none"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  tabindex="-1"
+                ></iframe>
+              </div>
+              <div id="instructor-preview-shield" class="absolute inset-0 z-10 cursor-pointer bg-transparent" title="Nhấp để Phát/Tạm dừng"></div>
+            </div>
           ` : `
             <video src="${cleanSrc}" controls autoplay playsinline class="w-full h-full object-contain"></video>
           `}
@@ -61,6 +67,19 @@ class InstructorView {
     `;
 
     document.body.appendChild(modal);
+
+    if (isYt) {
+      let isPlaying = true;
+      const shield = modal.querySelector('#instructor-preview-shield');
+      const iframe = modal.querySelector('#instructor-preview-iframe');
+      if (shield && iframe) {
+        shield.onclick = () => {
+          isPlaying = !isPlaying;
+          const cmd = isPlaying ? 'playVideo' : 'pauseVideo';
+          iframe.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: cmd, args: [] }), '*');
+        };
+      }
+    }
 
     const close = () => {
       const v = modal.querySelector('video');
@@ -6086,14 +6105,30 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
 
       if (ytMatch) {
         playerContainer.innerHTML = `
-          <iframe
-            src="https://www.youtube-nocookie.com/embed/${ytMatch[1]}?autoplay=1&rel=0&modestbranding=1&iv_load_policy=3&playsinline=1&enablejsapi=1"
-            title="Video Trailer Preview"
-            class="w-full h-full border-0"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowfullscreen
-          ></iframe>
+          <div class="relative w-full h-full overflow-hidden bg-slate-950 select-none">
+            <div style="position: absolute; top: -14%; left: 0; width: 100%; height: 128%; pointer-events: none;" class="pointer-events-none">
+              <iframe
+                id="unified-trailer-iframe"
+                src="https://www.youtube-nocookie.com/embed/${ytMatch[1]}?autoplay=1&controls=0&rel=0&iv_load_policy=3&disablekb=1&modestbranding=1&playsinline=1&enablejsapi=1"
+                title="Video Trailer Preview"
+                class="w-full h-full border-0 pointer-events-none"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                tabindex="-1"
+              ></iframe>
+            </div>
+            <div id="unified-trailer-shield" class="absolute inset-0 z-10 cursor-pointer bg-transparent" title="Nhấp để Phát/Tạm dừng"></div>
+          </div>
         `;
+        let isPlaying = true;
+        const shield = playerContainer.querySelector('#unified-trailer-shield');
+        const iframe = playerContainer.querySelector('#unified-trailer-iframe');
+        if (shield && iframe) {
+          shield.onclick = () => {
+            isPlaying = !isPlaying;
+            const cmd = isPlaying ? 'playVideo' : 'pauseVideo';
+            iframe.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: cmd, args: [] }), '*');
+          };
+        }
       } else {
         playerContainer.innerHTML = `
           <video src="${cleanUrl}" controls autoplay playsinline class="w-full h-full object-contain"></video>

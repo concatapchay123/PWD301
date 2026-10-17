@@ -475,6 +475,7 @@ def _playback_media_descriptors(lesson: Lesson, urls: list[str]) -> list[dict[st
 
 
 @student_bp.route("/lessons/<lesson_id>/playback-sessions", methods=["POST"])
+@student_bp.route("/lessons/<lesson_id>/playback/start", methods=["POST"])
 @student_required
 def start_student_playback_route(lesson_id: str) -> Any:
     from pwd301.services.playback_service import start_playback_session
@@ -482,8 +483,16 @@ def start_student_playback_route(lesson_id: str) -> Any:
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
         raise LessonValidationError("Invalid JSON payload.")
+    client_duration = (
+        payload.get("client_duration")
+        if payload.get("client_duration") is not None
+        else payload.get("duration")
+    )
     result = start_playback_session(
-        require_authenticated_actor(), lesson_id, payload.get("media_id")
+        require_authenticated_actor(),
+        lesson_id,
+        payload.get("media_id"),
+        client_duration=client_duration,
     )
     result["client_ip"] = request.remote_addr
     return jsonify({"success": True, "data": result, "error": None, **result}), 200

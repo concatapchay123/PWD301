@@ -5,7 +5,7 @@ Scope:
    - LimitingStream exact 1 GB boundary (1,000,000,000 bytes) -> FileSizeLimitExceededError.
    - Sub-1 GB boundary (999,999,999 bytes) -> succeeds.
    - Immediate abort and bounded memory consumption during streaming.
-   - check_file_size_limit boundaries for video (< 1 GB), PDF (50 MB), DOCX (50 MB), PPTX (100 MB).
+   - check_file_size_limit boundaries for video (< 1 GB), PDF (50 MB), DOCX (50 MB), PPTX (50 MB).
    - Atomic rollback: no orphan lesson persisted in DB when upload exceeds limit.
 2. Dangerous & Macro Office File Validation:
    - Macro-enabled Office presentation (.pptm, .potm) -> FileValidationError.
@@ -212,10 +212,10 @@ class TestVideoSizeLimitsAdversarial:
             with pytest.raises(FileSizeLimitExceededError, match="DOCX file exceeds"):
                 check_file_size_limit(50_000_001, "document.docx")
 
-            # PPTX: max 100 MB (100,000,000 bytes)
-            check_file_size_limit(100_000_000, "presentation.pptx")
+            # PPTX: max 50 MB (50,000,000 bytes) under strict 50MB non-archive attachment policy
+            check_file_size_limit(50_000_000, "presentation.pptx")
             with pytest.raises(FileSizeLimitExceededError, match="PPTX file exceeds"):
-                check_file_size_limit(100_000_001, "presentation.pptx")
+                check_file_size_limit(50_000_001, "presentation.pptx")
 
     def test_store_file_stream_exact_1gb_boundary_and_temp_cleanup(
         self, app: Flask, test_course: Course, instructor_user: User

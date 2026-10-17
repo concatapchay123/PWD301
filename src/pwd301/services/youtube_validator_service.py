@@ -35,7 +35,10 @@ def get_youtube_metadata(video_id: str, timeout: float = 4.0) -> dict[str, Any]:
     """
     if not isinstance(video_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
         return {"valid": False, "reason": "invalid_id"}
-    key = current_app.config.get("YOUTUBE_API_KEY")
+    try:
+        key = current_app.config.get("YOUTUBE_API_KEY")
+    except RuntimeError:
+        key = None
     if not key:
         return {"valid": False, "reason": "metadata_not_configured"}
     params = urlencode({"part": "contentDetails,status", "id": video_id, "key": key})
@@ -115,7 +118,13 @@ def verify_youtube_embeddability(url_or_id: str, timeout: float = 4.0) -> dict[s
         reason: str | None
         status_code: int | None
     """
-    yt_id = extract_youtube_id(url_or_id) if "http" in url_or_id else url_or_id.strip()
+    yt_id = extract_youtube_id(url_or_id)
+    if not yt_id and isinstance(url_or_id, str):
+        candidate = url_or_id.strip()
+        if re.fullmatch(r"[A-Za-z0-9_-]{11}", candidate):
+            yt_id = candidate
+        elif "youtube.com" in candidate or "youtu.be" in candidate:
+            yt_id = extract_youtube_id(f"https://{candidate}")
     if not yt_id or not re.fullmatch(r"[A-Za-z0-9_-]{11}", yt_id):
         return {
             "valid": False,
@@ -139,9 +148,13 @@ def verify_youtube_embeddability(url_or_id: str, timeout: float = 4.0) -> dict[s
             if response.status == 200:
                 raw_data = response.read().decode("utf-8")
                 info = json.loads(raw_data)
+                try:
+                    has_api_key = bool(current_app.config.get("YOUTUBE_API_KEY"))
+                except RuntimeError:
+                    has_api_key = False
                 metadata = (
                     get_youtube_metadata(yt_id, timeout=timeout)
-                    if current_app.config.get("YOUTUBE_API_KEY")
+                    if has_api_key
                     else None
                 )
                 if metadata is not None and not metadata.get("valid"):
