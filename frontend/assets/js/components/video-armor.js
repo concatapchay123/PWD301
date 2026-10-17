@@ -1,4 +1,4 @@
-/** Internal HLS watermark and best-effort DOM guard. Browser controls cannot prevent capture. */
+/** Internal HLS watermark and Anti-Tamper & Blackout Shield Guard. */
 
 class VideoArmor {
   constructor(container, options = {}) {
@@ -7,6 +7,7 @@ class VideoArmor {
     this.student = options.student || {};
     this.ip = options.ip || 'IP chưa được xác nhận';
     this.onSecurityViolation = options.onSecurityViolation || (() => {});
+    this.onRestore = options.onRestore || (() => {});
     this.repositionIntervalMs = options.repositionIntervalMs || 7000;
     this.isBlackedOut = false;
 
@@ -18,8 +19,9 @@ class VideoArmor {
 
     this._onVisibilityChange = this._onVisibilityChange.bind(this);
     this._onWindowBlur = this._onWindowBlur.bind(this);
+    this._onKeyDown = this._onKeyDown.bind(this);
     this._onKeyUp = this._onKeyUp.bind(this);
-
+    this._onContextMenu = this._onContextMenu.bind(this);
 
     this._init();
   }
@@ -39,7 +41,7 @@ class VideoArmor {
     this._attachObserver();
     this._bindEvents();
     this._startRepositioning();
-
+    this._startDevtoolsDetection();
   }
 
   _formatWatermarkText() {
@@ -100,6 +102,50 @@ class VideoArmor {
   _startRepositioning() {
     // Disabled jumping interval to eliminate distracting floating watermark across video
     return;
+  }
+
+  _startDevtoolsDetection() {
+    if (this.options.disableDevtoolsCheck) return;
+    const win = (typeof window !== 'undefined') ? window : global;
+    if (!win || !win.setInterval) return;
+
+    this.devtoolsCheckTimer = win.setInterval(() => {
+      this._checkDevTools();
+    }, 1000);
+
+    if (this.devtoolsCheckTimer && typeof this.devtoolsCheckTimer.unref === 'function') {
+      this.devtoolsCheckTimer.unref();
+    }
+  }
+
+  _checkDevTools() {
+    if (this.isBlackedOut) return;
+    if (this.options.silentWatermark) return;
+    if (!this.container || this.container.isConnected === false) return;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+
+    const start = Date.now();
+    try {
+      (function() {
+        debugger;
+      })();
+    } catch (_) {}
+    const delta = Date.now() - start;
+    if (delta > 100) {
+      this.triggerBlackout('DEVTOOLS_DETECTED');
+      return;
+    }
+
+    try {
+      const win = typeof window !== 'undefined' ? window : null;
+      if (win && typeof win.outerWidth === 'number' && typeof win.innerWidth === 'number') {
+        const widthThreshold = win.outerWidth - win.innerWidth > 160;
+        const heightThreshold = win.outerHeight - win.innerHeight > 160;
+        if (widthThreshold || heightThreshold) {
+          this.triggerBlackout('DEVTOOLS_DETECTED');
+        }
+      }
+    } catch (_) {}
   }
 
   _attachObserver() {
@@ -190,7 +236,19 @@ class VideoArmor {
     }
   }
 
+  _clearClipboard() {
+    const nav = (typeof navigator !== 'undefined') ? navigator : null;
+    if (nav && nav.clipboard && typeof nav.clipboard.writeText === 'function') {
+      try {
+        nav.clipboard.writeText('');
+      } catch (_) {}
+    }
+  }
+
   triggerBlackout(reason = 'SECURITY_VIOLATION') {
+    this._clearClipboard();
+    this._pauseAllMedia();
+
     if (this.options.silentWatermark) {
       this.onSecurityViolation(reason, {
         student: this.student,
@@ -201,8 +259,6 @@ class VideoArmor {
     if (this.isBlackedOut) return;
     this.isBlackedOut = true;
 
-    this._pauseAllMedia();
-
     const doc = (typeof document !== 'undefined') ? document : null;
     if (!doc) return;
 
@@ -210,6 +266,7 @@ class VideoArmor {
     if (this.watermarkEl) {
       Object.assign(this.watermarkEl.style, {
         display: 'block',
+        visibility: 'visible',
         opacity: '0.95',
         zIndex: '10002'
       });
@@ -258,6 +315,7 @@ class VideoArmor {
     card.appendChild(header);
 
     const sub = doc.createElement('div');
+    sub.className = 'video-armor-reason';
     sub.style.fontSize = '14px';
     sub.style.fontWeight = '600';
     sub.style.color = '#ef4444';
@@ -267,6 +325,8 @@ class VideoArmor {
       sub.textContent = 'PHÁT HIỆN THAO TÁC CHỤP / QUAY MÀN HÌNH';
     } else if (reason === 'DEVTOOLS_DETECTED') {
       sub.textContent = 'PHÁT HIỆN CÔNG CỤ DEVTOOLS / MÃ NGUỒN';
+    } else if (reason === 'CONTEXT_MENU_BLOCKED') {
+      sub.textContent = 'PHÁT HIỆN THAO TÁC CHUỘT PHẢI MÃ NGUỒN';
     } else if (reason === 'DOM_TAMPER') {
       sub.textContent = 'PHÁT HIỆN CAN THIỆP GIAO DIỆN / THỦY ẤN';
     } else {
@@ -344,8 +404,25 @@ class VideoArmor {
     if (!this.watermarkEl || this.watermarkEl.parentElement !== this.container) {
       this._createWatermark();
     } else {
-      Object.assign(this.watermarkEl.style, { display: 'block', visibility: 'visible', opacity: '0.9' });
+      Object.assign(this.watermarkEl.style, {
+        width: '1px',
+        height: '1px',
+        overflow: 'hidden',
+        display: 'block',
+        visibility: 'visible',
+        opacity: '0.001',
+        pointerEvents: 'none',
+        fontSize: '0px',
+        lineHeight: '0',
+        color: 'transparent',
+        backgroundColor: 'transparent',
+        border: 'none',
+        boxShadow: 'none',
+        zIndex: '1'
+      });
     }
+
+    this.onRestore();
   }
 
   _pauseAllMedia() {
@@ -375,10 +452,17 @@ class VideoArmor {
 
     if (doc && doc.addEventListener) {
       doc.addEventListener('visibilitychange', this._onVisibilityChange);
+      if (this.options.globalProtection) {
+        doc.addEventListener('contextmenu', this._onContextMenu);
+      }
     }
     if (win && win.addEventListener) {
       win.addEventListener('blur', this._onWindowBlur);
+      win.addEventListener('keydown', this._onKeyDown);
       win.addEventListener('keyup', this._onKeyUp);
+    }
+    if (this.container && this.container.addEventListener) {
+      this.container.addEventListener('contextmenu', this._onContextMenu);
     }
   }
 
@@ -396,22 +480,80 @@ class VideoArmor {
     this._pauseAllMedia();
   }
 
-  _onKeyUp(event) {
-    // 1. PrintScreen key - only trigger when player is active and visible
-    if (event.key === 'PrintScreen' || event.keyCode === 44) {
-      if (!this.container || this.container.isConnected === false || document.visibilityState !== 'visible') return;
-      if (typeof event.preventDefault === 'function') event.preventDefault();
+  _checkShortcutViolation(event) {
+    if (!event) return null;
+    const key = event.key || '';
+    const keyCode = event.keyCode || 0;
+    const ctrlOrMeta = Boolean(event.ctrlKey || event.metaKey);
+    const shift = Boolean(event.shiftKey);
+    const alt = Boolean(event.altKey);
 
-      const nav = (typeof navigator !== 'undefined') ? navigator : null;
-      if (nav && nav.clipboard && typeof nav.clipboard.writeText === 'function') {
-        try { nav.clipboard.writeText(''); } catch (_) {}
-      }
-
-      this.triggerBlackout('SCREEN_CAPTURE_ATTEMPT');
-      return;
+    // 1. Screen Capture Shortcuts: PrintScreen, Win+Shift+S, Meta+Shift+S, Cmd+Shift+3/4/5
+    if (key === 'PrintScreen' || keyCode === 44) {
+      return 'SCREEN_CAPTURE_ATTEMPT';
+    }
+    if (shift && (event.metaKey || event.ctrlKey) && (key === 's' || key === 'S' || keyCode === 83)) {
+      return 'SCREEN_CAPTURE_ATTEMPT';
+    }
+    if (shift && event.metaKey && (['3', '4', '5'].includes(key) || [51, 52, 53].includes(keyCode))) {
+      return 'SCREEN_CAPTURE_ATTEMPT';
     }
 
-    // Developer tools shortcuts are not evidence of DOM tampering.
+    // 2. DevTools & View Source Shortcuts: F12, Ctrl+Shift+I/J/C, Ctrl+U, Cmd+Option+I/J/C/U
+    if (key === 'F12' || keyCode === 123) {
+      return 'DEVTOOLS_DETECTED';
+    }
+    if ((ctrlOrMeta && shift && (key === 'i' || key === 'I' || keyCode === 73)) ||
+        (event.metaKey && alt && (key === 'i' || key === 'I' || keyCode === 73))) {
+      return 'DEVTOOLS_DETECTED';
+    }
+    if ((ctrlOrMeta && shift && (key === 'j' || key === 'J' || keyCode === 74)) ||
+        (event.metaKey && alt && (key === 'j' || key === 'J' || keyCode === 74))) {
+      return 'DEVTOOLS_DETECTED';
+    }
+    if ((ctrlOrMeta && shift && (key === 'c' || key === 'C' || keyCode === 67)) ||
+        (event.metaKey && alt && (key === 'c' || key === 'C' || keyCode === 67))) {
+      return 'DEVTOOLS_DETECTED';
+    }
+    if ((ctrlOrMeta && (key === 'u' || key === 'U' || keyCode === 85)) ||
+        (event.metaKey && alt && (key === 'u' || key === 'U' || keyCode === 85))) {
+      return 'DEVTOOLS_DETECTED';
+    }
+
+    return null;
+  }
+
+  _handleKeySecurity(event) {
+    if (!this.container || this.container.isConnected === false) return;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+
+    const violation = this._checkShortcutViolation(event);
+    if (violation) {
+      if (typeof event.preventDefault === 'function') event.preventDefault();
+      if (typeof event.stopPropagation === 'function') event.stopPropagation();
+      this._clearClipboard();
+      this.triggerBlackout(violation);
+    }
+  }
+
+  _onKeyDown(event) {
+    this._handleKeySecurity(event);
+  }
+
+  _onKeyUp(event) {
+    this._handleKeySecurity(event);
+  }
+
+  _onContextMenu(event) {
+    if (!this.container || this.container.isConnected === false) return;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+
+    if (event) {
+      if (typeof event.preventDefault === 'function') event.preventDefault();
+      if (typeof event.stopPropagation === 'function') event.stopPropagation();
+    }
+    this._clearClipboard();
+    this.triggerBlackout('CONTEXT_MENU_BLOCKED');
   }
 
   destroy() {
@@ -429,10 +571,17 @@ class VideoArmor {
     const doc = (typeof document !== 'undefined') ? document : null;
     if (doc && doc.removeEventListener) {
       doc.removeEventListener('visibilitychange', this._onVisibilityChange);
+      if (this.options.globalProtection) {
+        doc.removeEventListener('contextmenu', this._onContextMenu);
+      }
     }
     if (win && win.removeEventListener) {
       win.removeEventListener('blur', this._onWindowBlur);
+      win.removeEventListener('keydown', this._onKeyDown);
       win.removeEventListener('keyup', this._onKeyUp);
+    }
+    if (this.container && this.container.removeEventListener) {
+      this.container.removeEventListener('contextmenu', this._onContextMenu);
     }
 
     if (this.watermarkEl && this.watermarkEl.parentElement) {

@@ -119,8 +119,9 @@ test('Challenge 2.1: YouTube HTML shell structural invariants and pointer-events
   // 3. Iframe host scaling & pointer-events isolation
   assert.match(html, /pointer-events-none/, 'Wrapper must have pointer-events-none class');
   assert.match(html, /pointer-events:\s*none;?/, 'Wrapper must have pointer-events: none inline style');
-  assert.match(html, /top:\s*-14%/, 'Wrapper must be shifted top by -14% to crop native header');
-  assert.match(html, /height:\s*128%/, 'Wrapper must have height 128% to cover viewport plus top/bottom crop');
+  assert.match(html, /top:\s*-22%/, 'Wrapper must be shifted top by -22% for Clean Player Shell v3 deep crop');
+  assert.match(html, /height:\s*144%/, 'Wrapper must have height 144% for Clean Player Shell v3 deep crop');
+  assert.match(html, /width:\s*110%/, 'Wrapper must have width 110% for Clean Player Shell v3 deep crop');
 
   // 4. Transparent Click Shield Overlay
   assert.match(html, /id="yt-test-player-shield"/, 'Transparent click shield overlay must exist');
@@ -395,30 +396,31 @@ test('Challenge 2.4: Poster shield behavior, pending play queueing, and secure Y
   if (handle && handle.dispose) handle.dispose();
 });
 
-test('Challenge 2.5: Course Hero Trailer embeds Clean Player Shell with autoplay muted loop and upgraded lightbox', () => {
+test('Challenge 2.5: Course Hero Trailer embeds Clean Player Shell v3 with autoplay muted loop and Zero-Button Ambient Invariant', () => {
   const fs = require('node:fs');
   const studentSource = fs.readFileSync('frontend/assets/js/views/student.js', 'utf8');
 
-  // 1. Initial Hero Box Autoplay Muted & Loop
+  // 1. Initial Hero Box Autoplay Muted & Loop inside Clean Player Shell v3
   assert.match(studentSource, /id="hero-trailer-clean-shell"/, 'Must contain #hero-trailer-clean-shell in initial render');
-  assert.match(studentSource, /id="btn-trailer-toggle-mute"/, 'Must contain #btn-trailer-toggle-mute button');
-  assert.match(studentSource, /id="btn-hero-video-expand"/, 'Must contain #btn-hero-video-expand button');
+  assert.match(studentSource, /top:\s*-22%/, 'Hero trailer must have top: -22% scaling');
+  assert.match(studentSource, /height:\s*144%/, 'Hero trailer must have height: 144% scaling');
   assert.match(studentSource, /https:\/\/www\.youtube-nocookie\.com\/embed\/\$\{ytHeroId\}\?autoplay=1&mute=1&loop=1/, 'Hero trailer embed URL must enforce autoplay, mute, and loop');
 
-  // 2. Upgraded Lightbox using Clean Player Shell
-  assert.match(studentSource, /StudentView\._getEmbedVideoHtml\(url,\s*playerId,\s*false\)/, 'Lightbox modal must use Clean Player Shell');
-  assert.match(studentSource, /StudentView\.setupCustomVideoPlayer\(playerId,\s*\{\s*preview:\s*true/, 'Lightbox modal must initialize setupCustomVideoPlayer');
-  assert.match(studentSource, /window\._modalOnClose\s*=/, 'Modal cleanup must destroy lightbox player controller');
+  // 2. Zero-Button Ambient Hero Trailer Invariant
+  assert.doesNotMatch(studentSource, /id="btn-trailer-toggle-mute"/, 'Must eliminate #btn-trailer-toggle-mute button');
+  assert.doesNotMatch(studentSource, /id="btn-hero-video-expand"/, 'Must eliminate #btn-hero-video-expand button');
+  assert.doesNotMatch(studentSource, /id="btn-play-hero-trailer"/, 'Must eliminate #btn-play-hero-trailer button');
+  assert.doesNotMatch(studentSource, /openTrailerLightbox/, 'Must eliminate openTrailerLightbox modal logic');
 });
 
-test('Challenge 2.6: Teacher Reviewer Course Preview renders Clean Player Shell without native YouTube UI', () => {
+test('Challenge 2.6: Teacher Reviewer Course Preview renders Clean Player Shell v3 without native YouTube UI', () => {
   const fs = require('node:fs');
   const adminSource = fs.readFileSync('frontend/assets/js/views/admin.js', 'utf8');
 
   // 1. Helper _getCleanYouTubeShellHtml
   assert.match(adminSource, /_getCleanYouTubeShellHtml\(id,/, 'AdminView must contain _getCleanYouTubeShellHtml');
-  assert.match(adminSource, /top:\s*-14%/, 'Reviewer shell must crop top by -14%');
-  assert.match(adminSource, /height:\s*128%/, 'Reviewer shell must have 128% height');
+  assert.match(adminSource, /top:\s*-22%/, 'Reviewer shell must crop top by -22%');
+  assert.match(adminSource, /height:\s*144%/, 'Reviewer shell must have 144% height');
   assert.match(adminSource, /id="\$\{playerId\}-poster-shield"/, 'Reviewer shell must contain poster-shield');
   assert.match(adminSource, /id="\$\{playerId\}-shield"/, 'Reviewer shell must contain click-shield');
   assert.match(adminSource, /id="\$\{playerId\}-big-play"/, 'Reviewer shell must contain big-play');

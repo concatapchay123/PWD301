@@ -44,20 +44,65 @@ class InstructorView {
             <span class="material-symbols-outlined text-[20px]">close</span>
           </button>
         </div>
-        <div class="aspect-video w-full bg-slate-950 flex items-center justify-center relative overflow-hidden">
+        <div class="aspect-video w-full bg-slate-950 flex flex-col items-center justify-center relative overflow-hidden">
           ${isYt ? `
-            <div class="relative w-full h-full overflow-hidden bg-slate-950 select-none" id="instructor-preview-shell">
-              <div style="position: absolute; top: -14%; left: 0; width: 100%; height: 128%; pointer-events: none;" class="pointer-events-none">
-                <iframe
-                  id="instructor-preview-iframe"
-                  src="${cleanSrc}"
-                  title="${UI.escapeHtml(title)}"
-                  class="w-full h-full border-0 pointer-events-none"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  tabindex="-1"
-                ></iframe>
+            <div class="relative w-full h-full overflow-hidden bg-slate-950 select-none flex flex-col" id="instructor-preview-shell" data-custom-player="true" data-player-type="youtube" tabindex="0">
+              <div class="relative w-full flex-1 aspect-video overflow-hidden bg-slate-950" id="instructor-preview-viewport">
+                <!-- Scaled container to crop out YouTube top header (title, share, avatar) and bottom branding (Clean Player Shell v3) -->
+                <div style="position: absolute; top: -22%; left: -5%; width: 110%; height: 144%; pointer-events: none;" class="pointer-events-none">
+                  <iframe
+                    id="instructor-preview-iframe"
+                    src="${cleanSrc}"
+                    title="${UI.escapeHtml(title)}"
+                    class="w-full h-full border-0 pointer-events-none"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    tabindex="-1"
+                  ></iframe>
+                </div>
+                <!-- Click shield to handle play/pause without passing click through to YouTube iframe -->
+                <div id="instructor-preview-shield" class="absolute inset-0 z-10 cursor-pointer bg-transparent" style="position: absolute; inset: 0; z-index: 10; cursor: pointer;" title="Nhấp để Phát/Tạm dừng"></div>
+                <!-- Poster/Backdrop Shield to cover YouTube native thumbnail & red play button before playback -->
+                <div id="instructor-preview-poster-shield" class="absolute inset-0 z-15 bg-slate-950 flex flex-col items-center justify-center transition-opacity duration-300 pointer-events-auto cursor-pointer" style="position: absolute; inset: 0; z-index: 15;" title="Nhấp để phát video">
+                  <div class="flex flex-col items-center gap-2 text-slate-400 pointer-events-none select-none">
+                    <span class="material-symbols-outlined text-[48px] text-slate-600">smart_display</span>
+                    <span class="text-xs font-medium tracking-wide text-slate-400">Xem trước video bài giảng</span>
+                  </div>
+                </div>
+                <!-- Big Play Button Overlay -->
+                <button type="button" id="instructor-preview-big-play" class="absolute inset-0 m-auto w-16 h-16 rounded-full bg-slate-900/80 hover:bg-slate-900 border border-white/20 text-white flex items-center justify-center backdrop-blur-sm transition-all shadow-xl group-hover:scale-105 z-20 cursor-pointer" aria-label="Phát video">
+                  <span class="material-symbols-outlined text-[34px] ml-0.5 pointer-events-none">play_arrow</span>
+                </button>
               </div>
-              <div id="instructor-preview-shield" class="absolute inset-0 z-10 cursor-pointer bg-transparent" title="Nhấp để Phát/Tạm dừng"></div>
+              <!-- PWD301 Flat Warm Editorial Custom Control Bar -->
+              <div class="relative bg-slate-950 p-3 flex flex-col gap-2 z-20 transition-opacity duration-200 border-t border-slate-800" id="instructor-preview-controls">
+                <!-- Scrubber Track -->
+                <div class="relative w-full h-2.5 bg-slate-700/60 rounded-full cursor-pointer group/track hover:h-3 transition-all" id="instructor-preview-progress-track" title="Tiến độ bài học">
+                  <div id="instructor-preview-buffered-bar" class="absolute left-0 top-0 bottom-0 bg-slate-500/40 rounded-full w-0 transition-all pointer-events-none"></div>
+                  <div id="instructor-preview-played-bar" class="absolute left-0 top-0 bottom-0 bg-indigo-500 rounded-full w-0 pointer-events-none"></div>
+                </div>
+
+                <div class="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-200">
+                  <div class="flex items-center gap-3">
+                    <button type="button" id="instructor-preview-play-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Phát/Tạm dừng">
+                      <span class="material-symbols-outlined text-[20px] align-middle">play_arrow</span>
+                    </button>
+                    <button type="button" id="instructor-preview-mute-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Bật/Tắt âm">
+                      <span class="material-symbols-outlined text-[20px] align-middle">volume_up</span>
+                    </button>
+                    <input id="instructor-preview-volume" type="range" min="0" max="100" value="100" aria-label="Âm lượng" class="w-20" />
+                    <span id="instructor-preview-time" class="font-mono text-[11px] text-slate-300">00:00 / 00:00</span>
+                  </div>
+
+                  <div class="flex items-center gap-2">
+                    <button type="button" id="instructor-preview-speed-btn" class="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[11px] font-mono text-slate-200 transition-colors cursor-pointer" title="Tốc độ học">
+                      1.0x
+                    </button>
+                    <button type="button" id="instructor-preview-fullscreen-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Toàn màn hình">
+                      <span class="material-symbols-outlined text-[20px] align-middle">fullscreen</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           ` : `
             <video src="${cleanSrc}" controls autoplay playsinline class="w-full h-full object-contain"></video>
@@ -70,13 +115,65 @@ class InstructorView {
 
     if (isYt) {
       let isPlaying = true;
-      const shield = modal.querySelector('#instructor-preview-shield');
+      let isMuted = false;
+      let playbackRate = 1;
+      const rates = [0.75, 1, 1.25, 1.5, 2];
       const iframe = modal.querySelector('#instructor-preview-iframe');
-      if (shield && iframe) {
-        shield.onclick = () => {
-          isPlaying = !isPlaying;
-          const cmd = isPlaying ? 'playVideo' : 'pauseVideo';
-          iframe.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: cmd, args: [] }), '*');
+      const poster = modal.querySelector('#instructor-preview-poster-shield');
+      const bigPlay = modal.querySelector('#instructor-preview-big-play');
+      const playBtn = modal.querySelector('#instructor-preview-play-btn');
+      const muteBtn = modal.querySelector('#instructor-preview-mute-btn');
+      const shield = modal.querySelector('#instructor-preview-shield');
+      const speedBtn = modal.querySelector('#instructor-preview-speed-btn');
+      const fsBtn = modal.querySelector('#instructor-preview-fullscreen-btn');
+      const container = modal.querySelector('#instructor-preview-shell');
+
+      const postCommand = (func, args = []) => {
+        try {
+          iframe?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func, args }), '*');
+        } catch (_) {}
+      };
+
+      const togglePlay = () => {
+        isPlaying = !isPlaying;
+        if (isPlaying) {
+          postCommand('playVideo');
+          if (poster) poster.classList.add('opacity-0', 'pointer-events-none');
+          if (bigPlay) bigPlay.classList.add('hidden');
+          const icon = playBtn?.querySelector('.material-symbols-outlined');
+          if (icon) icon.textContent = 'pause';
+        } else {
+          postCommand('pauseVideo');
+          if (bigPlay) bigPlay.classList.remove('hidden');
+          const icon = playBtn?.querySelector('.material-symbols-outlined');
+          if (icon) icon.textContent = 'play_arrow';
+        }
+      };
+
+      if (shield) shield.onclick = togglePlay;
+      if (poster) poster.onclick = togglePlay;
+      if (bigPlay) bigPlay.onclick = togglePlay;
+      if (playBtn) playBtn.onclick = togglePlay;
+      if (muteBtn) {
+        muteBtn.onclick = () => {
+          isMuted = !isMuted;
+          postCommand(isMuted ? 'mute' : 'unMute');
+          const icon = muteBtn.querySelector('.material-symbols-outlined');
+          if (icon) icon.textContent = isMuted ? 'volume_off' : 'volume_up';
+        };
+      }
+      if (speedBtn) {
+        speedBtn.onclick = () => {
+          const next = rates[(rates.indexOf(playbackRate) + 1) % rates.length] || 1;
+          playbackRate = next;
+          postCommand('setPlaybackRate', [next]);
+          speedBtn.textContent = `${next}x`;
+        };
+      }
+      if (fsBtn) {
+        fsBtn.onclick = () => {
+          if (document.fullscreenElement) void document.exitFullscreen?.();
+          else void container?.requestFullscreen?.();
         };
       }
     }
@@ -6106,7 +6203,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
       if (ytMatch) {
         playerContainer.innerHTML = `
           <div class="relative w-full h-full overflow-hidden bg-slate-950 select-none">
-            <div style="position: absolute; top: -14%; left: 0; width: 100%; height: 128%; pointer-events: none;" class="pointer-events-none">
+            <div style="position: absolute; top: -22%; left: -5%; width: 110%; height: 144%; pointer-events: none;" class="pointer-events-none">
               <iframe
                 id="unified-trailer-iframe"
                 src="https://www.youtube-nocookie.com/embed/${ytMatch[1]}?autoplay=1&controls=0&rel=0&iv_load_policy=3&disablekb=1&modestbranding=1&playsinline=1&enablejsapi=1"

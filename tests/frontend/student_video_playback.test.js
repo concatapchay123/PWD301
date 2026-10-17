@@ -328,3 +328,65 @@ test('Next button renders disabled/gray without lock icon when incomplete and tr
   assert.match(enabledBtn, /cursor-pointer/, 'Complete Next button must have cursor-pointer');
   assert.match(enabledBtn, /shadow-md/, 'Complete Next button must have shadow-md');
 });
+
+test('Clean Player Shell v3 enforces deep crop scaling (-22% top, -5% left, 110% width, 144% height) and z-[15] poster shield', () => {
+  const studentSource = fs.readFileSync('frontend/assets/js/views/student.js', 'utf8');
+
+  // Verify Clean Player Shell v3 scaling in _getEmbedVideoHtml
+  assert.match(
+    studentSource,
+    /top:\s*-22%;\s*left:\s*-5%;\s*width:\s*110%;\s*height:\s*144%;\s*pointer-events:\s*none;?/,
+    '_getEmbedVideoHtml must enforce Clean Player Shell v3 deep crop (-22% top, -5% left, 110% width, 144% height)'
+  );
+
+  // Verify Poster Shield styling: z-[15], bg-slate-950, inset-0
+  assert.match(
+    studentSource,
+    /id="\$\{playerId\}-poster-shield"[^>]*class="[^"]*z-\[15\][^"]*bg-slate-950[^"]*"/,
+    'Poster shield must have z-[15] and bg-slate-950 classes to cover YouTube UI before playback'
+  );
+
+  // Verify click shield overlay
+  assert.match(
+    studentSource,
+    /id="\$\{playerId\}-shield"[^>]*class="[^"]*cursor-pointer\s+bg-transparent[^"]*"/,
+    'Click shield must exist with cursor-pointer and bg-transparent'
+  );
+});
+
+test('Single Event Listener Invariant: setupCustomVideoPlayer registers single click listener without double el.onclick binding', () => {
+  const studentSource = fs.readFileSync('frontend/assets/js/views/student.js', 'utf8');
+
+  // Verify click helper in setupCustomVideoPlayer does NOT assign el.onclick
+  const clickHelperMatch = studentSource.match(/const\s+click\s*=\s*\(suffix,\s*handler\)\s*=>\s*\{[\s\S]*?buttons\.push\(el\);\s*\}\s*\};/);
+  assert.ok(clickHelperMatch, 'Must find click helper function inside setupCustomVideoPlayer');
+  assert.doesNotMatch(
+    clickHelperMatch[0],
+    /el\.onclick\s*=/,
+    'click helper must NOT assign el.onclick (prevents double-toggle bug)'
+  );
+  assert.match(
+    clickHelperMatch[0],
+    /listen\(el,\s*'click',\s*wrapped\);/,
+    'click helper must only bind through listen(el, "click", wrapped)'
+  );
+});
+
+test('Poster Shield transitions to opacity-0 pointer-events-none only when onStateChange receives PLAYING (event.data === 1)', () => {
+  const studentSource = fs.readFileSync('frontend/assets/js/views/student.js', 'utf8');
+
+  // Verify onStateChange checks event.data === 1 before hiding poster shield
+  assert.match(
+    studentSource,
+    /if\s*\(\s*event\.data\s*===\s*1\s*\)\s*\{[\s\S]*?poster\.classList\.add\('opacity-0',\s*'pointer-events-none'\);/,
+    'Poster shield must only be hidden when onStateChange receives PLAYING (event.data === 1)'
+  );
+
+  // Verify transition does not hide poster shield prematurely for YouTube
+  assert.match(
+    studentSource,
+    /if\s*\(\s*playing\s*&&\s*!youtube\s*\)\s*\{[\s\S]*?poster\.classList\.add\('opacity-0',\s*'pointer-events-none'\);/,
+    'transition must not hide poster shield for YouTube on initial click before PLAYING state'
+  );
+});
+

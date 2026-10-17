@@ -67,8 +67,15 @@ test('API sends canonical playback contracts and download ticket without fetchin
 function fakePlayerDOM(type = 'youtube') {
   const elements = new Map(), events = new Map();
   const element = (id, attrs = {}) => {
+    let _onclick = null;
     const el = { id, style: {}, textContent: '', tagName: 'DIV', isConnected: true, classList: { add() {}, remove() {} }, getAttribute: name => attrs[name] || '', querySelector: () => null,
-      addEventListener(name, fn) { events.set(`${id}:${name}`, fn); }, removeEventListener(name) { events.delete(`${id}:${name}`); } };
+      addEventListener(name, fn) { events.set(`${id}:${name}`, fn); }, removeEventListener(name) { events.delete(`${id}:${name}`); },
+      get onclick() {
+        const handler = events.get(`${id}:click`) || _onclick;
+        return handler ? (event = { stopPropagation() {} }) => handler(event) : null;
+      },
+      set onclick(fn) { _onclick = fn; }
+    };
     elements.set(id, el); return el;
   };
   element('p-container', { 'data-player-type': type, 'data-yt-id': 'abcdefghijk' });
@@ -274,18 +281,18 @@ test('console header markup eliminates #console-course-progress-badge and update
   assert.match(studentSource, /const updateConsoleCourseProgressBadge = \(\) =>/, 'updateConsoleCourseProgressBadge must exist as safe no-op');
 });
 
-test('hero trailer clean player shell enforces container scaling, click-shield, and clean embed params', () => {
+test('hero trailer clean player shell enforces Clean Player Shell v3 container scaling and clean embed params', () => {
   const studentSource = fs.readFileSync('frontend/assets/js/views/student.js', 'utf8');
   assert.match(studentSource, /id="hero-trailer-clean-shell"/, 'Must contain #hero-trailer-clean-shell container');
-  assert.match(studentSource, /top:\s*-14%/, 'Must contain top: -14% scaling style');
-  assert.match(studentSource, /height:\s*128%/, 'Must contain height: 128% scaling style');
+  assert.match(studentSource, /top:\s*-22%/, 'Must contain top: -22% scaling style');
+  assert.match(studentSource, /height:\s*144%/, 'Must contain height: 144% scaling style');
   assert.match(studentSource, /pointer-events:\s*none/, 'Must contain pointer-events: none on iframe wrapper');
-  assert.match(studentSource, /id="hero-trailer-shield"/, 'Must contain #hero-trailer-shield overlay');
   assert.match(studentSource, /autoplay=1/, 'Embed URL must enforce autoplay=1');
   assert.match(studentSource, /mute=1/, 'Embed URL must enforce mute=1');
   assert.match(studentSource, /loop=1/, 'Embed URL must enforce loop=1');
   assert.match(studentSource, /controls=0/, 'Embed URL must enforce controls=0');
   assert.match(studentSource, /playsinline=1/, 'Embed URL must enforce playsinline=1');
+  assert.doesNotMatch(studentSource, /id="btn-trailer-toggle-mute"/, 'Ambient hero trailer must have zero buttons');
 });
 
 test('supplementary video initializes independent tracker with its own mediaId', async t => {

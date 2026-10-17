@@ -1995,8 +1995,8 @@ class AdminView {
     return `
       <div class="relative group w-full rounded-xl bg-slate-950 flex flex-col select-none overflow-hidden my-4" id="${playerId}-container" data-custom-player="true" data-player-type="youtube" data-yt-id="${id}" tabindex="0">
         <div class="relative w-full aspect-video overflow-hidden bg-slate-950" id="${playerId}-viewport">
-          <!-- Scaled container to crop out YouTube top header (title, share, avatar) and bottom branding -->
-          <div style="position: absolute; top: -14%; left: 0; width: 100%; height: 128%; pointer-events: none;" class="pointer-events-none">
+          <!-- Scaled container to crop out YouTube top header (title, share, avatar) and bottom branding (Clean Player Shell v3) -->
+          <div style="position: absolute; top: -22%; left: -5%; width: 110%; height: 144%; pointer-events: none;" class="pointer-events-none">
             <iframe id="${playerId}-iframe" class="w-full h-full border-0 pointer-events-none" src="${UI.escapeHtml(embedUrl)}" title="Video bài học YouTube" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen tabindex="-1"></iframe>
           </div>
           <!-- Click shield to handle play/pause without passing click through to YouTube iframe -->

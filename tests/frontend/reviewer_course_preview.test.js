@@ -180,3 +180,71 @@ test('native PDF preview never embeds HTML or a failed authorization response', 
     assert.match(message.textContent, /Không thể xem/);
   }
 });
+
+test('reviewer clean YouTube player shell enforces v3 crop geometry (-22% top, -5% left, 110% width, 144% height)', () => {
+  const h = harness();
+  const shellHtml = h.view._getCleanYouTubeShellHtml('test_yt_id', 'test-player');
+  assert.match(shellHtml, /top:\s*-22%/, 'Must have top: -22% scaling');
+  assert.match(shellHtml, /left:\s*-5%/, 'Must have left: -5% scaling');
+  assert.match(shellHtml, /width:\s*110%/, 'Must have width: 110% scaling');
+  assert.match(shellHtml, /height:\s*144%/, 'Must have height: 144% scaling');
+  assert.match(shellHtml, /pointer-events:\s*none/, 'Iframe wrapper must have pointer-events: none');
+  assert.match(shellHtml, /id="test-player-shield"/, 'Must contain click shield');
+  assert.match(shellHtml, /id="test-player-poster-shield"/, 'Must contain poster backdrop shield');
+  assert.match(shellHtml, /id="test-player-controls"/, 'Must contain custom control bar');
+});
+
+test('instructor openVideoModal renders Clean Player Shell v3 with custom controls and closes cleanly', () => {
+  const window = {
+    addEventListener: () => {},
+    removeEventListener: () => {}
+  };
+  let modalAppended = null;
+  const mockDoc = {
+    getElementById: id => (id === 'pwd301-video-preview-modal' ? modalAppended : null),
+    createElement: tag => ({
+      tagName: tag.toUpperCase(),
+      id: '',
+      className: '',
+      innerHTML: '',
+      style: {},
+      querySelector(sel) {
+        if (sel === '.btn-close-modal') return { onclick: null };
+        if (sel === 'video') return { pause() {} };
+        if (sel === 'iframe') return { contentWindow: { postMessage() {} } };
+        return { onclick: null, querySelector: () => ({ textContent: '' }), classList: { add() {}, remove() {} } };
+      },
+      remove() { modalAppended = null; }
+    }),
+    body: {
+      appendChild: el => { modalAppended = el; }
+    },
+    addEventListener: () => {},
+    removeEventListener: () => {}
+  };
+  const UI = { escapeHtml: s => String(s || '') };
+  vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, '../../frontend/assets/js/views/instructor.js'), 'utf8'), {
+    window, document: mockDoc, UI, console
+  });
+
+  window.InstructorView.openVideoModal('youtube', 'https://www.youtube.com/watch?v=abcdefghijk', 'Video Demo');
+  assert.ok(modalAppended, 'Modal must be appended to body');
+  assert.match(modalAppended.innerHTML, /id="instructor-preview-shell"/, 'Must have instructor-preview-shell');
+  assert.match(modalAppended.innerHTML, /top:\s*-22%/, 'Must have top: -22% scaling');
+  assert.match(modalAppended.innerHTML, /height:\s*144%/, 'Must have height: 144% scaling');
+  assert.match(modalAppended.innerHTML, /id="instructor-preview-controls"/, 'Must contain custom controls');
+  assert.match(modalAppended.innerHTML, /id="instructor-preview-play-btn"/, 'Must have custom play button');
+  assert.match(modalAppended.innerHTML, /id="instructor-preview-mute-btn"/, 'Must have custom mute button');
+});
+
+test('student course hero trailer adheres to Ambient Hero Trailer Zero-Button Invariant inside Clean Player Shell v3', () => {
+  const studentSource = fs.readFileSync(path.resolve(__dirname, '../../frontend/assets/js/views/student.js'), 'utf8');
+  assert.match(studentSource, /id="hero-trailer-clean-shell"/, 'Must contain #hero-trailer-clean-shell container');
+  assert.match(studentSource, /top:\s*-22%;\s*left:\s*-5%;\s*width:\s*110%;\s*height:\s*144%/, 'Hero trailer iframe must use Clean Player Shell v3');
+  assert.match(studentSource, /autoplay=1&mute=1&loop=1&playlist=\$\{ytHeroId\}/, 'Hero trailer must autoplay muted in infinite loop');
+  assert.doesNotMatch(studentSource, /id="btn-trailer-toggle-mute"/, 'Zero-Button: Mute toggle button must be eliminated');
+  assert.doesNotMatch(studentSource, /id="btn-hero-video-expand"/, 'Zero-Button: Expand button must be eliminated');
+  assert.doesNotMatch(studentSource, /id="btn-play-hero-trailer"/, 'Zero-Button: Big center play button must be eliminated');
+  assert.doesNotMatch(studentSource, /openTrailerLightbox/, 'Zero-Button: Lightbox modal opening logic must be eliminated');
+});
+

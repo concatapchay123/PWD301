@@ -189,8 +189,8 @@ test('Adversarial 1: Trailer Lightbox uses Clean Player Shell with zero YouTube 
 
   // 1. Invariants: Clean Player Shell geometry and shields
   assert.ok(html.includes('id="trailer-lightbox-player-container"'), 'Container ID must match');
-  assert.ok(html.includes('top: -14%'), 'Top crop -14% is mandatory');
-  assert.ok(html.includes('height: 128%'), 'Height 128% is mandatory');
+  assert.ok(html.includes('top: -22%'), 'Top crop -22% is mandatory');
+  assert.ok(html.includes('height: 144%'), 'Height 144% is mandatory');
   assert.ok(html.includes('pointer-events-none'), 'Iframe host must be non-interactive');
   assert.ok(html.includes('id="trailer-lightbox-player-shield"'), 'Click shield must intercept pointer events');
   assert.ok(html.includes('id="trailer-lightbox-player-poster-shield"'), 'Cover poster shield must conceal red button');
@@ -214,8 +214,8 @@ test('Adversarial 2: Admin Course Reviewer Preview modal renders Clean Player Sh
 
   // 1. _getCleanYouTubeShellHtml invariants
   const shellHtml = AdminView._getCleanYouTubeShellHtml('dQw4w9WgXcQ', 'test-rev-player');
-  assert.ok(shellHtml.includes('top: -14%'), 'Reviewer shell must crop top -14%');
-  assert.ok(shellHtml.includes('height: 128%'), 'Reviewer shell must scale 128%');
+  assert.ok(shellHtml.includes('top: -22%'), 'Reviewer shell must crop top -22%');
+  assert.ok(shellHtml.includes('height: 144%'), 'Reviewer shell must scale 144%');
   assert.ok(shellHtml.includes('id="test-rev-player-poster-shield"'), 'Must have poster shield');
   assert.ok(shellHtml.includes('id="test-rev-player-shield"'), 'Must have click shield');
   assert.ok(shellHtml.includes('id="test-rev-player-big-play"'), 'Must have big play button');
@@ -304,8 +304,8 @@ test('Adversarial 3: Teacher Course Preview & Video Modal in instructor.js enfor
   assert.ok(modal, 'Modal must be appended to document.body');
 
   assert.ok(modal.innerHTML.includes('id="instructor-preview-shell"'), 'Must render instructor-preview-shell');
-  assert.ok(modal.innerHTML.includes('top: -14%'), 'Must have top: -14% scaling');
-  assert.ok(modal.innerHTML.includes('height: 128%'), 'Must have height: 128% scaling');
+  assert.ok(modal.innerHTML.includes('top: -22%'), 'Must have top: -22% scaling');
+  assert.ok(modal.innerHTML.includes('height: 144%'), 'Must have height: 144% scaling');
   assert.ok(modal.innerHTML.includes('id="instructor-preview-shield"'), 'Must have click shield overlay');
   assert.ok(modal.innerHTML.includes('youtube-nocookie.com'), 'Must use youtube-nocookie.com domain');
   assert.ok(modal.innerHTML.includes('controls=0'), 'Must hide native controls');

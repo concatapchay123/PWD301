@@ -306,6 +306,21 @@ class ExamStore {
     }
     return draft;
   }
+
+  static attachArmor(container, options = {}) {
+    if (typeof VideoArmor !== 'undefined' && container) {
+      return VideoArmor.mount(container, {
+        globalProtection: true,
+        ...options
+      });
+    }
+    return null;
+  }
 }
 
-window.ExamStore = ExamStore;
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { ExamStore };
+}
+if (typeof window !== 'undefined') {
+  window.ExamStore = ExamStore;
+}

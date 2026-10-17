@@ -318,13 +318,16 @@ test('VideoArmor keeps an internal watermark visible and detects CSS hiding', ()
     assert.equal(armor.watermarkEl.style.visibility, 'visible');
   } finally { armor.destroy(); for (const id of intervals) clearInterval(id); }
 });
-test('VideoArmor does not label an F12 key as proof of tampering', () => {
+test('VideoArmor intercepts DevTools shortcut keys (F12, Ctrl+Shift+I/J/C, Ctrl+U, Cmd+Option) and triggers Blackout', () => {
   const { mockDocument, mockWindow, MockElement, MockMutationObserver, intervals } = createMockDOM();
   global.document = mockDocument; global.window = mockWindow; global.MutationObserver = MockMutationObserver;
   const { VideoArmor } = require('../../frontend/assets/js/components/video-armor.js');
   const armor = VideoArmor.mount(new MockElement('div'));
-  try { mockWindow.dispatchEvent({ type: 'keyup', key: 'F12', preventDefault() {} }); assert.equal(armor.isBlackedOut, false); assert.doesNotMatch(armor._formatWatermarkText(), /127\.0\.0\.1|domain\.local/); }
-  finally { armor.destroy(); for (const id of intervals) clearInterval(id); }
+  try {
+    mockWindow.dispatchEvent({ type: 'keydown', key: 'F12', keyCode: 123, preventDefault() {} });
+    assert.equal(armor.isBlackedOut, true, 'F12 must trigger Blackout Shield');
+    assert.ok(armor.blackoutEl, 'Blackout element must be rendered');
+  } finally { armor.destroy(); for (const id of intervals) clearInterval(id); }
 });
 
 test('VideoArmor pauses during hidden route staging and enforces the watermark after commit', () => {
