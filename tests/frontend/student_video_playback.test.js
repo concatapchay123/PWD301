@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const fs = require('node:fs');
 
 function createMockPlaybackDOM() {
   const elements = new Map();
@@ -53,6 +54,23 @@ function createMockPlaybackDOM() {
       return child;
     }
 
+    contains(child) {
+      let cur = child;
+      while (cur) {
+        if (cur === this) return true;
+        cur = cur.parentElement;
+      }
+      return false;
+    }
+
+    closest() {
+      return null;
+    }
+
+    get isConnected() {
+      return true;
+    }
+
     querySelector(selector) {
       if (selector.startsWith('#')) return elements.get(selector.slice(1)) || null;
       if (selector.startsWith('.')) {
@@ -98,6 +116,9 @@ function createMockPlaybackDOM() {
     },
     createElement(tag) {
       return new MockElement(tag);
+    },
+    querySelectorAll() {
+      return [];
     },
     addEventListener: () => {},
     removeEventListener: () => {}
@@ -208,4 +229,102 @@ test('StudentView setupCustomVideoPlayer attaches VideoArmor and supports Hls.js
   assert.ok(watermark.textContent.includes('student999@test.edu'), 'Watermark text contains student email');
 
   ctrl.destroy();
+});
+
+test('VideoArmor tolerates sub-pixel opacity (0.001) without blackout and triggers blackout on genuine zero opacity', () => {
+  const { mockDoc, MockElement } = createMockPlaybackDOM();
+  global.document = mockDoc;
+  global.window = {
+    getComputedStyle: el => el.style
+  };
+
+  const { VideoArmor } = require('../../frontend/assets/js/components/video-armor.js');
+  const container = new MockElement('div', 'player-subpixel-container');
+  const armor = VideoArmor.mount(container, {
+    silentWatermark: false,
+    student: { student_code: 'SV-SUBPIXEL', email: 'subpixel@test.edu' }
+  });
+
+  assert.ok(armor.watermarkEl, 'Watermark must be created');
+  assert.equal(armor.isBlackedOut, false, 'Initial state must not be blacked out');
+
+  // Sub-pixel opacity simulation (e.g. 0.001 or rounding artifact)
+  armor.watermarkEl.style.opacity = '0.001';
+  armor._inspectMutations([]);
+  assert.equal(armor.isBlackedOut, false, 'Sub-pixel opacity 0.001 must not trigger blackout');
+
+  // Genuine tampering: opacity explicitly set to 0
+  armor.watermarkEl.style.opacity = '0';
+  armor._inspectMutations([]);
+  assert.equal(armor.isBlackedOut, true, 'Genuine opacity 0 tampering must trigger blackout');
+
+  armor.destroy();
+});
+
+test('VideoArmor gracefully re-attaches watermark when detached when gracefulReattach option is enabled', () => {
+  const { mockDoc, MockElement } = createMockPlaybackDOM();
+  global.document = mockDoc;
+  global.window = {
+    getComputedStyle: el => el.style
+  };
+
+  const { VideoArmor } = require('../../frontend/assets/js/components/video-armor.js');
+  const container = new MockElement('div', 'player-reattach-container');
+  const armor = VideoArmor.mount(container, {
+    silentWatermark: false,
+    gracefulReattach: true,
+    student: { student_code: 'SV-REATTACH' }
+  });
+
+  assert.ok(armor.watermarkEl, 'Watermark must exist');
+  assert.equal(armor.watermarkEl.parentElement, container);
+
+  // Detach watermark element from container (e.g. temporary DOM shift)
+  container.removeChild(armor.watermarkEl);
+  assert.equal(armor.watermarkEl.parentElement, null);
+
+  // Inspect mutations with gracefulReattach: true
+  armor._inspectMutations([]);
+  assert.equal(armor.watermarkEl.parentElement, container, 'Watermark must be gracefully re-attached');
+  assert.equal(armor.isBlackedOut, false, 'Graceful re-attachment must not blackout');
+
+  armor.destroy();
+});
+
+test('Sequential completion gate enforces 60-second text dwell, 100% video watched across all videos, and miniquiz pass score', () => {
+  const studentSource = fs.readFileSync('frontend/assets/js/views/student.js', 'utf8');
+
+  // 1. Text dwell time >= 60 seconds
+  assert.match(studentSource, /const\s+dwellRequired\s*=\s*60;/, 'dwellRequired must be 60 seconds');
+  assert.doesNotMatch(studentSource, /const\s+dwellRequired\s*=\s*30;/, 'dwellRequired must not be 30 seconds');
+  assert.match(studentSource, /Cần học tối thiểu 60s/, 'Notification must show minimum 60s text dwell');
+
+  // 2. Multi-video requirement: all videos in lesson must be complete
+  assert.match(studentSource, /result\.all_videos_complete/, 'Must verify all_videos_complete for multi-video lessons');
+
+  // 3. Miniquiz pass score requirement
+  assert.match(studentSource, /quizPassingPercent/, 'Must check miniquiz passing score percentage');
+});
+
+test('Next button renders disabled/gray without lock icon when incomplete and transitions to emerald green when complete', () => {
+  const studentSource = fs.readFileSync('frontend/assets/js/views/student.js', 'utf8');
+
+  // Disabled incomplete template
+  assert.match(studentSource, /<button\s+type="button"\s+id="cisco-next-btn"\s+disabled/, 'Incomplete Next button must have disabled attribute');
+  assert.match(studentSource, /bg-slate-200/, 'Incomplete Next button must have slate gray background');
+  assert.match(studentSource, /cursor-not-allowed/, 'Incomplete Next button must have cursor-not-allowed');
+
+  // Verify NO lock icon and NO "Đã khóa" in Next button
+  const nextBtnMatches = studentSource.match(/box\.innerHTML\s*=\s*`\s*<button[^>]+id="cisco-next-btn"[^>]*>[\s\S]*?<\/button>\s*`;/g);
+  assert.ok(nextBtnMatches && nextBtnMatches.length >= 2, 'Must have distinct complete and incomplete Next button templates');
+  const disabledBtn = nextBtnMatches.find(tmpl => tmpl.includes('disabled'));
+  assert.ok(disabledBtn, 'Must find disabled Next button template');
+  assert.doesNotMatch(disabledBtn, /lock/i, 'Incomplete Next button must NOT contain a lock icon');
+  assert.doesNotMatch(disabledBtn, /Đã khóa/i, 'Incomplete Next button must NOT contain "Đã khóa" text');
+
+  // Emerald green complete template
+  const enabledBtn = nextBtnMatches.find(tmpl => !tmpl.includes('disabled') && tmpl.includes('bg-emerald-600'));
+  assert.ok(enabledBtn, 'Must find emerald green complete Next button template');
+  assert.match(enabledBtn, /cursor-pointer/, 'Complete Next button must have cursor-pointer');
+  assert.match(enabledBtn, /shadow-md/, 'Complete Next button must have shadow-md');
 });

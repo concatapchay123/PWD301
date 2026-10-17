@@ -414,9 +414,16 @@ def _register_error_handlers(app: Flask) -> None:
         def _make_handler(c: str, s: int):
             def handler(error: Exception) -> Response | tuple[Response, int]:
                 ra = getattr(error, "retry_after", None) if s == 429 else None
+                msg = str(error)
+                if s >= 500:
+                    app.logger.error("Domain 500 error [%s]: %s", c, error, exc_info=True)
+                    if isinstance(error, AuditPersistenceError):
+                        msg = "Không thể ghi nhận nhật ký kiểm toán bắt buộc cho thao tác này. Vui lòng liên hệ quản trị viên."
+                    else:
+                        msg = "Đã xảy ra lỗi máy chủ nội bộ. Vui lòng liên hệ hỗ trợ kỹ thuật."
                 return _format_error_response(
                     code=c,
-                    message=str(error),
+                    message=msg,
                     status_code=s,
                     retry_after=ra,
                 )

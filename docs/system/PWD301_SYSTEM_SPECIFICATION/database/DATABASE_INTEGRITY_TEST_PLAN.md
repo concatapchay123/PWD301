@@ -193,7 +193,7 @@ Tối thiểu có:
 |---|---|---|---|
 | FILE-T001 | SERVICE | Upload `.docm`/`.pptm` | Reject trước publish/use |
 | FILE-T002 | SERVICE | Client MIME giả | Detected MIME/signature quyết định policy |
-| FILE-T003 | SERVICE | Image >10MB / PDF-DOCX >50MB / PPTX >100MB / video >=1GB | Reject theo configured limits |
+| FILE-T003 | SERVICE | Image >10MB / Attachment (PDF, DOCX, PPTX, CAD, 3D) >50MB / video >=1GB | Reject theo configured limits |
 | FILE-T004 | WORKER | ClamAV unavailable | Revision vẫn blocked/pending; không SAFE |
 | FILE-T005 | WORKER | Malware detected | REJECTED + security event; Student không access |
 | FILE-T006 | WORKER | DOCX/PPTX decompression bomb | Abort theo uncompressed/resource/time limits |

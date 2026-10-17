@@ -64,7 +64,7 @@ def send(actor, lesson, start, sequence, now, position, state="playing", **kwarg
         {
             "playback_session_id": start["session_id"],
             "sequence": sequence,
-            "media_id": "youtube:abcdefghijk",
+            "media_id": start.get("media_id", "youtube:abcdefghijk"),
             "position_seconds": position,
             "playback_rate": 1,
             "state": state,
@@ -259,12 +259,12 @@ def test_video_completion_preserves_minimum_and_quiz(playback_setup):
     db.session.commit()
     start = start_playback_session(actor, lesson.public_id, "youtube:abcdefghijk", now=t)
     send(actor, lesson, start, 1, t, 0)
-    for index in range(1, 10):
+    for index in range(1, 11):
         result = send(
             actor, lesson, start, index + 1, t + timedelta(seconds=10 * index), index * 10
         )
     assert result["is_video_complete"] and not result["is_completed"]
-    assert result["seconds_spent"] == 90
+    assert result["seconds_spent"] == 100
 
 
 def test_rate_transition_and_invalid_seek_reconcile(playback_setup):
@@ -361,4 +361,109 @@ def test_reconcile_lesson_progress_allows_completion_with_is_completed(playback_
     prog = reconcile_lesson_progress(actor, lesson.id, view_fraction=1.0, is_completed=True, now=t)
     assert prog.completed_at is not None
     assert float(prog.max_view_fraction) >= 0.95
+
+
+def test_multi_video_lesson_requires_all_videos_100_percent(playback_setup):
+    """Task R3: Multi-video lesson requires 100% on ALL videos to unlock quiz and complete lesson."""
+    from pwd301.services.exceptions import LessonStateViolationError
+    from pwd301.services.lesson_service import get_lesson_progress, submit_lesson_quiz
+    from pwd301.services.playback_service import start_playback_session
+
+    actor, lesson, t = playback_setup
+    lesson.markdown_content = (
+        '<!-- video_urls: ["https://youtu.be/abcdefghijk", "https://youtu.be/1234567890a"] -->\n'
+        '<!-- mini_quiz: [{"type":"TRUE_FALSE","question":"Check","correct_value":true}] -->'
+    )
+    db.session.commit()
+
+    # 1. Start and play video 1 to 100%
+    start1 = start_playback_session(actor, lesson.public_id, "youtube:abcdefghijk", now=t)
+    send(actor, lesson, start1, 1, t, 0)
+    for idx in range(1, 11):
+        res1 = send(actor, lesson, start1, idx + 1, t + timedelta(seconds=10 * idx), idx * 10)
+
+    # Video 1 is complete, but not all videos in lesson are complete
+    assert res1["is_video_complete"] is True
+    assert res1["all_videos_complete"] is False
+    assert res1["is_completed"] is False
+
+    progress = get_lesson_progress(actor, lesson.id)
+    assert progress.completed_at is None
+    assert float(progress.max_view_fraction) <= 0.99
+
+    # Quiz remains locked because not all videos are watched to 100%
+    with pytest.raises(LessonStateViolationError, match="Watch the lesson video"):
+        submit_lesson_quiz(actor, lesson.id, [True])
+
+    # 2. Start and play video 2 to 50%
+    t2 = t + timedelta(seconds=200)
+    start2 = start_playback_session(actor, lesson.public_id, "youtube:1234567890a", now=t2)
+    send(actor, lesson, start2, 1, t2, 0)
+    for idx in range(1, 6):
+        res2 = send(actor, lesson, start2, idx + 1, t2 + timedelta(seconds=10 * idx), idx * 10)
+
+    assert res2["is_video_complete"] is False
+    assert res2["all_videos_complete"] is False
+    assert res2["is_completed"] is False
+
+    progress = get_lesson_progress(actor, lesson.id)
+    assert float(progress.max_view_fraction) <= 0.99
+
+    # 3. Advance video 2 to 100%
+    for idx in range(6, 11):
+        res2 = send(actor, lesson, start2, idx + 1, t2 + timedelta(seconds=10 * idx), idx * 10)
+
+    assert res2["is_video_complete"] is True
+    assert res2["all_videos_complete"] is True
+
+    progress = get_lesson_progress(actor, lesson.id)
+    assert float(progress.max_view_fraction) >= 1.0
+
+    # Mini quiz is now unlocked and can be successfully submitted
+    quiz_res = submit_lesson_quiz(actor, lesson.id, [True])
+    assert quiz_res.completed_at is not None
+
+
+def test_single_video_90_percent_does_not_complete(playback_setup):
+    """Task R3: Single video at 90% or 95% does not complete; must reach 100% within 0.5s tolerance."""
+    from pwd301.services.lesson_service import get_lesson_progress
+    from pwd301.services.playback_service import start_playback_session
+
+    actor, lesson, t = playback_setup
+    lesson.minimum_completion_seconds = 0
+    lesson.markdown_content = "<!-- video_url: https://youtu.be/abcdefghijk -->"
+    db.session.commit()
+
+    start = start_playback_session(actor, lesson.public_id, "youtube:abcdefghijk", now=t)
+    send(actor, lesson, start, 1, t, 0)
+
+    # Play to 90 seconds (90% of 100s duration)
+    for idx in range(1, 10):
+        res = send(actor, lesson, start, idx + 1, t + timedelta(seconds=10 * idx), idx * 10)
+
+    assert res["is_video_complete"] is False
+    assert res["all_videos_complete"] is False
+    assert res["is_completed"] is False
+    progress = get_lesson_progress(actor, lesson.id)
+    assert progress.completed_at is None
+    assert float(progress.max_view_fraction) <= 0.99
+
+    # Play to 95 seconds (95% of 100s duration)
+    res = send(actor, lesson, start, 11, t + timedelta(seconds=95), 95)
+    assert res["is_video_complete"] is False
+    assert res["all_videos_complete"] is False
+    assert res["is_completed"] is False
+    progress = get_lesson_progress(actor, lesson.id)
+    assert progress.completed_at is None
+    assert float(progress.max_view_fraction) <= 0.99
+
+    # Play to 100 seconds (100% of 100s duration)
+    res = send(actor, lesson, start, 12, t + timedelta(seconds=100), 100)
+    assert res["is_video_complete"] is True
+    assert res["all_videos_complete"] is True
+    assert res["is_completed"] is True
+    progress = get_lesson_progress(actor, lesson.id)
+    assert progress.completed_at is not None
+    assert float(progress.max_view_fraction) >= 1.0
+
 

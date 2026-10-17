@@ -127,6 +127,22 @@ def _snapshot(
     lease: Any, media: Any, lesson: Any, actor: Any, now: Any, sess: Any, credited: int = 0
 ) -> dict[str, Any]:
     progress = get_lesson_progress(actor, lesson.id, session=sess)
+    ids = lesson_media_ids(lesson)
+    all_media = (
+        sess.query(MediaProgress)
+        .filter_by(enrollment_period_id=lease.enrollment_period_id, lesson_id=lesson.id)
+        .all()
+    )
+    media_map = {m.media_id: m for m in all_media}
+
+    def _is_complete(m: MediaProgress | None) -> bool:
+        if not m or not m.duration_seconds or m.duration_seconds <= 0:
+            return False
+        return m.frontier_seconds >= max(0.0, m.duration_seconds - 0.5)
+
+    this_complete = _is_complete(media)
+    all_complete = bool(ids) and all(_is_complete(media_map.get(mid)) for mid in ids)
+
     return {
         "session_id": str(lease.public_id),
         "next_sequence": lease.next_sequence,
@@ -136,7 +152,8 @@ def _snapshot(
         "resume_position": media.frontier_seconds,
         "duration": media.duration_seconds,
         "credited_seconds": credited,
-        "is_video_complete": media.frontier_seconds >= media.duration_seconds * 0.9,
+        "is_video_complete": this_complete,
+        "all_videos_complete": all_complete,
         "is_completed": bool(progress and progress.completed_at),
         "completed": bool(progress and progress.completed_at),
         "seconds_spent": progress.seconds_spent if progress else 0,
@@ -164,7 +181,7 @@ def start_playback_session(
             duration = _duration(lesson, media_id)
             existing_progress = get_lesson_progress(actor, lesson.id, session=sess)
             historically_complete = bool(
-                existing_progress and existing_progress.completed_at and ids and media_id == ids[0]
+                existing_progress and existing_progress.completed_at and ids and media_id in ids
             )
             media = MediaProgress(
                 enrollment_period_id=period.id,
@@ -228,7 +245,7 @@ def reconcile_lesson_progress(
             (float(existing.max_view_fraction or 0) if existing else 0.0)
             if (
                 _lesson_requires_video_watch(lesson)
-                and not (is_completed and float(view_fraction or 0) >= 0.95)
+                and not (is_completed and float(view_fraction or 0) >= 1.0)
             )
             else float(view_fraction or 0.0)
         )
@@ -357,14 +374,32 @@ def record_playback_heartbeat(
             )
         elif not active:
             lease.fractional_seconds = 0
-        is_primary = bool(ids and lease.media_id == ids[0])
-        current = get_lesson_progress(actor, lesson.id, session=sess)
-        fraction = (
-            media.frontier_seconds / media.duration_seconds
-            if is_primary
-            else (float(current.max_view_fraction or 0) if current else 0)
+        ids = lesson_media_ids(lesson)
+        all_media = (
+            sess.query(MediaProgress)
+            .filter_by(enrollment_period_id=period.id, lesson_id=lesson.id)
+            .all()
         )
-        if not ids:
+        media_map = {m.media_id: m for m in all_media}
+
+        def _is_complete(m: MediaProgress | None) -> bool:
+            if not m or not m.duration_seconds or m.duration_seconds <= 0:
+                return False
+            return m.frontier_seconds >= max(0.0, m.duration_seconds - 0.5)
+
+        all_videos_complete = bool(ids) and all(_is_complete(media_map.get(mid)) for mid in ids)
+
+        if all_videos_complete:
+            fraction = 1.0
+        elif ids:
+            individual_fractions = [
+                min(1.0, (media_map[mid].frontier_seconds / media_map[mid].duration_seconds))
+                if mid in media_map and media_map[mid].duration_seconds > 0
+                else 0.0
+                for mid in ids
+            ]
+            fraction = min(0.99, sum(individual_fractions) / len(ids))
+        else:
             fraction = float(payload.get("view_fraction", 0))
         record_lesson_progress(
             actor, lesson.id, credited, fraction, session=sess, now=at, server_verified=True

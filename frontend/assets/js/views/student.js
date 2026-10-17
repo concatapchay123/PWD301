@@ -382,12 +382,13 @@ class StudentView {
   }
 
   static isLessonVideoWatched(lesson) {
-    if (!lesson?.video_url) return true;
+    if (!lesson?.video_url && (!Array.isArray(lesson?.video_urls) || !lesson.video_urls.length)) return true;
+    if (lesson.progress?.all_videos_complete === true || lesson.progress?.is_video_complete === true) return true;
     const fraction = Number(lesson.progress?.max_view_fraction || 0);
     const spent = Number(lesson.progress?.seconds_spent || 0);
     const minSec = Number(lesson.minimum_completion_seconds || 0);
 
-    if (fraction < 0.90) return false;
+    if (fraction < 0.99) return false;
     if (minSec > 0 && spent < minSec) return false;
     return true;
   }
@@ -1692,53 +1693,53 @@ class StudentView {
           </div>
 
           <!-- 1. Hero Section -->
-          <section class="rounded-3xl bg-slate-900/90 dark:bg-[#12161f] border border-slate-800 p-8 sm:p-10 shadow-2xl relative overflow-hidden">
+          <section class="rounded-3xl bg-white dark:bg-[#12161f] border border-slate-200 dark:border-slate-800 p-8 sm:p-10 shadow-xl relative overflow-hidden">
             <div class="absolute -top-32 -left-32 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center relative z-10">
               <div class="lg:col-span-7 space-y-5">
-                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 text-xs font-bold font-mono">
-                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/25 text-xs font-bold font-mono">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                   <span>${UI.escapeHtml(courseCode)}</span>
                 </div>
                 
-                <h1 class="text-3xl sm:text-4xl lg:text-5xl font-black text-white tracking-tight leading-tight">
+                <h1 class="text-3xl sm:text-4xl lg:text-5xl font-black text-slate-900 dark:text-white tracking-tight leading-tight">
                   ${UI.escapeHtml(courseTitle)}
                 </h1>
 
-                <p class="text-sm sm:text-base text-slate-300 leading-relaxed max-w-2xl">
+                <p class="text-sm sm:text-base text-slate-600 dark:text-slate-300 leading-relaxed max-w-2xl">
                   ${UI.escapeHtml(plainDesc)}
                 </p>
 
-                <div class="flex flex-wrap items-center gap-4 sm:gap-6 text-xs text-slate-300 pt-1">
+                <div class="flex flex-wrap items-center gap-4 sm:gap-6 text-xs text-slate-600 dark:text-slate-300 pt-1">
                   <div class="flex items-center gap-2">
-                    <span class="material-symbols-outlined text-[18px] text-emerald-400">person</span>
+                    <span class="material-symbols-outlined text-[18px] text-emerald-600 dark:text-emerald-400">person</span>
                     <span class="font-medium">${UI.escapeHtml(instructorName)}</span>
                   </div>
-                  <span class="text-slate-600">•</span>
+                  <span class="text-slate-300 dark:text-slate-600">•</span>
                   <div class="flex items-center gap-2">
-                    <span class="material-symbols-outlined text-[18px] text-emerald-400">menu_book</span>
+                    <span class="material-symbols-outlined text-[18px] text-emerald-600 dark:text-emerald-400">menu_book</span>
                     <span class="font-medium">${modules.length} chương (${totalLessons} bài học)</span>
                   </div>
-                  <span class="text-slate-600">•</span>
+                  <span class="text-slate-300 dark:text-slate-600">•</span>
                   <div class="flex items-center gap-2">
-                    <span class="material-symbols-outlined text-[18px] text-emerald-400">fact_check</span>
+                    <span class="material-symbols-outlined text-[18px] text-emerald-600 dark:text-emerald-400">fact_check</span>
                     <span class="font-medium">${totalExams} bài kiểm tra</span>
                   </div>
                 </div>
 
                 <div class="flex flex-wrap items-center gap-4 pt-2">
                   ${isEnrolled ? `
-                    <a href="#/student/courses/detail?id=${course.id}" class="px-7 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm transition-all shadow-lg shadow-emerald-500/25 inline-flex items-center gap-2">
+                    <a href="#/student/courses/detail?id=${course.id}" class="px-7 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm transition-all shadow-lg shadow-emerald-600/25 inline-flex items-center gap-2">
                       <span class="material-symbols-outlined text-[20px]">play_circle</span>
                       <span>Vào học bài ngay</span>
                     </a>
                   ` : `
-                    <button type="button" class="btn-enroll-action px-7 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm transition-all shadow-lg shadow-emerald-500/25 inline-flex items-center gap-2 cursor-pointer" data-id="${course.id}">
+                    <button type="button" class="btn-enroll-action px-7 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm transition-all shadow-lg shadow-emerald-600/25 inline-flex items-center gap-2 cursor-pointer" data-id="${course.id}">
                       <span class="material-symbols-outlined text-[20px]">how_to_reg</span>
                       <span>Ghi danh khóa học</span>
                     </button>
                   `}
-                  <button type="button" id="btn-scroll-to-syllabus" class="px-6 py-3.5 rounded-2xl bg-slate-800/80 hover:bg-slate-700/80 text-white font-bold text-sm transition-all border border-slate-700/80 inline-flex items-center gap-2 cursor-pointer">
+                  <button type="button" id="btn-scroll-to-syllabus" class="px-6 py-3.5 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800/80 dark:hover:bg-slate-700/80 text-slate-800 dark:text-white font-bold text-sm transition-all border border-slate-200 dark:border-slate-700/80 inline-flex items-center gap-2 cursor-pointer">
                     <span class="material-symbols-outlined text-[20px]">menu_book</span>
                     <span>Xem chi tiết</span>
                   </button>
@@ -1747,7 +1748,7 @@ class StudentView {
 
               <!-- Media Preview Box (Col 5) with Active Video Player Support -->
               <div class="lg:col-span-5">
-                <div id="course-hero-media-box" class="aspect-video w-full rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-2xl relative flex items-center justify-center group">
+                <div id="course-hero-media-box" class="aspect-video w-full rounded-2xl overflow-hidden bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-2xl relative flex items-center justify-center group">
                   ${course.thumbnail_url ? `
                     <img src="${UI.escapeHtml(course.thumbnail_url)}" alt="${UI.escapeHtml(courseTitle)}" class="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform duration-500" />
                   ` : `
@@ -1759,7 +1760,7 @@ class StudentView {
                     </button>
                     <div>
                       <p class="text-xs font-extrabold text-emerald-400 tracking-wider uppercase">Xem giới thiệu khóa học</p>
-                      <p class="text-[11px] text-slate-400 mt-0.5">${videoUrl ? 'Video giới thiệu chính thức • Bấm để phát trực tiếp' : 'Thời lượng bài giảng: Chuẩn đầu ra quốc tế'}</p>
+                      <p class="text-[11px] text-slate-300 mt-0.5">${videoUrl ? 'Video giới thiệu chính thức • Bấm để phát trực tiếp' : 'Thời lượng bài giảng: Chuẩn đầu ra quốc tế'}</p>
                     </div>
                   </div>
                 </div>
@@ -1769,50 +1770,50 @@ class StudentView {
 
           <!-- 2. Highlights Grid (3-Column KPI Highlights Grid - TASK-094) -->
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div class="p-6 rounded-2xl bg-slate-900/80 dark:bg-[#12161f] border border-slate-800/80 shadow-sm space-y-2">
-              <span class="material-symbols-outlined text-3xl text-emerald-400">menu_book</span>
-              <h4 class="text-base font-extrabold text-white">${totalLessons} bài học</h4>
-              <p class="text-xs text-slate-400">Lý thuyết & phòng lab thực hành</p>
+            <div class="p-6 rounded-2xl bg-white dark:bg-[#12161f] border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
+              <span class="material-symbols-outlined text-3xl text-emerald-600 dark:text-emerald-400">menu_book</span>
+              <h4 class="text-base font-extrabold text-slate-900 dark:text-white">${totalLessons} bài học</h4>
+              <p class="text-xs text-slate-500 dark:text-slate-400">Lý thuyết & phòng lab thực hành</p>
             </div>
-            <div class="p-6 rounded-2xl bg-slate-900/80 dark:bg-[#12161f] border border-slate-800/80 shadow-sm space-y-2">
-              <span class="material-symbols-outlined text-3xl text-emerald-400">fact_check</span>
-              <h4 class="text-base font-extrabold text-white">${totalExams} bài khảo thí</h4>
-              <p class="text-xs text-slate-400">Đánh giá chuẩn đầu ra</p>
+            <div class="p-6 rounded-2xl bg-white dark:bg-[#12161f] border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
+              <span class="material-symbols-outlined text-3xl text-emerald-600 dark:text-emerald-400">fact_check</span>
+              <h4 class="text-base font-extrabold text-slate-900 dark:text-white">${totalExams} bài khảo thí</h4>
+              <p class="text-xs text-slate-500 dark:text-slate-400">Đánh giá chuẩn đầu ra</p>
             </div>
-            <div class="p-6 rounded-2xl bg-slate-900/80 dark:bg-[#12161f] border border-slate-800/80 shadow-sm space-y-2">
-              <span class="material-symbols-outlined text-3xl text-emerald-400">emoji_events</span>
-              <h4 class="text-base font-extrabold text-white">Chứng nhận hoàn thành</h4>
-              <p class="text-xs text-slate-400">Chứng nhận điện tử chính quy</p>
+            <div class="p-6 rounded-2xl bg-white dark:bg-[#12161f] border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
+              <span class="material-symbols-outlined text-3xl text-emerald-600 dark:text-emerald-400">emoji_events</span>
+              <h4 class="text-base font-extrabold text-slate-900 dark:text-white">Chứng nhận hoàn thành</h4>
+              <p class="text-xs text-slate-500 dark:text-slate-400">Chứng nhận điện tử chính quy</p>
             </div>
           </div>
 
           <!-- 3. Learning Objectives (SLO) & Academic Governance (Upgraded 2-Column Standard Block) -->
           <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <!-- Chuẩn đầu ra SLO (Col 7) -->
-            <div class="lg:col-span-7 p-7 sm:p-8 rounded-3xl bg-slate-900/80 dark:bg-[#12161f] border border-slate-800/80 shadow-sm space-y-6">
-              <div class="flex items-center justify-between pb-3 border-b border-slate-800/70">
-                <h3 class="text-lg sm:text-xl font-bold text-white flex items-center gap-2.5">
-                  <span class="material-symbols-outlined text-emerald-400 text-2xl">psychology</span>
+            <div class="lg:col-span-7 p-7 sm:p-8 rounded-3xl bg-white dark:bg-[#12161f] border border-slate-200 dark:border-slate-800 shadow-xs space-y-6">
+              <div class="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800/70">
+                <h3 class="text-lg sm:text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2.5">
+                  <span class="material-symbols-outlined text-emerald-600 dark:text-emerald-400 text-2xl">psychology</span>
                   <span>Chuẩn đầu ra</span>
                 </h3>
               </div>
               <div class="space-y-3.5">
                 ${slos.map((s, sIdx) => `
-                  <div class="p-4 rounded-2xl bg-slate-800/40 border border-slate-800 space-y-2 hover:border-slate-700/80 transition-colors">
+                  <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-2 hover:border-emerald-300 dark:hover:border-slate-700/80 transition-colors">
                     <div class="flex items-center justify-between gap-2">
                       <div class="flex items-center gap-2">
-                        <span class="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 font-black text-xs flex items-center justify-center shrink-0">
+                        <span class="w-6 h-6 rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-black text-xs flex items-center justify-center shrink-0">
                           ${sIdx + 1}
                         </span>
-                        <h4 class="text-sm font-bold text-white">${UI.escapeHtml(s.title || `SLO-${sIdx + 1}`)}</h4>
+                        <h4 class="text-sm font-bold text-slate-900 dark:text-white">${UI.escapeHtml(s.title || `SLO-${sIdx + 1}`)}</h4>
                       </div>
                       ${s.weight ? `
-                        <span class="px-2.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 text-[11px] font-mono font-bold shrink-0">
+                        <span class="px-2.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 text-[11px] font-mono font-bold shrink-0">
                           Trọng số: ${UI.escapeHtml(s.weight)}
                         </span>
                       ` : ''}
                     </div>
-                    <p class="text-xs text-slate-300 leading-relaxed font-normal pl-8">
+                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed font-normal pl-8">
                       ${UI.escapeHtml(s.description || '')}
                     </p>
                   </div>
@@ -1821,55 +1822,55 @@ class StudentView {
             </div>
 
             <!-- Thông tin Giảng viên & Quy chuẩn Học vụ (Col 5 - TASK-094: Instructor Card on Top) -->
-            <div class="lg:col-span-5 p-7 sm:p-8 rounded-3xl bg-slate-900/80 dark:bg-[#12161f] border border-slate-800/80 shadow-sm flex flex-col justify-between space-y-6">
+            <div class="lg:col-span-5 p-7 sm:p-8 rounded-3xl bg-white dark:bg-[#12161f] border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between space-y-6">
               <div class="space-y-5">
-                <div class="flex items-center justify-between pb-3 border-b border-slate-800/70">
-                  <h3 class="text-lg sm:text-xl font-bold text-white flex items-center gap-2.5">
-                    <span class="material-symbols-outlined text-emerald-400 text-2xl">person</span>
+                <div class="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800/70">
+                  <h3 class="text-lg sm:text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2.5">
+                    <span class="material-symbols-outlined text-emerald-600 dark:text-emerald-400 text-2xl">person</span>
                     <span>Thông tin Giảng viên & Học vụ</span>
                   </h3>
                 </div>
 
                 <!-- Giảng viên & Kênh hỗ trợ (Elevated to top of column) -->
-                <div class="p-5 rounded-2xl bg-slate-800/60 border border-slate-700/80 space-y-3.5 shadow-sm">
+                <div class="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 space-y-3.5 shadow-xs">
                   <div class="flex items-center gap-3.5">
-                    <div class="w-14 h-14 rounded-2xl bg-emerald-950/80 text-emerald-400 border border-emerald-500/30 flex items-center justify-center text-2xl font-black shrink-0 shadow-inner">
+                    <div class="w-14 h-14 rounded-2xl bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-500/30 flex items-center justify-center text-2xl font-black shrink-0 shadow-inner">
                       ${UI.escapeHtml((instructorName || 'G').charAt(0))}
                     </div>
                     <div class="min-w-0">
                       <div class="flex items-center gap-2">
-                        <h4 class="text-base font-extrabold text-white truncate">${UI.escapeHtml(instructorName)}</h4>
-                        <span class="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">Giảng viên</span>
+                        <h4 class="text-base font-extrabold text-slate-900 dark:text-white truncate">${UI.escapeHtml(instructorName)}</h4>
+                        <span class="px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold">Giảng viên</span>
                       </div>
-                      <p class="text-xs text-slate-300 font-medium mt-0.5">${UI.escapeHtml(instructorTitle || 'Bộ môn Công nghệ Thông tin')}</p>
+                      <p class="text-xs text-slate-600 dark:text-slate-300 font-medium mt-0.5">${UI.escapeHtml(instructorTitle || 'Bộ môn Công nghệ Thông tin')}</p>
                     </div>
                   </div>
 
-                  <div class="space-y-2 pt-2 border-t border-slate-700/60 text-xs text-slate-300">
+                  <div class="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-700/60 text-xs text-slate-700 dark:text-slate-300">
                     ${contactInfo.email ? `
                       <div class="flex items-center gap-2.5">
-                        <span class="material-symbols-outlined text-[16px] text-emerald-400">mail</span>
-                        <a href="mailto:${UI.escapeHtml(contactInfo.email)}" class="text-emerald-400 hover:underline truncate font-medium">${UI.escapeHtml(contactInfo.email)}</a>
+                        <span class="material-symbols-outlined text-[16px] text-emerald-600 dark:text-emerald-400">mail</span>
+                        <a href="mailto:${UI.escapeHtml(contactInfo.email)}" class="text-emerald-600 dark:text-emerald-400 hover:underline truncate font-medium">${UI.escapeHtml(contactInfo.email)}</a>
                       </div>
                     ` : ''}
                     ${contactInfo.phone ? `
                       <div class="flex items-center gap-2.5">
-                        <span class="material-symbols-outlined text-[16px] text-emerald-400">call</span>
+                        <span class="material-symbols-outlined text-[16px] text-emerald-600 dark:text-emerald-400">call</span>
                         <a href="tel:${UI.escapeHtml(contactInfo.phone)}" class="hover:underline font-medium">${UI.escapeHtml(contactInfo.phone)}</a>
                       </div>
                     ` : ''}
                     ${contactInfo.group ? `
                       <div class="flex items-center gap-2 pt-1">
-                        <span class="material-symbols-outlined text-[16px] text-emerald-400">groups</span>
-                        <a href="${UI.escapeHtml(contactInfo.group)}" target="_blank" class="px-3 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 font-bold hover:bg-emerald-500/20 transition-colors inline-flex items-center gap-1.5 text-xs">
+                        <span class="material-symbols-outlined text-[16px] text-emerald-600 dark:text-emerald-400">groups</span>
+                        <a href="${UI.escapeHtml(contactInfo.group)}" target="_blank" class="px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/25 font-bold hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors inline-flex items-center gap-1.5 text-xs">
                           <span>Group trao đổi học tập</span>
                           <span class="material-symbols-outlined text-[14px]">open_in_new</span>
                         </a>
                       </div>
                     ` : ''}
                     ${contactInfo.office_hours ? `
-                      <div class="flex items-center gap-2 text-[11px] text-slate-400 pt-0.5">
-                        <span class="material-symbols-outlined text-[15px] text-slate-500">schedule</span>
+                      <div class="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 pt-0.5">
+                        <span class="material-symbols-outlined text-[15px] text-slate-400">schedule</span>
                         <span>Giờ tiếp sinh viên: ${UI.escapeHtml(contactInfo.office_hours)}</span>
                       </div>
                     ` : ''}
@@ -1877,24 +1878,24 @@ class StudentView {
                 </div>
 
                 <!-- Môn tiên quyết -->
-                <div class="p-4 rounded-2xl bg-slate-800/40 border border-slate-800 space-y-2">
-                  <div class="flex items-center gap-2 text-xs font-bold text-slate-200">
-                    <span class="material-symbols-outlined text-amber-400 text-[18px]">account_tree</span>
+                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-2">
+                  <div class="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-200">
+                    <span class="material-symbols-outlined text-amber-500 dark:text-amber-400 text-[18px]">account_tree</span>
                     <span>Môn học tiên quyết:</span>
                   </div>
                   ${prerequisites.length > 0 ? `
                     <div class="space-y-1.5 pt-1">
                       ${prerequisites.map(pr => `
-                        <div class="flex items-center justify-between p-2 rounded-xl bg-slate-900/60 border border-slate-800 text-xs">
-                          <span class="font-bold text-white">${UI.escapeHtml(pr.code || pr.course_code || '')} - ${UI.escapeHtml(pr.title || '')}</span>
-                          <span class="px-2 py-0.5 rounded text-[11px] font-bold ${pr.is_satisfied ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}">
+                        <div class="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 text-xs">
+                          <span class="font-bold text-slate-900 dark:text-white">${UI.escapeHtml(pr.code || pr.course_code || '')} - ${UI.escapeHtml(pr.title || '')}</span>
+                          <span class="px-2 py-0.5 rounded text-[11px] font-bold ${pr.is_satisfied ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400' : 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400'}">
                             ${pr.is_satisfied ? 'Đã thỏa' : 'Chưa đạt'}
                           </span>
                         </div>
                       `).join('')}
                     </div>
                   ` : `
-                    <p class="text-xs text-emerald-400/90 font-medium pt-0.5 flex items-center gap-1.5">
+                    <p class="text-xs text-emerald-600 dark:text-emerald-400/90 font-medium pt-0.5 flex items-center gap-1.5">
                       <span class="material-symbols-outlined text-[16px]">check_circle</span>
                       <span>Không yêu cầu môn tiên quyết. Sinh viên có thể học ngay!</span>
                     </p>
@@ -1902,41 +1903,41 @@ class StudentView {
                 </div>
 
                 <!-- Tiêu chí hoàn thành -->
-                <div class="p-4 rounded-2xl bg-slate-800/40 border border-slate-800 space-y-2">
-                  <div class="flex items-center gap-2 text-xs font-bold text-slate-200">
-                    <span class="material-symbols-outlined text-emerald-400 text-[18px]">verified_user</span>
+                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-2">
+                  <div class="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-200">
+                    <span class="material-symbols-outlined text-emerald-600 dark:text-emerald-400 text-[18px]">verified_user</span>
                     <span>Điều kiện hoàn thành & Cấp chứng nhận:</span>
                   </div>
-                  <ul class="text-xs text-slate-300 space-y-1.5 list-disc list-inside pt-0.5">
-                    <li>Hoàn thành tối thiểu <strong class="text-white">${minProgress}%</strong> tiến độ bài giảng.</li>
-                    <li>Điểm các bài khảo thí đạt tối thiểu <strong class="text-white">${minScore}/10</strong>.</li>
+                  <ul class="text-xs text-slate-600 dark:text-slate-300 space-y-1.5 list-disc list-inside pt-0.5">
+                    <li>Hoàn thành tối thiểu <strong class="text-slate-900 dark:text-white">${minProgress}%</strong> tiến độ bài giảng.</li>
+                    <li>Điểm các bài khảo thí đạt tối thiểu <strong class="text-slate-900 dark:text-white">${minScore}/10</strong>.</li>
                     <li>Cấp chứng nhận điện tử chính quy ngay sau khi thỏa điều kiện.</li>
                   </ul>
                 </div>
               </div>
 
-              <div class="pt-3 border-t border-slate-800/80 flex items-center gap-2 text-xs text-slate-400">
-                <span class="material-symbols-outlined text-emerald-400 text-[18px]">verified</span>
+              <div class="pt-3 border-t border-slate-200 dark:border-slate-800/80 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                <span class="material-symbols-outlined text-emerald-600 dark:text-emerald-400 text-[18px]">verified</span>
                 <span>Thông tin học vụ chính thức từ Ban chủ nhiệm Khoa</span>
               </div>
             </div>
           </div>
 
           <!-- 4. Syllabus Section -->
-          <div id="syllabus-section" class="p-8 sm:p-10 rounded-3xl bg-slate-900/80 dark:bg-[#12161f] border border-slate-800/80 shadow-sm space-y-6">
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-800/80">
+          <div id="syllabus-section" class="p-8 sm:p-10 rounded-3xl bg-white dark:bg-[#12161f] border border-slate-200 dark:border-slate-800 shadow-xs space-y-6">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-200 dark:border-slate-800/80">
               <div>
-                <h3 class="text-xl font-bold text-white flex items-center gap-2.5">
-                  <span class="material-symbols-outlined text-emerald-400 text-2xl">account_tree</span>
+                <h3 class="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2.5">
+                  <span class="material-symbols-outlined text-emerald-600 dark:text-emerald-400 text-2xl">account_tree</span>
                   <span>Lộ trình đào tạo</span>
                 </h3>
               </div>
               <div class="flex items-center gap-2.5 self-start sm:self-auto">
-                <button type="button" id="syllabus-toggle-all-btn" class="text-xs font-semibold text-slate-400 hover:text-emerald-400 px-3 py-1.5 rounded-xl bg-slate-800/60 hover:bg-slate-800 border border-slate-700/60 transition-colors flex items-center gap-1 cursor-pointer">
+                <button type="button" id="syllabus-toggle-all-btn" class="text-xs font-semibold text-slate-600 hover:text-emerald-600 dark:text-slate-400 dark:hover:text-emerald-400 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800/60 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700/60 transition-colors flex items-center gap-1 cursor-pointer">
                   <span class="material-symbols-outlined text-[16px]">unfold_more</span>
                   <span id="syllabus-toggle-all-text">Mở rộng tất cả</span>
                 </button>
-                <span class="text-xs font-mono font-bold text-emerald-400 px-3.5 py-1.5 rounded-full bg-emerald-950/60 border border-emerald-800/80">
+                <span class="text-xs font-mono font-bold text-emerald-700 dark:text-emerald-400 px-3.5 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/80">
                   ${modules.length} chương • ${totalLessons} bài học
                 </span>
               </div>
@@ -1946,27 +1947,27 @@ class StudentView {
               ${modules.length === 0 ? `
                 <p class="text-xs text-slate-400 italic py-8 text-center">Đang cập nhật đề cương chi tiết cho môn học này.</p>
               ` : modules.map((m, mIdx) => `
-                <div class="rounded-2xl border border-slate-800 bg-slate-800/30 overflow-hidden transition-all">
-                  <div class="p-4 sm:p-5 flex items-center justify-between gap-3 cursor-pointer select-none hover:bg-slate-800/50 transition-colors syllabus-mod-toggle" data-idx="${mIdx}">
+                <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/30 overflow-hidden transition-all shadow-xs">
+                  <div class="p-4 sm:p-5 flex items-center justify-between gap-3 cursor-pointer select-none hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors syllabus-mod-toggle" data-idx="${mIdx}">
                     <div class="flex items-center gap-3.5 min-w-0">
-                      <span class="w-8 h-8 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 flex items-center justify-center text-xs font-black shrink-0">
+                      <span class="w-8 h-8 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 flex items-center justify-center text-xs font-black shrink-0">
                         ${mIdx + 1}
                       </span>
-                      <h4 class="text-sm font-bold text-white truncate">${UI.escapeHtml(m.title)}</h4>
+                      <h4 class="text-sm font-bold text-slate-900 dark:text-white truncate">${UI.escapeHtml(m.title)}</h4>
                     </div>
                     <div class="flex items-center gap-3 shrink-0">
-                      <span class="text-xs text-slate-400 font-mono">${(m.lessons || []).length} bài</span>
+                      <span class="text-xs text-slate-500 dark:text-slate-400 font-mono">${(m.lessons || []).length} bài</span>
                       <span class="material-symbols-outlined text-slate-400 text-[20px] transition-transform duration-200 syllabus-mod-icon">expand_more</span>
                     </div>
                   </div>
-                  <div class="syllabus-mod-body ${mIdx === 0 ? '' : 'hidden'} px-5 pb-4 space-y-2 border-t border-slate-800/60 pt-3">
+                  <div class="syllabus-mod-body ${mIdx === 0 ? '' : 'hidden'} px-5 pb-4 space-y-2 border-t border-slate-100 dark:border-slate-800/60 pt-3">
                     ${(m.lessons || []).map((l, lIdx) => `
-                      <div class="p-3 rounded-xl flex items-center justify-between gap-3 text-xs bg-slate-900/60 border border-slate-800/40 hover:border-slate-700/60 transition-colors">
+                      <div class="p-3 rounded-xl flex items-center justify-between gap-3 text-xs bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/40 hover:border-emerald-300 dark:hover:border-slate-700/60 transition-colors">
                         <div class="flex items-center gap-3 min-w-0">
-                          <span class="material-symbols-outlined text-[18px] text-emerald-400">play_circle</span>
-                          <span class="text-slate-200 font-medium truncate">${mIdx + 1}.${lIdx + 1} ${UI.escapeHtml(l.title)}</span>
+                          <span class="material-symbols-outlined text-[18px] text-emerald-600 dark:text-emerald-400">play_circle</span>
+                          <span class="text-slate-800 dark:text-slate-200 font-medium truncate">${mIdx + 1}.${lIdx + 1} ${UI.escapeHtml(l.title)}</span>
                         </div>
-                        <div class="flex items-center gap-4 text-slate-400 font-mono text-[11px] shrink-0">
+                        <div class="flex items-center gap-4 text-slate-500 dark:text-slate-400 font-mono text-[11px] shrink-0">
                           <span>Lý thuyết</span>
                           <span>${l.duration_seconds ? `${Math.round(l.duration_seconds / 60)} phút` : '45 phút'}</span>
                         </div>
@@ -2012,7 +2013,7 @@ class StudentView {
           contentHtml = `
             <div class="aspect-video w-full rounded-2xl overflow-hidden bg-black shadow-2xl">
               <iframe
-                src="https://www.youtube-nocookie.com/embed/${ytId}?autoplay=1&rel=0&enablejsapi=1"
+                src="https://www.youtube-nocookie.com/embed/${ytId}?autoplay=1&rel=0&modestbranding=1&iv_load_policy=3&playsinline=1&enablejsapi=1"
                 class="w-full h-full border-0"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                 allowfullscreen
@@ -2070,26 +2071,28 @@ class StudentView {
           const ytMatch = cleanUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/i);
 
           if (ytMatch) {
+            const heroEmbedUrl = `https://www.youtube-nocookie.com/embed/${ytMatch[1]}?autoplay=1&mute=1&loop=1&playlist=${ytMatch[1]}&controls=0&showinfo=0&rel=0&iv_load_policy=3&disablekb=1&modestbranding=1&playsinline=1`;
             heroMediaBox.innerHTML = `
-              <div class="relative w-full h-full bg-black">
-                <iframe
-                  id="hero-trailer-iframe"
-                  src="https://www.youtube-nocookie.com/embed/${ytMatch[1]}?autoplay=1&rel=0&enablejsapi=1"
-                  class="w-full h-full border-0"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                  allowfullscreen
-                ></iframe>
-                <button
-                  type="button"
-                  id="btn-hero-video-expand"
-                  class="absolute top-3 right-3 px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-white text-xs font-bold border border-slate-700/80 flex items-center gap-1.5 shadow-xl backdrop-blur-md cursor-pointer transition-all hover:scale-105 z-20"
-                  title="Xem phóng to rạp chiếu"
-                >
-                  <span class="material-symbols-outlined text-[16px]">open_in_full</span>
-                  <span>Phóng to</span>
-                </button>
+              <div class="relative w-full h-full overflow-hidden bg-slate-950 rounded-2xl select-none" id="hero-trailer-clean-shell">
+                <div style="position: absolute; top: -14%; left: 0; width: 100%; height: 128%; pointer-events: none;" class="pointer-events-none">
+                  <iframe
+                    id="hero-trailer-iframe"
+                    src="${heroEmbedUrl}"
+                    class="w-full h-full border-0 pointer-events-none"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    tabindex="-1"
+                  ></iframe>
+                </div>
+                <!-- Click shield prevents direct interaction with YouTube -->
+                <div id="hero-trailer-shield" class="absolute inset-0 z-10 cursor-pointer bg-transparent" title="Trailer Giới Thiệu Khóa Học"></div>
               </div>
             `;
+            const shield = document.getElementById('hero-trailer-shield');
+            if (shield) {
+              shield.onclick = () => {
+                openTrailerLightbox(cleanUrl, ytMatch[1]);
+              };
+            }
           } else {
             heroMediaBox.innerHTML = `
               <div class="relative w-full h-full bg-black flex items-center justify-center">
@@ -2406,14 +2409,7 @@ class StudentView {
       };
 
       const updateConsoleCourseProgressBadge = () => {
-        const badge = document.getElementById('console-course-progress-badge');
-        if (badge) {
-          const { completedCount, totalCount, progressPercent } = getCourseProgressStats();
-          badge.innerHTML = `
-            <span class="material-symbols-outlined text-[16px] text-emerald-600 dark:text-emerald-400">trending_up</span>
-            <span>Tiến độ: <strong class="font-extrabold">${progressPercent}%</strong></span>
-          `;
-        }
+        // Header course progress badge eliminated per R4 / Invariant 10.12
       };
 
       // Dynamic Re-evaluation of Unlock Status across all Lessons and Exams (TASK-092)
@@ -2639,10 +2635,6 @@ class StudentView {
 
             <!-- Header Action Controls -->
             <div class="flex items-center gap-2 sm:gap-3">
-              <div id="console-course-progress-badge" class="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-bold shrink-0">
-                <span class="material-symbols-outlined text-[16px] text-emerald-600 dark:text-emerald-400">trending_up</span>
-                <span>Tiến độ: <strong class="font-extrabold">${getCourseProgressStats().progressPercent}%</strong></span>
-              </div>
               <a
                 href="#/student/courses"
                 id="console-exit-btn"
@@ -3795,8 +3787,20 @@ class StudentView {
         }
 
         if (nextBtn) {
-          nextBtn.classList.toggle('hidden', !nextItem);
-          if (nextItem) {
+          const isCurrentLessonIncomplete = activeItem && activeItem.type === 'lesson' && !activeItem.isCompleted;
+          const isNextItemLocked = !nextItem || (nextItem && !nextItem.isUnlocked);
+          const shouldDisableNext = isCurrentLessonIncomplete || isNextItemLocked;
+
+          nextBtn.classList.toggle('hidden', !nextItem || shouldDisableNext);
+          nextBtn.disabled = shouldDisableNext;
+          if (shouldDisableNext) {
+            nextBtn.classList.add('cursor-not-allowed', 'opacity-40');
+            nextBtn.title = 'Chưa đủ điều kiện chuyển bài';
+            nextBtn.onclick = () => {
+              UI.showToast('Bạn cần hoàn thành bài học hiện tại trước khi chuyển sang bài tiếp theo.', 'warning');
+            };
+          } else if (nextItem) {
+            nextBtn.classList.remove('cursor-not-allowed', 'opacity-40');
             nextBtn.title = `Tiếp theo: ${nextItem.title}`;
             nextBtn.onclick = () => window._ciscoSelectItem(nextItem.type, nextItem.id);
           }
@@ -4188,32 +4192,44 @@ class StudentView {
             });
             if (vidRes) {
               const assetId = vidRes.file_asset?.public_id || vidRes.asset_id || vidRes.file_asset_id;
-              const coursePubId = course.public_id || course.id || courseId;
-              const lesPubId = lesson.public_id || lesson.lesson_id || lesson.id || expectedLessonId;
+              const coursePubId = (typeof course !== 'undefined' && course ? (course.public_id || course.id) : null) || (typeof courseId !== 'undefined' ? courseId : null);
+              const lesPubId = (lesson && (lesson.public_id || lesson.lesson_id || lesson.id)) || (typeof expectedLessonId !== 'undefined' ? expectedLessonId : null);
               if (coursePubId && lesPubId && assetId) {
                 activeVideoUrl = `/student/courses/${encodeURIComponent(coursePubId)}/lessons/${encodeURIComponent(lesPubId)}/video/${encodeURIComponent(assetId)}/playlist.m3u8`;
               } else if (coursePubId && lesPubId) {
                 activeVideoUrl = `/student/courses/${encodeURIComponent(coursePubId)}/lessons/${encodeURIComponent(lesPubId)}/video/playlist.m3u8`;
-              } else if (assetId) {
+              } else if (assetId && typeof isPreview !== 'undefined' && isPreview) {
                 activeVideoUrl = `/api/files/${encodeURIComponent(assetId)}/stream`;
               }
             }
           }
           // Security Invariant: Students get 403 Forbidden from /api/files/<assetId>/stream. Resolve to HLS.
-          if (activeVideoUrl && String(activeVideoUrl).includes('/api/files/')) {
+          const coursePubId = (typeof course !== 'undefined' && course ? (course.public_id || course.id) : null) || (typeof courseId !== 'undefined' ? courseId : null);
+          const lesPubId = (lesson && (lesson.public_id || lesson.lesson_id || lesson.id)) || (typeof expectedLessonId !== 'undefined' ? expectedLessonId : null);
+          if (activeVideoUrl && String(activeVideoUrl).includes('/api/files/') && !(typeof isPreview !== 'undefined' && isPreview)) {
             const m = String(activeVideoUrl).match(/\/api\/files\/([^\/]+)\/stream/);
             const assetId = m ? m[1] : null;
-            const coursePubId = course.public_id || course.id || courseId;
-            const lesPubId = lesson.public_id || lesson.lesson_id || lesson.id || expectedLessonId;
             if (coursePubId && lesPubId && assetId) {
               activeVideoUrl = `/student/courses/${encodeURIComponent(coursePubId)}/lessons/${encodeURIComponent(lesPubId)}/video/${encodeURIComponent(assetId)}/playlist.m3u8`;
             }
           }
+          if (Array.isArray(lesson.video_urls)) {
+            lesson.video_urls = lesson.video_urls.map(u => {
+              if (u && String(u).includes('/api/files/') && !(typeof isPreview !== 'undefined' && isPreview)) {
+                const m = String(u).match(/\/api\/files\/([^\/]+)\/stream/);
+                const assetId = m ? m[1] : null;
+                if (coursePubId && lesPubId && assetId) {
+                  return `/student/courses/${encodeURIComponent(coursePubId)}/lessons/${encodeURIComponent(lesPubId)}/video/${encodeURIComponent(assetId)}/playlist.m3u8`;
+                }
+              }
+              return u;
+            });
+          }
           lesson.video_url = activeVideoUrl;
 
           const cachedLes = allLessons.find(l => String(l.lesson_id || l.id) === String(activeItem.id));
-          const hasVideo = Boolean(lesson.video_url && typeof lesson.video_url === 'string' && lesson.video_url.trim() !== '' && lesson.video_url.trim() !== 'null');
-          let videoWatched = StudentView.isLessonVideoWatched(lesson) || Boolean(lesson.progress?.is_video_complete);
+          const hasVideo = Boolean(lesson.video_url && typeof lesson.video_url === 'string' && lesson.video_url.trim() !== '' && lesson.video_url.trim() !== 'null') || (Array.isArray(lesson.video_urls) && lesson.video_urls.length > 0);
+          let videoWatched = StudentView.isLessonVideoWatched(lesson) || Boolean(lesson.progress?.is_video_complete || lesson.progress?.all_videos_complete);
           const hasMiniQuiz = Array.isArray(lesson.quiz) && lesson.quiz.length > 0;
           let hasPassedQuiz = Boolean(lesson.progress?.mini_quiz_completed_at);
           let isCompleted = Boolean(
@@ -4222,7 +4238,7 @@ class StudentView {
             lesson.is_completed ||
             activeItem.isCompleted ||
             (cachedLes && (cachedLes.is_completed || cachedLes._isCompleted))
-          ) || (hasVideo && videoWatched && (!hasMiniQuiz || hasPassedQuiz));
+          );
           let quizPassingPercent = 80;
           if (typeof lesson.quiz_passing_percent === 'number') {
             quizPassingPercent = lesson.quiz_passing_percent;
@@ -4307,19 +4323,8 @@ class StudentView {
                   <div class="w-full bg-slate-950 relative">
                     ${StudentView._getEmbedVideoHtml(lesson.video_url, 'cisco-stream-player', isCompleted)}
                   </div>
-                  <div class="px-4 py-2 bg-slate-900/95 border-t border-slate-800 flex items-center justify-between text-xs text-slate-300">
-                    <div class="flex items-center gap-2">
-                      <span class="material-symbols-outlined text-[16px] ${isCompleted ? 'text-emerald-400' : 'text-amber-400'}">
-                        ${isCompleted ? 'verified' : 'lock_clock'}
-                      </span>
-                      <span id="cisco-anti-seek-label" class="font-medium text-[11px] sm:text-xs">
-                        ${isCompleted ? 'Đã hoàn thành 100% video • Bạn có thể tua lại nội dung tùy ý.' : 'Trình phát bảo vệ bản quyền PWD301: Khóa tua nhanh đang bật • Xem tuần tự để ghi nhận tiến độ.'}
-                      </span>
-                    </div>
-                    <span id="cisco-anti-seek-badge" class="font-mono text-[11px] px-2 py-0.5 rounded ${isCompleted ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}">
-                      ${isCompleted ? '100%' : 'Tiến độ: 0%'}
-                    </span>
-                  </div>
+                  <span id="cisco-anti-seek-label" class="hidden"></span>
+                  <span id="cisco-anti-seek-badge" class="hidden"></span>
                 </div>
                 `
               ) : ''}
@@ -4505,14 +4510,20 @@ class StudentView {
           // 3-Condition Engine & Dynamic Locked/Unlocked Next Button (TASK-094 & Invariant 31, 35)
           // -----------------------------------------------------------------------
           const trackedLessonId = activeItem.id;
-          videoWatched = Boolean(videoWatched || isCompleted || lesson.progress?.is_video_complete);
+          const hasText = Boolean(lesson.markdown_content && typeof lesson.markdown_content === 'string' && lesson.markdown_content.trim() !== '');
+          const hasMultipleVideos = Array.isArray(lesson.video_urls) && lesson.video_urls.length > 1;
+          videoWatched = Boolean(
+            videoWatched ||
+            isCompleted ||
+            (hasMultipleVideos ? lesson.progress?.all_videos_complete : (lesson.progress?.is_video_complete || lesson.progress?.all_videos_complete))
+          );
           hasPassedQuiz = Boolean(hasPassedQuiz || lesson.progress?.mini_quiz_completed_at);
-          let dwellElapsed = isCompleted ? 30 : (parseInt(lesson.progress?.seconds_spent, 10) || 0);
-          const dwellRequired = 30;
+          const dwellRequired = 60;
+          let dwellElapsed = isCompleted ? dwellRequired : (parseInt(lesson.progress?.seconds_spent, 10) || 0);
 
           const isLessonRequirementsMet = () => {
             if (isCompleted) return true;
-            const dwellOk = hasVideo || (dwellElapsed >= dwellRequired);
+            const dwellOk = !hasText || (dwellElapsed >= dwellRequired);
             const videoOk = !hasVideo || videoWatched;
             const quizOk = !hasMiniQuiz || hasPassedQuiz;
             return dwellOk && videoOk && quizOk;
@@ -4521,8 +4532,8 @@ class StudentView {
           const getMissingRequirements = () => {
             if (isCompleted) return [];
             const missing = [];
-            if (!hasVideo && dwellElapsed < dwellRequired) {
-              missing.push(`Cần học tối thiểu 30s (còn ${dwellRequired - dwellElapsed}s)`);
+            if (hasText && dwellElapsed < dwellRequired) {
+              missing.push(`Cần học tối thiểu 60s (còn ${dwellRequired - dwellElapsed}s)`);
             }
             if (hasVideo && !videoWatched) {
               missing.push('Cần xem hết 100% video bài học');
@@ -4602,7 +4613,7 @@ class StudentView {
             if (nextItem) {
               if (meetsAll) {
                 box.innerHTML = `
-                  <button type="button" id="cisco-next-btn" title="${UI.escapeHtml(nextItem.title)}" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white transition-all flex items-center gap-1.5 shadow-sm cursor-pointer animate-fade-in">
+                  <button type="button" id="cisco-next-btn" title="${UI.escapeHtml(nextItem.title)}" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white transition-all flex items-center gap-1.5 shadow-md cursor-pointer animate-fade-in">
                     <span>Tiếp theo</span>
                     <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
                   </button>
@@ -4610,7 +4621,7 @@ class StudentView {
                 box.firstElementChild.onclick = () => window._ciscoSelectItem(nextItem.type, nextItem.id);
               } else {
                 box.innerHTML = `
-                  <button type="button" id="cisco-next-btn" title="Chưa đủ điều kiện chuyển bài" class="px-5 py-2.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-300/80 dark:border-slate-700 cursor-not-allowed select-none">
+                  <button type="button" id="cisco-next-btn" disabled title="Chưa đủ điều kiện chuyển bài" class="px-5 py-2.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-300/80 dark:border-slate-700 cursor-not-allowed select-none">
                     <span>Tiếp theo</span>
                     <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
                   </button>
@@ -4623,14 +4634,14 @@ class StudentView {
             } else {
               if (meetsAll) {
                 box.innerHTML = `
-                  <a href="#/student/courses" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer">
+                  <a href="#/student/courses" id="cisco-next-btn" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white transition-colors flex items-center gap-1.5 shadow-md cursor-pointer">
                     <span>Hoàn thành khóa học</span>
                     <span class="material-symbols-outlined text-[16px]">celebration</span>
                   </a>
                 `;
               } else {
                 box.innerHTML = `
-                  <button type="button" class="px-5 py-2.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-300/80 dark:border-slate-700 cursor-not-allowed select-none">
+                  <button type="button" id="cisco-next-btn" disabled class="px-5 py-2.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-300/80 dark:border-slate-700 cursor-not-allowed select-none">
                     <span>Hoàn thành khóa học</span>
                     <span class="material-symbols-outlined text-[16px]">celebration</span>
                   </button>
@@ -4659,11 +4670,12 @@ class StudentView {
               }
             }
             renderBottomNextButton();
+            updateFloatingNav();
           };
 
           renderBottomNav();
 
-          // Enforce 30s Minimum Dwell Timer (TASK-094 & Invariant 31)
+          // Enforce 60s Minimum Dwell Timer (Sequential Completion Gate)
           if (!isCompleted) {
             if (activeDwellTimer) {
               clearInterval(activeDwellTimer);
@@ -4742,7 +4754,9 @@ class StudentView {
           const handleConfirmed = result => {
             const body = document.getElementById('cisco-lesson-content-body');
             if (!body || body.dataset.lessonId !== String(trackedLessonId)) return;
-            if (result.is_video_complete) {
+            const hasMultipleVideos = Array.isArray(lesson.video_urls) && lesson.video_urls.length > 1;
+            const isAllVideoDone = hasMultipleVideos ? Boolean(result.all_videos_complete) : Boolean(result.is_video_complete || result.all_videos_complete);
+            if (isAllVideoDone) {
               videoWatched = true;
               if (antiSeekLabel) antiSeekLabel.textContent = 'Hệ thống đã ghi nhận đủ tiến độ video.';
               updateQuestionGateCardUI();
@@ -4759,15 +4773,20 @@ class StudentView {
           const playerContainer = document.getElementById('cisco-stream-player-container');
           if (playerContainer || videoEl) {
             activeCustomPlayerCtrl = StudentView.setupCustomVideoPlayer('cisco-stream-player', {
-              streamUrl: lesson.video_url, lessonId: trackedLessonId, mediaId: mediaFor(lesson.video_url),
+              streamUrl: lesson.video_url, lessonId: trackedLessonId, courseId: courseId, mediaId: mediaFor(lesson.video_url),
               clientIp: lesson.client_ip, preview: isPreview, isCompleted,
               onPlaying: () => pauseOthers(activeCustomPlayerCtrl),
               onProgress: updateProgressUI, onConfirmed: handleConfirmed,
               onEnded: async () => {
-                videoWatched = true;
-                updateQuestionGateCardUI();
-                if (hasMiniQuiz && !hasPassedQuiz) {
-                  openQuestionModal();
+                const hasMultipleVideos = Array.isArray(lesson.video_urls) && lesson.video_urls.length > 1;
+                if (!hasMultipleVideos) {
+                  videoWatched = true;
+                  updateQuestionGateCardUI();
+                  if (hasMiniQuiz && !hasPassedQuiz) {
+                    openQuestionModal();
+                  } else {
+                    checkAndUnlockLesson();
+                  }
                 } else {
                   checkAndUnlockLesson();
                 }
@@ -4779,10 +4798,22 @@ class StudentView {
             (lesson.video_urls || []).filter(url => url !== lesson.video_url).forEach((url, idx) => {
               let ctrl;
               ctrl = StudentView.setupCustomVideoPlayer(`cisco-extra-video-${idx}`, {
-                isCompleted, streamUrl: url, lessonId: trackedLessonId, mediaId: mediaFor(url),
+                isCompleted, streamUrl: url, lessonId: trackedLessonId, courseId: courseId, mediaId: mediaFor(url),
                 clientIp: lesson.client_ip, preview: isPreview, supplementary: true,
                 onPlaying: () => pauseOthers(ctrl),
-                onConfirmed: result => { if (result.is_completed) handleConfirmed(result); }
+                onConfirmed: result => {
+                  const hasMultipleVideos = Array.isArray(lesson.video_urls) && lesson.video_urls.length > 1;
+                  const isAllVideoDone = hasMultipleVideos ? Boolean(result.all_videos_complete) : Boolean(result.is_video_complete || result.all_videos_complete);
+                  if (isAllVideoDone) {
+                    videoWatched = true;
+                    updateQuestionGateCardUI();
+                    checkAndUnlockLesson();
+                  }
+                  if (result.is_completed) handleConfirmed(result);
+                },
+                onEnded: async () => {
+                  checkAndUnlockLesson();
+                }
               });
               extraPlayerControllers.push(ctrl);
             });
@@ -5575,15 +5606,23 @@ class StudentView {
 
     if (ytId) {
       return `
-        <div class="relative group w-full rounded-xl bg-slate-950 flex flex-col select-none" id="${playerId}-container" data-custom-player="true" data-player-type="youtube" data-yt-id="${ytId}" tabindex="0">
-          <div class="w-full aspect-video"><div id="${playerId}-yt" class="w-full h-full"></div></div>
-          <p id="${playerId}-identity" class="text-xs text-slate-300 px-3 py-2"></p>
-          <p id="${playerId}-status" role="status" class="text-xs text-amber-300 px-3"></p>
-          <button type="button" id="${playerId}-retry" class="hidden px-4 py-2 text-slate-200">Thử lại video</button>
+        <div class="relative group w-full rounded-xl bg-slate-950 flex flex-col select-none overflow-hidden" id="${playerId}-container" data-custom-player="true" data-player-type="youtube" data-yt-id="${ytId}" tabindex="0">
+          <div class="relative w-full aspect-video overflow-hidden bg-slate-950" id="${playerId}-viewport">
+            <!-- Scaled container to crop out YouTube top header (title, share, avatar) and bottom branding -->
+            <div style="position: absolute; top: -14%; left: 0; width: 100%; height: 128%; pointer-events: none;" class="pointer-events-none">
+              <div id="${playerId}-yt" class="w-full h-full"></div>
+            </div>
+            <!-- Click shield to handle play/pause without passing click through to YouTube iframe -->
+            <div id="${playerId}-shield" class="absolute inset-0 z-10 cursor-pointer bg-transparent" style="position: absolute; inset: 0; z-index: 10; cursor: pointer;" title="Nhấp để Phát/Tạm dừng"></div>
+            <!-- Big Play Button Overlay -->
+            <button type="button" id="${playerId}-big-play" class="absolute inset-0 m-auto w-16 h-16 rounded-full bg-slate-900/80 hover:bg-slate-900 border border-white/20 text-white flex items-center justify-center backdrop-blur-sm transition-all shadow-xl group-hover:scale-105 z-20 cursor-pointer" aria-label="Phát video">
+              <span class="material-symbols-outlined text-[34px] ml-0.5 pointer-events-none">play_arrow</span>
+            </button>
+          </div>
           <!-- PWD301 Flat Warm Editorial Custom Control Bar -->
           <div class="relative bg-slate-950 p-3 flex flex-col gap-2 z-20 transition-opacity duration-200" id="${playerId}-controls">
             <!-- Scrubber Track -->
-            <div class="relative w-full h-2.5 bg-slate-700/60 rounded-full cursor-pointer group/track hover:h-3 transition-all" id="${playerId}-progress-track" title="${isCompleted ? 'Tua video tự do' : 'Khóa tua nhanh: Chỉ có thể tua lại đoạn đã xem'}">
+            <div class="relative w-full h-2.5 bg-slate-700/60 rounded-full cursor-pointer group/track hover:h-3 transition-all" id="${playerId}-progress-track" title="Tiến độ bài học">
               <div id="${playerId}-buffered-bar" class="absolute left-0 top-0 bottom-0 bg-slate-500/40 rounded-full w-0 transition-all pointer-events-none"></div>
               <div id="${playerId}-watched-bar" class="absolute left-0 top-0 bottom-0 bg-amber-500/30 rounded-full w-0 pointer-events-none"></div>
               <div id="${playerId}-played-bar" class="absolute left-0 top-0 bottom-0 bg-indigo-500 rounded-full w-0 pointer-events-none"></div>
@@ -5606,10 +5645,8 @@ class StudentView {
                   1.0x
                 </button>
                 <button type="button" id="${playerId}-progress-retry" class="hidden px-4 py-2 text-xs text-amber-300">Thử Lưu Tiến Độ</button>
-                <span id="${playerId}-lock-indicator" class="text-[11px] ${isCompleted ? 'text-emerald-400' : 'text-amber-400'} flex items-center gap-1 font-medium">
-                  <span class="material-symbols-outlined text-[14px]">${isCompleted ? 'lock_open' : 'lock_clock'}</span>
-                  <span>${isCompleted ? 'Đã mở khóa tua' : 'Khóa tua nhanh'}</span>
-                </span>
+                <span id="${playerId}-status" class="hidden"></span>
+                <span id="${playerId}-lock-indicator" class="hidden"></span>
                 <button type="button" id="${playerId}-fullscreen-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Toàn màn hình">
                   <span class="material-symbols-outlined text-[20px] align-middle">fullscreen</span>
                 </button>
@@ -5640,12 +5677,10 @@ class StudentView {
           <span class="material-symbols-outlined text-[34px] ml-0.5 pointer-events-none">play_arrow</span>
         </button>
 
-        <p id="${playerId}-status" role="status" class="absolute top-2 left-2 right-2 z-30 text-xs text-amber-300"></p>
-        <button type="button" id="${playerId}-retry" class="hidden absolute top-10 left-2 z-30 px-4 py-2 rounded-lg bg-slate-800 text-slate-100 text-xs">Thử Lại Video</button>
         <!-- Custom Control Bar -->
         <div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-slate-950/95 via-slate-950/70 to-transparent p-3 pt-6 flex flex-col gap-2 z-20 transition-opacity duration-200" id="${playerId}-controls">
           <!-- Scrubber Track -->
-          <div class="relative w-full h-2.5 bg-slate-700/60 rounded-full cursor-pointer group/track hover:h-3 transition-all" id="${playerId}-progress-track" title="${isCompleted ? 'Tua video tự do' : 'Khóa tua nhanh: Chỉ có thể tua lại đoạn đã xem'}">
+          <div class="relative w-full h-2.5 bg-slate-700/60 rounded-full cursor-pointer group/track hover:h-3 transition-all" id="${playerId}-progress-track" title="Tiến độ bài học">
             <div id="${playerId}-buffered-bar" class="absolute left-0 top-0 bottom-0 bg-slate-500/40 rounded-full w-0 transition-all pointer-events-none"></div>
             <div id="${playerId}-watched-bar" class="absolute left-0 top-0 bottom-0 bg-amber-500/30 rounded-full w-0 pointer-events-none"></div>
             <div id="${playerId}-played-bar" class="absolute left-0 top-0 bottom-0 bg-indigo-500 rounded-full w-0 pointer-events-none"></div>
@@ -5668,10 +5703,8 @@ class StudentView {
                 1.0x
               </button>
               <button type="button" id="${playerId}-progress-retry" class="hidden px-4 py-2 text-xs text-amber-300">Thử Lưu Tiến Độ</button>
-                <span id="${playerId}-lock-indicator" class="text-[11px] ${isCompleted ? 'text-emerald-400' : 'text-amber-400'} flex items-center gap-1 font-medium">
-                <span class="material-symbols-outlined text-[14px]">${isCompleted ? 'lock_open' : 'lock_clock'}</span>
-                <span>${isCompleted ? 'Đã mở khóa tua' : 'Khóa tua nhanh'}</span>
-              </span>
+              <span id="${playerId}-status" class="hidden"></span>
+              <span id="${playerId}-lock-indicator" class="hidden"></span>
               <button type="button" id="${playerId}-fullscreen-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Toàn màn hình">
                 <span class="material-symbols-outlined text-[20px] align-middle">fullscreen</span>
               </button>
@@ -5683,7 +5716,15 @@ class StudentView {
   }
 
   static ensureYouTubeAPI() {
-    if (window.YT?.Player) return Promise.resolve(window.YT);
+    let ytGlobal = (typeof window !== 'undefined' && window.YT) || (typeof global !== 'undefined' && global.YT) || (typeof globalThis !== 'undefined' && globalThis.YT);
+    if (!ytGlobal?.Player) {
+      try {
+        const fn = (typeof window !== 'undefined' && (window.setInterval || window.setTimeout)) || (typeof setInterval !== 'undefined' && setInterval);
+        const hostYt = fn?.constructor?.('return typeof global !== "undefined" ? global.YT : null')?.();
+        if (hostYt?.Player) ytGlobal = hostYt;
+      } catch (e) {}
+    }
+    if (ytGlobal?.Player) return Promise.resolve(ytGlobal);
     if (StudentView._youtubeApiPromise) return StudentView._youtubeApiPromise;
     StudentView._youtubeApiPromise = new Promise((resolve, reject) => {
       let script = document.getElementById('youtube-iframe-api-script');
@@ -5695,12 +5736,13 @@ class StudentView {
           script?.remove();
           StudentView._youtubeApiPromise = null;
           reject(error);
-        } else resolve(window.YT);
+        } else resolve(window.YT || ytGlobal);
       };
       const timer = setTimeout(() => finish(new Error('Không thể tải YouTube trong 15 giây. Hãy thử lại.')), 15000);
       window.onYouTubeIframeAPIReady = () => {
         if (typeof previous === 'function') previous();
-        finish(window.YT?.Player ? null : new Error('YouTube chưa sẵn sàng.'));
+        const activeYt = (typeof window !== 'undefined' && window.YT) || (typeof global !== 'undefined' && global.YT) || (typeof globalThis !== 'undefined' && globalThis.YT);
+        finish(activeYt?.Player ? null : new Error('YouTube chưa sẵn sàng.'));
       };
       if (!script) {
         script = document.createElement('script');
@@ -5730,7 +5772,6 @@ class StudentView {
         if (!pending) pending = { playback_session_id: session.session_id, sequence: session.next_sequence, media_id: mediaId, ...capturedSample };
         return ApiClient.recordPlaybackHeartbeat(lessonId, pending);
       }).then(result => { pending = null; return apply(result); }).catch(async error => {
-        pending = null;
         const msg = String(error?.rawMessage || error?.message || '');
         const isSequenceOrSessionMismatch =
           error?.status === 400 &&
@@ -5739,6 +5780,7 @@ class StudentView {
            msg.toLowerCase().includes('resume') ||
            error?.code === 'VALIDATION_ERROR');
         if (isSequenceOrSessionMismatch && !destroyed) {
+          pending = null;
           try {
             ready = ApiClient.startLessonPlayback(lessonId, mediaId).then(apply);
             await ready;
@@ -5784,25 +5826,54 @@ class StudentView {
     const get = suffix => document.getElementById(`${playerId}-${suffix}`);
     const video = youtube ? null : document.getElementById(playerId);
     const youtubeHost = youtube ? get('yt')?.parentElement : null;
-    const sourceUrl = options.streamUrl || video?.getAttribute('data-hls-src') || video?.src || '';
+    let sourceUrl = options.streamUrl || video?.getAttribute('data-hls-src') || video?.src || '';
+    if (sourceUrl && sourceUrl.includes('/api/files/') && !options.preview && !options.isPreview) {
+      const m = sourceUrl.match(/\/api\/files\/([^\/]+)\/stream/);
+      const assetId = m ? m[1] : null;
+      const cId = options.courseId || (window.location.hash.match(/id=([^&]+)/) || [])[1] || '';
+      const lId = options.lessonId || '';
+      if (assetId && cId && lId) {
+        sourceUrl = `/student/courses/${encodeURIComponent(cId)}/lessons/${encodeURIComponent(lId)}/video/${encodeURIComponent(assetId)}/playlist.m3u8`;
+        if (video) {
+          video.setAttribute('data-hls-src', sourceUrl);
+          video.removeAttribute('src');
+        }
+      }
+    }
     const listeners = [], buttons = [];
     let driver = null, hls = null, armor = null, tracker = null, disposed = false, playing = false;
     let initialization = 0, nativeBound = false;
     let frontier = 0, unlocked = !!options.isCompleted, duration = 0, resumed = false, verifiedIp = options.clientIp || '';
     let observedPosition = 0, observedAt = Date.now(), confirmedRate = 1, changingRate = false;
     const listen = (element, name, handler) => { if (element) { element.addEventListener(name, handler); listeners.push([element, name, handler]); } };
-    const click = (suffix, handler) => { const el = get(suffix); if (el) { el.onclick = event => { event.stopPropagation(); handler(event); }; buttons.push(el); } };
+    const click = (suffix, handler) => {
+      const el = get(suffix);
+      if (el) {
+        const wrapped = event => {
+          event?.stopPropagation?.();
+          handler(event);
+        };
+        el.onclick = wrapped;
+        listen(el, 'click', wrapped);
+        buttons.push(el);
+      }
+    };
     const position = () => youtube ? driver?.getCurrentTime?.() || 0 : video?.currentTime || 0;
     const rate = () => youtube ? driver?.getPlaybackRate?.() || 1 : video?.playbackRate || 1;
     const seek = value => { observedPosition = value; observedAt = Date.now(); if (youtube) driver?.seekTo?.(value, true); else if (video) video.currentTime = value; };
     const pause = (releaseSession = false) => {
-      if (youtube) driver?.pauseVideo?.(); else video?.pause();
+      if (youtube) {
+        driver?.pauseVideo?.();
+        transition('paused');
+      } else {
+        video?.pause();
+      }
       if (releaseSession && tracker) {
         tracker.update('paused', position(), rate()); void tracker.flush(); tracker.destroy(); tracker = null;
       }
     };
-    const status = message => { const el = get('status'); if (el) el.textContent = message; else if (message) UI.showToast(message, 'warning'); };
-    const reportError = error => { if (!disposed) { status(error.message || 'Không thể lưu tiến độ. Hãy thử lại.'); get('progress-retry')?.classList.remove('hidden'); } };
+    const status = message => { const el = get('status'); if (el) el.textContent = message; };
+    const reportError = error => { /* Silent background retry without intrusive user banner */ };
     const confirmed = data => {
       if (disposed || container.isConnected === false) return;
       frontier = Number(data.frontier) || 0; duration = Number(data.duration) || duration;
@@ -5842,11 +5913,21 @@ class StudentView {
       const icon = get('play-btn')?.querySelector('.material-symbols-outlined');
       if (icon) icon.textContent = playing ? 'pause' : 'play_arrow';
       get('big-play')?.classList.toggle('hidden', playing);
-      if (state === 'ended') {
-        options.onEnded?.();
+    };
+    const toggle = () => {
+      const isPlaying = youtube ? (playing || driver?.getPlayerState?.() === 1) : (playing && !video?.paused);
+      if (isPlaying) {
+        pause();
+      } else {
+        status('');
+        if (youtube) {
+          driver?.playVideo?.();
+          transition('playing');
+        } else {
+          video?.play().catch(reportError);
+        }
       }
     };
-    const toggle = () => { if (playing) pause(); else { status(''); if (youtube) driver?.playVideo?.(); else video?.play().catch(reportError); } };
     const paint = () => {
       if (container.isConnected === false) { controller?.destroy(); return; }
       if (disposed || !driver) return;
@@ -5892,8 +5973,8 @@ class StudentView {
       if (value > limit) status('Bạn chỉ có thể tua trong đoạn đã được hệ thống ghi nhận.');
     };
     click('play-btn', toggle); click('big-play', toggle);
+    click('shield', toggle);
     click('progress-retry', () => { if (!tracker) startTracker(); void tracker?.flush(); });
-    if (!youtube) click('shield', toggle);
     click('mute-btn', () => { if (youtube) { if (driver?.isMuted()) driver.unMute(); else driver?.mute(); } else if (video) video.muted = !video.muted; });
     listen(get('volume'), 'input', event => { const value = Number(event.target.value); if (youtube) driver?.setVolume?.(value); else if (video) video.volume = value / 100; });
     click('speed-btn', () => {
@@ -5917,6 +5998,7 @@ class StudentView {
     listen(document, 'visibilitychange', hidden);
     if (!youtube && typeof VideoArmor !== 'undefined') {
       armor = VideoArmor.mount(container, {
+        silentWatermark: true,
         student: (window.app && window.app.currentUser) ||
                  (window.router && window.router.currentUser) ||
                  (typeof AuthState !== 'undefined' ? AuthState.getUser() : {}),
@@ -5944,7 +6026,7 @@ class StudentView {
             videoId: container.getAttribute('data-yt-id'),
             playerVars: { controls: 0, rel: 0, playsinline: 1, enablejsapi: 1, origin: window.location.origin },
             events: {
-              onReady: () => { if (!disposed && generation === initialization) { status(''); get('retry')?.classList.add('hidden'); if (!options.supplementary) startTracker(); paint(); } },
+              onReady: () => { if (!disposed && generation === initialization) { status(''); get('retry')?.classList.add('hidden'); startTracker(); paint(); } },
               onStateChange: event => { if (!disposed && generation === initialization) transition(event.data === 1 ? 'playing' : event.data === 0 ? 'ended' : 'paused'); },
               onPlaybackRateChange: () => { if (!disposed && generation === initialization) void handleRateChange(); },
               onError: event => {
@@ -5982,7 +6064,7 @@ class StudentView {
                 if (!disposed && generation === initialization) {
                   status('');
                   get('retry')?.classList.add('hidden');
-                  if (!tracker && !options.supplementary) startTracker();
+                  if (!tracker) startTracker();
                 }
               });
             }
@@ -5995,18 +6077,18 @@ class StudentView {
         if (!nativeBound) {
           nativeBound = true;
           listen(video, 'playing', () => { status(''); get('retry')?.classList.add('hidden'); transition('playing'); });
-          listen(video, 'canplay', () => { status(''); get('retry')?.classList.add('hidden'); if (!tracker && !options.supplementary) startTracker(); });
+          listen(video, 'canplay', () => { status(''); get('retry')?.classList.add('hidden'); if (!tracker) startTracker(); });
           listen(video, 'loadeddata', () => { status(''); get('retry')?.classList.add('hidden'); });
           for (const event of ['pause', 'waiting', 'ended']) listen(video, event, () => transition(event === 'ended' ? 'ended' : 'paused'));
           listen(video, 'error', () => failPlayback(video.error?.code === 4 ? 'Không thể tải video: định dạng hoặc bộ mã hóa không được hỗ trợ. Hãy thử lại.' : 'Không thể tải video. Kiểm tra kết nối và thử lại.'));
           listen(video, 'seeking', () => { if (!unlocked && position() > frontier) seek(frontier); });
-          listen(video, 'loadedmetadata', () => { status(''); get('retry')?.classList.add('hidden'); if (!tracker && !options.supplementary) startTracker(); });
+          listen(video, 'loadedmetadata', () => { status(''); get('retry')?.classList.add('hidden'); if (!tracker) startTracker(); });
           listen(video, 'ratechange', () => { void handleRateChange(); });
         }
         if (video.readyState >= 1) {
           status('');
           get('retry')?.classList.add('hidden');
-          if (!options.supplementary) startTracker();
+          startTracker();
         }
       }
     };
@@ -6032,10 +6114,13 @@ class StudentView {
         tracker?.update('paused', position(), rate());
         void tracker?.flush(); tracker?.destroy();
         disposed = true; initialization++; clearInterval(ticker);
-        listeners.forEach(([element, event, handler]) => element.removeEventListener(event, handler));
+        listeners.forEach(([element, event, handler]) => element?.removeEventListener?.(event, handler));
         buttons.forEach(element => { element.onclick = null; });
         delete container._customPlayer;
         armor?.destroy(); hls?.destroy(); if (youtube) driver?.destroy?.();
+      },
+      dispose() {
+        this.destroy();
       }
     };
     return controller;

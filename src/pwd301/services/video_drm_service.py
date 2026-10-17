@@ -26,6 +26,8 @@ from pwd301.services.exceptions import ServiceError
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_DRM_KEY_TOKEN_EXPIRATION_SECONDS = 43_200  # 12 hours matching active student session
+
 
 class VideoDRMError(ServiceError):
     """Base exception for video DRM and transcoding errors."""
@@ -55,7 +57,7 @@ def generate_key_token(
     course_id: int,
     lesson_id: int,
     secret_key: str | None = None,
-    expires_in: int = 60,
+    expires_in: int = DEFAULT_DRM_KEY_TOKEN_EXPIRATION_SECONDS,
 ) -> str:
     """Generate a short-lived HMAC-signed token for DRM key acquisition.
 
@@ -64,7 +66,7 @@ def generate_key_token(
         course_id: BigInt ID of the course.
         lesson_id: BigInt ID of the lesson.
         secret_key: Optional override for signing key.
-        expires_in: Validity window in seconds (default: 60s).
+        expires_in: Validity window in seconds (default: 43_200s / 12 hours).
 
     Returns:
         URL-safe base64 string containing token components and signature.
@@ -297,9 +299,9 @@ def _generate_encrypted_hls(
 def get_lesson_hls_directory(course_id: int, lesson_id: int) -> Path:
     """Return canonical directory for a lesson's encrypted HLS files."""
     try:
-        storage_base = Path(current_app.config.get("STORAGE_DIR", "storage"))
+        storage_base = Path(current_app.config.get("STORAGE_DIR") or "storage").resolve()
     except RuntimeError:
-        storage_base = Path("storage")
+        storage_base = Path("storage").resolve()
     hls_dir = storage_base / "drm_hls" / f"course_{course_id}" / f"lesson_{lesson_id}"
     hls_dir.mkdir(parents=True, exist_ok=True)
     return hls_dir
@@ -316,17 +318,31 @@ def get_asset_hls_directory(lesson, asset, revision) -> Path:
 
 def resolve_lesson_hls_asset(actor, lesson, asset_id=None, session=None):
     """Apply the same object authorization and scan guards to every HLS request."""
+    import uuid
+
     from pwd301.extensions import db
+    from pwd301.models.file_import import FileAsset
     from pwd301.services.exceptions import ResourceNotFoundError
     from pwd301.services.file_service import authorize_file_download
 
+    sess = session if session is not None else db.session
     resources = lesson.resources
     if not resources and lesson.previous_lesson:
         resources = lesson.previous_lesson.resources
     for resource in resources:
         asset = resource.file_asset
         if asset and asset.is_video and (asset_id is None or str(asset.public_id) == str(asset_id)):
-            return authorize_file_download(
-                actor, asset.public_id, session=session if session is not None else db.session
-            )
+            return authorize_file_download(actor, asset.public_id, session=sess)
+
+    if asset_id is not None:
+        direct_asset = None
+        try:
+            target_uuid = uuid.UUID(str(asset_id))
+            direct_asset = sess.query(FileAsset).filter(FileAsset.public_id == target_uuid).first()
+        except (ValueError, TypeError, AttributeError):
+            if str(asset_id).isdigit():
+                direct_asset = sess.get(FileAsset, int(asset_id))
+        if direct_asset and direct_asset.is_video and direct_asset.deleted_at is None:
+            return authorize_file_download(actor, direct_asset.public_id, session=sess)
+
     raise ResourceNotFoundError("No protected video attached to this lesson.")

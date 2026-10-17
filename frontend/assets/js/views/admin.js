@@ -2473,7 +2473,7 @@ class AdminView {
                   <div class="bg-slate-100 dark:bg-slate-800 px-4 py-2.5 border-b border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
                     <span class="flex items-center gap-1.5">
                       <span class="material-symbols-outlined text-[16px] text-slate-400">history</span>
-                      <span>Giáo trình Hiện tại (Live)</span>
+                      <span>Giáo trình Hiện tại</span>
                     </span>
                     <span class="text-[10px] px-2 py-0.5 rounded-md bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold">Đang áp dụng</span>
                   </div>
@@ -2487,9 +2487,9 @@ class AdminView {
                   <div class="bg-primary-subtle dark:bg-[#1E293B] px-4 py-2.5 border-b border-primary/20 dark:border-primary/30 font-bold text-primary dark:text-[#93C5FD] flex items-center justify-between">
                     <span class="flex items-center gap-1.5">
                       <span class="material-symbols-outlined text-[16px]">verified</span>
-                      <span>Giáo trình Đề xuất (Sau khi duyệt)</span>
+                      <span>Giáo trình Sau chỉnh sửa</span>
                     </span>
-                    <span class="text-[10px] px-2 py-0.5 rounded-md bg-primary text-white font-semibold">Đề xuất</span>
+                    <span class="text-[10px] px-2 py-0.5 rounded-md bg-primary text-white font-semibold">Sau chỉnh sửa</span>
                   </div>
                   <div class="p-4 space-y-2 text-xs" id="changeset-proposed-curriculum-box">
                     <div class="text-slate-400 italic py-4 text-center">Đang tải cấu trúc đề xuất...</div>

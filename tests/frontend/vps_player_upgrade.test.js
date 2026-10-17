@@ -8,10 +8,11 @@ function load(overrides = {}) {
   vm.runInNewContext(fs.readFileSync('frontend/assets/js/views/student.js', 'utf8'), ctx);
   return { view: window.StudentView, window, ctx };
 }
-test('YouTube shell leaves iframe unobscured and places controls outside video aspect box', () => {
+test('YouTube shell has clean player shell with shield overlay and pointer-events protection', () => {
   const { view } = load();
   const html = view._getEmbedVideoHtml('https://youtu.be/abcdefghijk', 'p');
-  assert.doesNotMatch(html, /-shield|scale-105|pointer-events-none[^>]*>\s*<div id="p-yt"/);
+  assert.match(html, /id="p-shield"/);
+  assert.match(html, /pointer-events-none/);
   assert.match(html, /aria-label="Âm lượng"/);
 });
 test('shared YouTube loader rejects on timeout and permits a later retry', async () => {
@@ -265,3 +266,110 @@ test('native engine initialization failure remains recoverable instead of reject
   await new Promise(resolve => setImmediate(resolve));
   assert.match(h.elements.get('p-status').textContent, /khởi tạo|thử lại/i);
 });
+
+test('console header markup eliminates #console-course-progress-badge and updates safely', () => {
+  const studentSource = fs.readFileSync('frontend/assets/js/views/student.js', 'utf8');
+  assert.doesNotMatch(studentSource, /id="console-course-progress-badge"/, 'Header markup must not render #console-course-progress-badge');
+  assert.match(studentSource, /id="console-exit-btn"/, 'Header markup must retain exit button');
+  assert.match(studentSource, /const updateConsoleCourseProgressBadge = \(\) =>/, 'updateConsoleCourseProgressBadge must exist as safe no-op');
+});
+
+test('hero trailer clean player shell enforces container scaling, click-shield, and clean embed params', () => {
+  const studentSource = fs.readFileSync('frontend/assets/js/views/student.js', 'utf8');
+  assert.match(studentSource, /id="hero-trailer-clean-shell"/, 'Must contain #hero-trailer-clean-shell container');
+  assert.match(studentSource, /top:\s*-14%/, 'Must contain top: -14% scaling style');
+  assert.match(studentSource, /height:\s*128%/, 'Must contain height: 128% scaling style');
+  assert.match(studentSource, /pointer-events:\s*none/, 'Must contain pointer-events: none on iframe wrapper');
+  assert.match(studentSource, /id="hero-trailer-shield"/, 'Must contain #hero-trailer-shield overlay');
+  assert.match(studentSource, /autoplay=1/, 'Embed URL must enforce autoplay=1');
+  assert.match(studentSource, /mute=1/, 'Embed URL must enforce mute=1');
+  assert.match(studentSource, /loop=1/, 'Embed URL must enforce loop=1');
+  assert.match(studentSource, /controls=0/, 'Embed URL must enforce controls=0');
+  assert.match(studentSource, /playsinline=1/, 'Embed URL must enforce playsinline=1');
+});
+
+test('supplementary video initializes independent tracker with its own mediaId', async t => {
+  const dom = fakePlayerDOM('native');
+  const videoEl = {
+    id: 'p',
+    tagName: 'VIDEO',
+    readyState: 2,
+    style: {},
+    isConnected: true,
+    paused: true,
+    currentTime: 0,
+    playbackRate: 1,
+    canPlayType: () => 'probably',
+    getAttribute: () => '',
+    pause() {},
+    play: async () => {},
+    load() {},
+    addEventListener: () => {},
+    removeEventListener: () => {}
+  };
+  dom.elements.set('p', videoEl);
+
+  const trackerCalls = [];
+  const ApiClient = {
+    startLessonPlayback: async (lId, mId) => {
+      trackerCalls.push({ lessonId: lId, mediaId: mId });
+      return { session_id: 's_supp', next_sequence: 1, frontier: 0, duration: 120 };
+    },
+    recordPlaybackHeartbeat: async () => ({ next_sequence: 2, frontier: 10 })
+  };
+  const { view } = load({
+    ...dom,
+    ApiClient,
+    document: {
+      ...dom.document,
+      visibilityState: 'visible',
+      addEventListener: () => {},
+      removeEventListener: () => {}
+    }
+  });
+
+  const ctrl = view.setupCustomVideoPlayer('p', {
+    lessonId: 'lesson-42',
+    mediaId: 'video:supplementary-99',
+    supplementary: true,
+    streamUrl: '/media/supp.mp4'
+  });
+  t.after(() => ctrl?.destroy());
+
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(trackerCalls.length, 1, 'Supplementary video must initialize tracker');
+  assert.equal(trackerCalls[0].lessonId, 'lesson-42');
+  assert.equal(trackerCalls[0].mediaId, 'video:supplementary-99');
+});
+
+test('sequential completion gate enforces 60-second text dwell requirement', () => {
+  const studentSource = fs.readFileSync('frontend/assets/js/views/student.js', 'utf8');
+  assert.match(studentSource, /const\s+dwellRequired\s*=\s*60;/, 'dwellRequired must be set to 60 seconds');
+  assert.doesNotMatch(studentSource, /const\s+dwellRequired\s*=\s*30;/, 'dwellRequired must not be 30 seconds');
+  assert.match(studentSource, /Cần học tối thiểu 60s/, 'Missing requirement message must reflect 60s minimum dwell');
+});
+
+test('Next button renders disabled/gray without lock icon when incomplete and transitions to emerald green when complete', () => {
+  const studentSource = fs.readFileSync('frontend/assets/js/views/student.js', 'utf8');
+
+  // Incomplete next button assertions
+  assert.match(studentSource, /<button\s+type="button"\s+id="cisco-next-btn"\s+disabled/, 'Incomplete Next button must have disabled attribute');
+  assert.match(studentSource, /bg-slate-200/, 'Incomplete Next button must have gray slate background');
+  assert.match(studentSource, /cursor-not-allowed/, 'Incomplete Next button must have cursor-not-allowed');
+
+  // Verify NO lock icon or "Đã khóa" in Next button
+  const nextBtnMatch = studentSource.match(/box\.innerHTML\s*=\s*`\s*<button[^>]+id="cisco-next-btn"[^>]*>[\s\S]*?<\/button>\s*`;/g);
+  assert.ok(nextBtnMatch && nextBtnMatch.length >= 2, 'Must have complete and incomplete Next button templates');
+  const incompleteBtnTemplate = nextBtnMatch.find(tmpl => tmpl.includes('disabled'));
+  assert.ok(incompleteBtnTemplate, 'Must locate disabled template');
+  assert.doesNotMatch(incompleteBtnTemplate, /lock/i, 'Incomplete Next button must NOT contain a lock icon');
+  assert.doesNotMatch(incompleteBtnTemplate, /Đã khóa/i, 'Incomplete Next button must NOT contain "Đã khóa" text');
+
+  // Complete next button assertions
+  const completeBtnTemplate = nextBtnMatch.find(tmpl => !tmpl.includes('disabled') && tmpl.includes('bg-emerald-600'));
+  assert.ok(completeBtnTemplate, 'Must locate emerald green complete template');
+  assert.match(completeBtnTemplate, /cursor-pointer/, 'Complete Next button must have cursor-pointer');
+  assert.match(completeBtnTemplate, /shadow-md/, 'Complete Next button must have shadow-md');
+});
+
+

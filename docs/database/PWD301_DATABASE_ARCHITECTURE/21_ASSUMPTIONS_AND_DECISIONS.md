@@ -570,7 +570,7 @@ Round 6 xác nhận video dưới 1 GB; file type được xác định sau serv
 
 **Decision**
 
-Upload service/config enforce: image ~10MB, PDF/DOCX ~50MB, PPTX ~100MB, video **<1GB**. Database chỉ check `size_bytes > 0` và lưu detected MIME/status.
+Upload service/config enforce: image ~10MB, non-archive attachments <= 50MB (50,000,000 bytes: Word, PDF, Excel, PPT, text, CAD, 3D), archives (.zip, .rar, .7z...) strictly forbidden, video **<1GB**. Database chỉ check `size_bytes > 0` và lưu detected MIME/status.
 
 **Alternatives considered**
 

@@ -312,9 +312,8 @@ def test_publish_approved_legacy_course_with_lessons(
     instructor_user: User,
 ) -> None:
     """Directly publishing an approved legacy course auto-publishes its draft lessons."""
-    from pwd301.services.course_service import change_course_status
-
     from pwd301.models.course import LearningUnit
+    from pwd301.services.course_service import change_course_status
 
     sess = db.session
     course = Course(

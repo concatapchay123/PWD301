@@ -80,9 +80,11 @@ test('renderLessonChildNavigator sets data-learning-unit-id cleanly without stri
   assert.doesNotMatch(html, /data-learning-unit-id="learning_unit_id=/, 'Must not have prefix');
 });
 
-test('instructor.js contains save lesson button and changeset submit button', () => {
-  assert.ok(source.includes('id="btn-save-lesson"'), 'Includes btn-save-lesson');
-  assert.ok(source.includes('Lưu bài giảng'), 'Includes Lưu bài giảng label');
+test('instructor.js eliminates manual save lesson button and maintains auto-save badge and changeset submit button', () => {
+  assert.ok(!source.includes('id="btn-save-lesson"'), 'Does not include obsolete btn-save-lesson');
+  assert.ok(!source.includes('id="btn-save-lesson-bottom"'), 'Does not include obsolete btn-save-lesson-bottom');
+  assert.ok(source.includes('id="autosave-status-badge"'), 'Includes autosave-status-badge');
+  assert.ok(source.includes('Đã tự động lưu'), 'Includes Đã tự động lưu auto-save status');
   assert.ok(source.includes('btn-submit-changeset'), 'Includes btn-submit-changeset');
   assert.ok(source.includes('Gửi duyệt đợt cập nhật'), 'Includes Gửi duyệt đợt cập nhật label');
 });

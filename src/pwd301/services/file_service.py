@@ -20,6 +20,7 @@ import re
 import shutil
 import time
 import uuid
+import zipfile
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import timedelta
@@ -104,6 +105,43 @@ DANGEROUS_EXTENSIONS: frozenset[str] = frozenset(
         ".potm",
     }
 )
+
+# Forbidden archive extensions strictly blocked per non-archive attachment policy
+FORBIDDEN_ARCHIVE_EXTENSIONS: frozenset[str] = frozenset(
+    {".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".iso"}
+)
+
+FORBIDDEN_ARCHIVE_MESSAGE: str = (
+    "Hệ thống không hỗ trợ tệp nén (.zip, .rar, .7z...). Vui lòng tải trực tiếp tài liệu học tập (PDF, Word, Excel, CAD, 3D...)"
+)
+
+# Allowed non-archive document, CAD, and 3D model formats
+ALLOWED_DOCUMENT_EXTENSIONS: frozenset[str] = frozenset(
+    {
+        ".pdf",
+        ".docx",
+        ".doc",
+        ".xlsx",
+        ".xls",
+        ".pptx",
+        ".ppt",
+        ".txt",
+        ".dwg",
+        ".dxf",
+        ".obj",
+        ".fbx",
+        ".stl",
+        ".blend",
+        ".step",
+        ".stp",
+        ".gltf",
+        ".glb",
+    }
+)
+
+MAX_PPTX_BYTES: int = 50_000_000  # 50 MB
+MAX_DOCUMENT_BYTES: int = 50_000_000  # 50 MB
+MAX_ATTACHMENT_BYTES: int = 50_000_000  # 50 MB
 
 
 def _file_rejection_event_key(revision: FileRevision, recipient_user_id: int) -> uuid.UUID:
@@ -196,8 +234,13 @@ def get_file_infected_root() -> Path:
 
 
 def validate_file_metadata(filename: str, declared_mime: str | None = None) -> None:
-    """Validate file metadata against forbidden executable extensions."""
-    ext = Path(filename).suffix.lower()
+    """Validate file metadata against forbidden executable extensions and archives."""
+    clean_lower = filename.lower()
+    ext = Path(clean_lower).suffix
+    if ext in FORBIDDEN_ARCHIVE_EXTENSIONS or any(
+        clean_lower.endswith(arch_ext) for arch_ext in FORBIDDEN_ARCHIVE_EXTENSIONS
+    ):
+        raise FileValidationError(FORBIDDEN_ARCHIVE_MESSAGE)
     if ext in DANGEROUS_EXTENSIONS:
         raise FileValidationError(f"File extension '{ext}' is forbidden for security.")
 
@@ -205,8 +248,9 @@ def validate_file_metadata(filename: str, declared_mime: str | None = None) -> N
 def check_file_size_limit(size_bytes: int, filename: str) -> None:
     """Check file size strictly against configured category limits.
 
-    Non-negotiable invariant:
+    Non-negotiable invariants:
     - Video files must be strictly < 1 GB (1,000,000,000 bytes).
+    - Document and lesson attachments (Word, PDF, Excel, PowerPoint, Text, CAD, 3D) <= 50 MB (50,000,000 bytes).
     """
     if size_bytes <= 0:
         raise FileValidationError("Uploaded file is empty (0 bytes).")
@@ -227,37 +271,53 @@ def check_file_size_limit(size_bytes: int, filename: str) -> None:
             f"File exceeds maximum platform limit of {max_video_exclusive} bytes."
         )
 
-    # Image limit
+    # Image limit: 10 MB (10,000,000 bytes)
     max_image = current_app.config.get("MAX_IMAGE_BYTES", 10_000_000)
     if ext in IMAGE_EXTENSIONS and size_bytes > max_image:
         raise FileSizeLimitExceededError(
             f"Image file exceeds maximum allowed size of {max_image} bytes."
         )
 
-    # PDF limit
+    # PDF limit: 50 MB
     max_pdf = current_app.config.get("MAX_PDF_BYTES", 50_000_000)
     if ext == ".pdf" and size_bytes > max_pdf:
         raise FileSizeLimitExceededError(
             f"PDF file exceeds maximum allowed size of {max_pdf} bytes."
         )
 
-    # DOCX limit
+    # DOCX limit: 50 MB
     max_docx = current_app.config.get("MAX_DOCX_BYTES", 50_000_000)
     if ext in {".docx", ".doc"} and size_bytes > max_docx:
         raise FileSizeLimitExceededError(
             f"DOCX file exceeds maximum allowed size of {max_docx} bytes."
         )
 
-    # PPTX limit
-    max_pptx = current_app.config.get("MAX_PPTX_BYTES", 100_000_000)
+    # PPTX limit: 50 MB
+    max_pptx = current_app.config.get("MAX_PPTX_BYTES", 50_000_000)
     if ext in {".pptx", ".ppt"} and size_bytes > max_pptx:
         raise FileSizeLimitExceededError(
             f"PPTX file exceeds maximum allowed size of {max_pptx} bytes."
         )
 
+    # Strict 50MB ceiling across all document, CAD, 3D, and non-video attachments
+    max_attachment = current_app.config.get(
+        "MAX_ATTACHMENT_BYTES",
+        current_app.config.get("MAX_DOCUMENT_BYTES", 50_000_000),
+    )
+    if ext in ALLOWED_DOCUMENT_EXTENSIONS and size_bytes > max_attachment:
+        raise FileSizeLimitExceededError(
+            f"Document/attachment file exceeds maximum allowed size of {max_attachment} bytes (50 MB)."
+        )
+    if ext not in VIDEO_EXTENSIONS and ext not in IMAGE_EXTENSIONS and size_bytes > max_attachment:
+        raise FileSizeLimitExceededError(
+            f"Attachment file exceeds maximum allowed size of {max_attachment} bytes (50 MB)."
+        )
+
 
 def detect_mime_type(header_bytes: bytes, filename: str, declared_mime: str | None = None) -> str:
     """Detect MIME type combining magic byte signatures and filename extension."""
+    ext = Path(filename).suffix.lower()
+
     # Magic bytes check
     if header_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
         return "image/png"
@@ -268,17 +328,55 @@ def detect_mime_type(header_bytes: bytes, filename: str, declared_mime: str | No
     if header_bytes.startswith(b"%PDF-"):
         return "application/pdf"
     if header_bytes.startswith(b"PK\x03\x04"):
-        ext = Path(filename).suffix.lower()
         if ext == ".docx":
             return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         if ext == ".pptx":
             return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        if ext == ".xlsx":
+            return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     if (
         header_bytes.startswith(b"RIFF")
         and len(header_bytes) >= 12
         and header_bytes[8:12] == b"WEBP"
     ):
         return "image/webp"
+
+    # CAD & 3D magic bytes and extension mapping
+    if header_bytes.startswith(b"AC10") or ext == ".dwg":
+        return "application/acad"
+    if (
+        header_bytes.startswith(b"SECTION")
+        or header_bytes.startswith(b"0\nSECTION")
+        or header_bytes.startswith(b"0\r\nSECTION")
+        or ext == ".dxf"
+    ):
+        return "application/dxf"
+    if header_bytes.startswith(b"BLENDER") or ext == ".blend":
+        return "application/x-blender"
+    if header_bytes.startswith(b"glTF") or ext == ".glb":
+        return "model/gltf-binary"
+    if (
+        header_bytes.startswith(b"Kaydara FBX Binary  \x00")
+        or header_bytes.startswith(b"; FBX")
+        or ext == ".fbx"
+    ):
+        return "application/octet-stream"
+    if header_bytes.startswith(b"solid") or ext == ".stl":
+        return "model/stl"
+    if b"ISO-10303-21" in header_bytes[:512] or ext in {".step", ".stp"}:
+        return "application/step"
+    if ext == ".gltf":
+        return "model/gltf+json"
+    if ext == ".obj":
+        return "model/obj"
+    if ext == ".txt":
+        return "text/plain"
+    if ext == ".doc":
+        return "application/msword"
+    if ext == ".xls":
+        return "application/vnd.ms-excel"
+    if ext == ".ppt":
+        return "application/vnd.ms-powerpoint"
 
     guessed, _ = mimetypes.guess_type(filename)
     if guessed:
@@ -288,6 +386,59 @@ def detect_mime_type(header_bytes: bytes, filename: str, declared_mime: str | No
         return declared_mime
 
     return "application/octet-stream"
+
+
+def check_archive_rejection(header_bytes: bytes, filename: str, file_path: Path) -> None:
+    """Inspect file extension and magic byte signatures to block forbidden archives.
+
+    Differentiates generic zip archives from valid OOXML (docx, xlsx, pptx).
+    Raises FileValidationError with exact Vietnamese message on forbidden archives.
+    """
+    clean_lower = filename.lower()
+    ext = Path(clean_lower).suffix
+
+    # 1. Extension check
+    if ext in FORBIDDEN_ARCHIVE_EXTENSIONS or any(
+        clean_lower.endswith(arch_ext) for arch_ext in FORBIDDEN_ARCHIVE_EXTENSIONS
+    ):
+        raise FileValidationError(FORBIDDEN_ARCHIVE_MESSAGE)
+
+    # 2. Non-ZIP archive magic bytes
+    if (
+        header_bytes.startswith((b"Rar!\x1a\x07\x00", b"Rar!\x1a\x07\x01\x00"))
+        or header_bytes.startswith(b"7z\xbc\xaf\x27\x1c")
+        or header_bytes.startswith(b"\x1f\x8b")
+        or header_bytes.startswith(b"BZh")
+        or header_bytes.startswith(b"\xfd7zXZ\x00")
+        or (len(header_bytes) >= 262 and header_bytes[257:262] == b"ustar")
+        or (len(header_bytes) >= 32773 and header_bytes[32768:32773] == b"CD001")
+    ):
+        raise FileValidationError(FORBIDDEN_ARCHIVE_MESSAGE)
+
+    # 3. ZIP magic bytes (PK\x03\x04, PK\x05\x06, PK\x07\x08)
+    if header_bytes.startswith((b"PK\x05\x06", b"PK\x07\x08")):
+        raise FileValidationError(FORBIDDEN_ARCHIVE_MESSAGE)
+
+    if header_bytes.startswith(b"PK\x03\x04"):
+        if ext not in {".docx", ".xlsx", ".pptx"}:
+            raise FileValidationError(FORBIDDEN_ARCHIVE_MESSAGE)
+        # Check genuine OOXML contents
+        try:
+            with zipfile.ZipFile(file_path, "r") as zf:
+                names = set(zf.namelist())
+                is_ooxml = "[Content_Types].xml" in names and (
+                    (ext == ".docx" and any(n.startswith("word/") for n in names))
+                    or (ext == ".xlsx" and any(n.startswith("xl/") for n in names))
+                    or (ext == ".pptx" and any(n.startswith("ppt/") for n in names))
+                )
+                if not is_ooxml:
+                    raise FileValidationError(FORBIDDEN_ARCHIVE_MESSAGE)
+        except zipfile.BadZipFile as err:
+            raise FileValidationError("Document archive is corrupted or has invalid ZIP structure.") from err
+        except FileValidationError:
+            raise
+        except Exception as err:
+            raise FileValidationError(FORBIDDEN_ARCHIVE_MESSAGE) from err
 
 
 def _resolve_file_asset(
@@ -489,20 +640,30 @@ def store_file_stream(
 
     clean_filename = sanitize_filename(filename)
     validate_file_metadata(clean_filename, content_type)
+    ext = Path(clean_filename).suffix.lower()
 
     quarantine_root = get_file_quarantine_root()
     reserve_storage_space(quarantine_root, 0)
-    temp_filename = f"upload_{uuid.uuid4().hex}.tmp"
+    temp_filename = f"upload_{uuid.uuid4().hex}{ext}"
     temp_path = quarantine_root / temp_filename
 
     hasher = hashlib.sha256()
     total_size = 0
     header_bytes = b""
     max_video_exclusive = current_app.config.get("MAX_VIDEO_BYTES_EXCLUSIVE", 1_000_000_000)
+    max_attachment_bytes = current_app.config.get(
+        "MAX_ATTACHMENT_BYTES",
+        current_app.config.get("MAX_DOCUMENT_BYTES", 50_000_000),
+    )
+    stream_limit = (
+        max_video_exclusive
+        if ext in VIDEO_EXTENSIONS
+        else max_attachment_bytes + 1
+    )
     stream_to_read: Any = (
         file_stream
         if isinstance(file_stream, LimitingStream)
-        else LimitingStream(file_stream, max_bytes=max_video_exclusive)
+        else LimitingStream(file_stream, max_bytes=stream_limit)
     )
     newly_created_dest: Path | None = None
 
@@ -518,14 +679,20 @@ def store_file_stream(
                 total_size += len(chunk)
 
                 # Early check during streaming to avoid disk exhaustion
-                if total_size >= max_video_exclusive:
+                ceiling = max_video_exclusive if ext in VIDEO_EXTENSIONS else max_attachment_bytes
+                if (ext in VIDEO_EXTENSIONS and total_size >= ceiling) or (
+                    ext not in VIDEO_EXTENSIONS and total_size > ceiling
+                ):
                     raise FileSizeLimitExceededError(
-                        f"File stream exceeded maximum limit of {max_video_exclusive} bytes."
+                        f"File stream exceeded maximum limit of {ceiling} bytes."
                     )
 
                 reserve_storage_space(quarantine_root, len(chunk))
                 hasher.update(chunk)
                 f_out.write(chunk)
+
+        # Inspect extension and magic bytes for forbidden archives
+        check_archive_rejection(header_bytes, clean_filename, temp_path)
 
         # Validate total size strictly
         check_file_size_limit(total_size, clean_filename)
@@ -536,12 +703,16 @@ def store_file_stream(
 
         # Multi-engine malware scanning while quarantined (single-pass)
         now = utc_now()
-        scan_verdicts = scan_file_all_engines(temp_path)
-        main_verdict = scan_blob_file(temp_path)
+        scan_verdicts = scan_file_all_engines(temp_path, declared_filename=clean_filename)
+        main_verdict = scan_blob_file(temp_path, declared_filename=clean_filename)
         if main_verdict.status != "PASS" and not any(
             v.status == main_verdict.status for v in scan_verdicts
         ):
             scan_verdicts.insert(0, main_verdict)
+
+        for v in scan_verdicts:
+            if v.signature_name == "Forbidden-Archive-Format":
+                raise FileValidationError(FORBIDDEN_ARCHIVE_MESSAGE)
 
         valid_asset_types = {
             "RESOURCE",
@@ -832,20 +1003,30 @@ def add_file_revision(
 
     clean_filename = sanitize_filename(filename)
     validate_file_metadata(clean_filename, content_type)
+    ext = Path(clean_filename).suffix.lower()
 
     quarantine_root = get_file_quarantine_root()
     reserve_storage_space(quarantine_root, 0)
-    temp_filename = f"rev_{uuid.uuid4().hex}.tmp"
+    temp_filename = f"rev_{uuid.uuid4().hex}{ext}"
     temp_path = quarantine_root / temp_filename
 
     hasher = hashlib.sha256()
     total_size = 0
     header_bytes = b""
     max_video_exclusive = current_app.config.get("MAX_VIDEO_BYTES_EXCLUSIVE", 1_000_000_000)
+    max_attachment_bytes = current_app.config.get(
+        "MAX_ATTACHMENT_BYTES",
+        current_app.config.get("MAX_DOCUMENT_BYTES", 50_000_000),
+    )
+    stream_limit = (
+        max_video_exclusive
+        if ext in VIDEO_EXTENSIONS
+        else max_attachment_bytes + 1
+    )
     stream_to_read: Any = (
         file_stream
         if isinstance(file_stream, LimitingStream)
-        else LimitingStream(file_stream, max_bytes=max_video_exclusive)
+        else LimitingStream(file_stream, max_bytes=stream_limit)
     )
     newly_created_dest: Path | None = None
 
@@ -859,15 +1040,19 @@ def add_file_revision(
                     header_bytes = chunk[:512]
                 total_size += len(chunk)
 
-                if total_size >= max_video_exclusive:
+                ceiling = max_video_exclusive if ext in VIDEO_EXTENSIONS else max_attachment_bytes
+                if (ext in VIDEO_EXTENSIONS and total_size >= ceiling) or (
+                    ext not in VIDEO_EXTENSIONS and total_size > ceiling
+                ):
                     raise FileSizeLimitExceededError(
-                        f"File size exceeded maximum limit of {max_video_exclusive} bytes."
+                        f"File size exceeded maximum limit of {ceiling} bytes."
                     )
 
                 reserve_storage_space(quarantine_root, len(chunk))
                 hasher.update(chunk)
                 f_out.write(chunk)
 
+        check_archive_rejection(header_bytes, clean_filename, temp_path)
         check_file_size_limit(total_size, clean_filename)
         detected_mime = detect_mime_type(header_bytes, clean_filename, content_type)
 
@@ -876,8 +1061,12 @@ def add_file_revision(
 
         # Multi-engine malware scanning while quarantined
         now = utc_now()
-        scan_verdicts = scan_file_all_engines(temp_path)
-        main_verdict = scan_blob_file(temp_path)
+        scan_verdicts = scan_file_all_engines(temp_path, declared_filename=clean_filename)
+        main_verdict = scan_blob_file(temp_path, declared_filename=clean_filename)
+
+        for v in scan_verdicts:
+            if v.signature_name == "Forbidden-Archive-Format":
+                raise FileValidationError(FORBIDDEN_ARCHIVE_MESSAGE)
 
         existing_revisions = (
             sess.query(FileRevision).filter(FileRevision.file_asset_id == asset.id).all()

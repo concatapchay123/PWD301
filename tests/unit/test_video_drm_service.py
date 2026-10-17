@@ -109,3 +109,45 @@ def test_transcode_to_encrypted_hls() -> None:
         assert len(segments) >= 1
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def test_drm_key_token_12_hour_validity() -> None:
+    """Task R3: DRM key token default validity is 12 hours (43,200 seconds)."""
+    from unittest.mock import patch
+
+    from pwd301.services.video_drm_service import DEFAULT_DRM_KEY_TOKEN_EXPIRATION_SECONDS
+
+    assert DEFAULT_DRM_KEY_TOKEN_EXPIRATION_SECONDS == 43_200
+
+    secret = "test-12h-drm-secret"
+    student_id = 42
+    course_id = 101
+    lesson_id = 999
+    base_time = 1700000000.0
+
+    with patch("time.time", return_value=base_time):
+        token = generate_key_token(student_id, course_id, lesson_id, secret)
+
+    # 1. Valid after 1 hour (3600 seconds)
+    with patch("time.time", return_value=base_time + 3600):
+        valid, reason = verify_key_token(token, student_id, course_id, lesson_id, secret)
+        assert valid is True
+        assert reason == "OK"
+
+    # 2. Valid after 11.9 hours (42,840 seconds)
+    with patch("time.time", return_value=base_time + 42840):
+        valid, reason = verify_key_token(token, student_id, course_id, lesson_id, secret)
+        assert valid is True
+        assert reason == "OK"
+
+    # 3. Valid just before 12 hours (43,199 seconds)
+    with patch("time.time", return_value=base_time + 43199):
+        valid, reason = verify_key_token(token, student_id, course_id, lesson_id, secret)
+        assert valid is True
+        assert reason == "OK"
+
+    # 4. Expired just after 12 hours (43,201 seconds)
+    with patch("time.time", return_value=base_time + 43201):
+        valid, reason = verify_key_token(token, student_id, course_id, lesson_id, secret)
+        assert valid is False
+        assert "expired" in reason.lower()

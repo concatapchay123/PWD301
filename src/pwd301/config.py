@@ -89,7 +89,9 @@ class BaseConfig:
     MAX_IMAGE_BYTES: int = int(os.environ.get("MAX_IMAGE_BYTES", "10000000"))
     MAX_PDF_BYTES: int = int(os.environ.get("MAX_PDF_BYTES", "50000000"))
     MAX_DOCX_BYTES: int = int(os.environ.get("MAX_DOCX_BYTES", "50000000"))
-    MAX_PPTX_BYTES: int = int(os.environ.get("MAX_PPTX_BYTES", "100000000"))
+    MAX_PPTX_BYTES: int = int(os.environ.get("MAX_PPTX_BYTES", "50000000"))
+    MAX_ATTACHMENT_BYTES: int = int(os.environ.get("MAX_ATTACHMENT_BYTES", "50000000"))
+    MAX_DOCUMENT_BYTES: int = int(os.environ.get("MAX_DOCUMENT_BYTES", "50000000"))
     MAX_VIDEO_BYTES_EXCLUSIVE: int = int(os.environ.get("MAX_VIDEO_BYTES_EXCLUSIVE", "1000000000"))
     MAX_CONTENT_LENGTH: int = int(
         os.environ.get("MAX_CONTENT_LENGTH", str(MAX_VIDEO_BYTES_EXCLUSIVE))
@@ -144,6 +146,10 @@ class BaseConfig:
             self.MAX_DOCX_BYTES = int(os.environ["MAX_DOCX_BYTES"])
         if "MAX_PPTX_BYTES" in os.environ:
             self.MAX_PPTX_BYTES = int(os.environ["MAX_PPTX_BYTES"])
+        if "MAX_ATTACHMENT_BYTES" in os.environ:
+            self.MAX_ATTACHMENT_BYTES = int(os.environ["MAX_ATTACHMENT_BYTES"])
+        if "MAX_DOCUMENT_BYTES" in os.environ:
+            self.MAX_DOCUMENT_BYTES = int(os.environ["MAX_DOCUMENT_BYTES"])
         if "MAX_VIDEO_BYTES_EXCLUSIVE" in os.environ:
             self.MAX_VIDEO_BYTES_EXCLUSIVE = int(os.environ["MAX_VIDEO_BYTES_EXCLUSIVE"])
             self.MAX_CONTENT_LENGTH = self.MAX_VIDEO_BYTES_EXCLUSIVE

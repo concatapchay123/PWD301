@@ -40,13 +40,25 @@ PDF_DANGEROUS_MARKERS: tuple[bytes, ...] = (
     b"/Launch",
 )
 
+# Forbidden archive extensions strictly blocked per non-archive attachment policy
+FORBIDDEN_ARCHIVE_EXTENSIONS: frozenset[str] = frozenset(
+    {".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".iso"}
+)
+
+FORBIDDEN_ARCHIVE_MESSAGE: str = (
+    "Hệ thống không hỗ trợ tệp nén (.zip, .rar, .7z...). Vui lòng tải trực tiếp tài liệu học tập (PDF, Word, Excel, CAD, 3D...)"
+)
+
 # File extensions that should never start with executable binary headers
 NON_EXECUTABLE_EXTENSIONS: frozenset[str] = frozenset(
     {
         ".pdf",
         ".docx",
+        ".doc",
         ".xlsx",
+        ".xls",
         ".pptx",
+        ".ppt",
         ".png",
         ".jpg",
         ".jpeg",
@@ -59,6 +71,16 @@ NON_EXECUTABLE_EXTENSIONS: frozenset[str] = frozenset(
         ".xml",
         ".mp4",
         ".webm",
+        ".dwg",
+        ".dxf",
+        ".obj",
+        ".fbx",
+        ".stl",
+        ".blend",
+        ".step",
+        ".stp",
+        ".gltf",
+        ".glb",
     }
 )
 
@@ -135,7 +157,11 @@ class BuiltinHeuristicScanner(BaseScanner):
     ENGINE_NAME = "builtin_heuristic"
     ENGINE_VERSION = "1.0.0"
 
-    def scan_file(self, file_path: Path) -> ScanVerdict:
+    def scan_file(
+        self,
+        file_path: Path,
+        declared_filename: str | None = None,
+    ) -> ScanVerdict:
         """Perform heuristic and signature checks on the file."""
         if not file_path.is_file():
             return ScanVerdict(
@@ -239,7 +265,11 @@ class BuiltinHeuristicScanner(BaseScanner):
                 )
             raw_bytes = header_bytes
 
-        ext = file_path.suffix.lower()
+        ext = (
+            Path(declared_filename).suffix.lower()
+            if declared_filename
+            else file_path.suffix.lower()
+        )
 
         # 2. Header Spoofing: Executable binary header in non-executable file types
         if ext in NON_EXECUTABLE_EXTENSIONS:
@@ -285,7 +315,41 @@ class BuiltinHeuristicScanner(BaseScanner):
                     details="Suspicious PDF object detected: '/JS'",
                 )
 
-        # 4. Deep OOXML / ZIP Container Inspection & Zip Bomb Mitigation
+        # 4. Check non-ZIP forbidden archives (RAR, 7Z, GZ, BZ2, XZ, TAR, ISO)
+        file_name_lower = (
+            Path(declared_filename).name.lower()
+            if declared_filename
+            else file_path.name.lower()
+        )
+        if (
+            ext in FORBIDDEN_ARCHIVE_EXTENSIONS
+            or any(file_name_lower.endswith(arch_ext) for arch_ext in FORBIDDEN_ARCHIVE_EXTENSIONS)
+            or header_bytes.startswith((b"Rar!\x1a\x07\x00", b"Rar!\x1a\x07\x01\x00"))
+            or header_bytes.startswith(b"7z\xbc\xaf\x27\x1c")
+            or header_bytes.startswith(b"\x1f\x8b")
+            or header_bytes.startswith(b"BZh")
+            or header_bytes.startswith(b"\xfd7zXZ\x00")
+            or (len(header_bytes) >= 262 and header_bytes[257:262] == b"ustar")
+            or (len(header_bytes) >= 32773 and header_bytes[32768:32773] == b"CD001")
+        ) and not header_bytes.startswith(b"PK\x03\x04"):
+            return ScanVerdict(
+                status="FAIL",
+                engine_name=self.ENGINE_NAME,
+                engine_version=self.ENGINE_VERSION,
+                signature_name="Forbidden-Archive-Format",
+                details=FORBIDDEN_ARCHIVE_MESSAGE,
+            )
+
+        if header_bytes.startswith((b"PK\x05\x06", b"PK\x07\x08")):
+            return ScanVerdict(
+                status="FAIL",
+                engine_name=self.ENGINE_NAME,
+                engine_version=self.ENGINE_VERSION,
+                signature_name="Forbidden-Archive-Format",
+                details=FORBIDDEN_ARCHIVE_MESSAGE,
+            )
+
+        # 5. Deep OOXML / ZIP Container Inspection & Zip Bomb Mitigation
         if header_bytes.startswith(b"PK\x03\x04"):
             try:
                 with zipfile.ZipFile(file_path, "r") as zf:
@@ -376,6 +440,31 @@ class BuiltinHeuristicScanner(BaseScanner):
                                 signature_name="ZIP-Embedded-Binary",
                                 details=f"Binary header detected in zip member: {member.filename}",
                             )
+
+                    # Differentiate generic archive from valid OOXML document
+                    if ext in {".docx", ".xlsx", ".pptx"}:
+                        names = {m.filename for m in members}
+                        is_ooxml = "[Content_Types].xml" in names and (
+                            (ext == ".docx" and any(n.startswith("word/") for n in names))
+                            or (ext == ".xlsx" and any(n.startswith("xl/") for n in names))
+                            or (ext == ".pptx" and any(n.startswith("ppt/") for n in names))
+                        )
+                        if not is_ooxml:
+                            return ScanVerdict(
+                                status="FAIL",
+                                engine_name=self.ENGINE_NAME,
+                                engine_version=self.ENGINE_VERSION,
+                                signature_name="Forbidden-Archive-Format",
+                                details=FORBIDDEN_ARCHIVE_MESSAGE,
+                            )
+                    else:
+                        return ScanVerdict(
+                            status="FAIL",
+                            engine_name=self.ENGINE_NAME,
+                            engine_version=self.ENGINE_VERSION,
+                            signature_name="Forbidden-Archive-Format",
+                            details=FORBIDDEN_ARCHIVE_MESSAGE,
+                        )
 
             except zipfile.BadZipFile:
                 if ext in {".docx", ".pptx", ".xlsx"}:
@@ -565,6 +654,7 @@ class ClamAVScanner(BaseScanner):
 def scan_file_all_engines(
     file_path: Path,
     use_clamav: bool | None = None,
+    declared_filename: str | None = None,
 ) -> list[ScanVerdict]:
     """Execute all configured scanning engines on a target file.
 
@@ -574,7 +664,7 @@ def scan_file_all_engines(
 
     # 1. Execute built-in heuristic scanner
     heuristic_scanner = BuiltinHeuristicScanner()
-    verdict_h = heuristic_scanner.scan_file(file_path)
+    verdict_h = heuristic_scanner.scan_file(file_path, declared_filename=declared_filename)
     verdicts.append(verdict_h)
 
     # 2. Determine whether ClamAV scanner should run
@@ -595,6 +685,7 @@ def scan_file_all_engines(
 def scan_blob_file(
     file_path: Path,
     use_clamav: bool | None = None,
+    declared_filename: str | None = None,
 ) -> ScanVerdict:
     """Coordinate multi-engine malware scan and return the dominant aggregate verdict.
 
@@ -603,7 +694,11 @@ def scan_blob_file(
     2. ERROR (scanner error or daemon unreachable, fail-closed)
     3. PASS (all executed engines passed)
     """
-    verdicts = scan_file_all_engines(file_path, use_clamav=use_clamav)
+    verdicts = scan_file_all_engines(
+        file_path,
+        use_clamav=use_clamav,
+        declared_filename=declared_filename,
+    )
 
     # Any detection immediately fails
     for v in verdicts:

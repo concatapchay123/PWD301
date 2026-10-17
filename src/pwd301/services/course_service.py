@@ -142,8 +142,10 @@ def _normalize_and_validate_slos(val: Any) -> str | None:
         if not val_str:
             return None
         if val_str.startswith("[") and val_str.endswith("]"):
-            with contextlib.suppress(Exception):
+            try:
                 raw_list = json.loads(val_str)
+            except Exception:
+                pass
         else:
             return val_str
     if isinstance(raw_list, list):
@@ -163,10 +165,10 @@ def _normalize_and_validate_slos(val: Any) -> str | None:
                                 f"Trọng số của chuẩn đầu ra '{title or 'SLO'}' không hợp lệ ({raw_weight}). Trọng số phải nằm trong khoảng từ 0% đến 100%."
                             )
                         clean_weight = f"{int(w_num)}%" if w_num.is_integer() else f"{w_num:.1f}%"
-                    except ValueError:
+                    except ValueError as err:
                         raise CourseValidationError(
                             f"Trọng số của chuẩn đầu ra '{title or 'SLO'}' phải là số phần trăm hợp lệ (0-100%)."
-                        )
+                        ) from err
                 normalized.append({
                     "title": title or "Chuẩn đầu ra môn học",
                     "description": desc,

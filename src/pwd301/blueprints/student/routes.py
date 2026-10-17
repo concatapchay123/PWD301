@@ -284,10 +284,33 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
             cleaned_markdown = re.sub(
                 r"<!--\s*video_url:\s*(\S+?)\s*-->", "", cleaned_markdown
             ).strip()
+    if not video_url and getattr(les, "video_url", None):
+        video_url = les.video_url
+    if not video_url and getattr(les, "primary_video_file_asset", None):
+        video_url = f"/api/files/{les.primary_video_file_asset.public_id}/stream"
     if video_url and video_url not in video_urls:
         video_urls.insert(0, video_url)
     if not video_url and video_urls:
         video_url = video_urls[0]
+
+    course_pub_id = les.course.public_id if les.course else ""
+    mapped_urls = []
+    for u in video_urls:
+        if "/api/files/" in u and course_pub_id:
+            m_f = re.search(r"/api/files/([a-zA-Z0-9_\-]+)", u)
+            if m_f:
+                asset_pub_id = m_f.group(1)
+                mapped_urls.append(
+                    f"/student/courses/{course_pub_id}/lessons/{les.public_id}/video/{asset_pub_id}/playlist.m3u8"
+                )
+                continue
+        mapped_urls.append(u)
+    video_urls = mapped_urls
+    if video_url and "/api/files/" in video_url and course_pub_id:
+        m_f = re.search(r"/api/files/([a-zA-Z0-9_\-]+)", video_url)
+        if m_f:
+            asset_pub_id = m_f.group(1)
+            video_url = f"/student/courses/{course_pub_id}/lessons/{les.public_id}/video/{asset_pub_id}/playlist.m3u8"
 
     res_list = []
     primary_video_asset_id = None
@@ -2621,7 +2644,7 @@ def _serve_lesson_hls(course_id, lesson_id, asset_id, kind, segment_name=None):
         if not playlist.is_file():
             source = materialize_authorized_blob(blob)
             transcode_to_encrypted_hls(str(source), str(directory), key_uri_relative="key")
-        token = generate_key_token(actor.id, course.id, lesson.id, expires_in=60)
+        token = generate_key_token(actor.id, course.id, lesson.id, expires_in=43_200)
         key_url = f"/student/courses/{course.public_id}/lessons/{lesson.public_id}/video/{asset.public_id}/key?token={token}"
         content = re.sub(
             r'URI="([^"]*key[^"]*)"', f'URI="{key_url}"', playlist.read_text(encoding="utf-8")
@@ -2651,7 +2674,7 @@ def _serve_lesson_hls(course_id, lesson_id, asset_id, kind, segment_name=None):
         segment = directory / segment_name
         if not segment.is_file():
             raise ResourceNotFoundError("Segment not found.")
-        response = send_file(segment, mimetype="video/MP2T", conditional=True)
+        response = send_file(segment.resolve(), mimetype="video/MP2T", conditional=True)
     response.headers["Cache-Control"] = "private, no-store"
     response.headers["X-Content-Type-Options"] = "nosniff"
     return response

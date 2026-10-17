@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import io
 import uuid
+
 import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
-from pwd301.models.course import Course, LearningUnit, Lesson
-from pwd301.models.file_import import FileAsset, LessonResource
+from pwd301.models.course import Course
+from pwd301.models.file_import import LessonResource
 from pwd301.models.identity import Role, User
 from pwd301.services.course_service import create_course
 from pwd301.services.file_service import (

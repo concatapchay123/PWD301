@@ -67,15 +67,17 @@ Never silently violate these rules:
 - Submit is idempotent.
 - Regrading is resumable/idempotent and preserves score history.
 - File security is fail-closed; quarantined/unscanned files are not student-accessible.
+- Strict 50MB Non-Archive Attachment Policy: Maximum 50 MB (50,000,000 bytes) for lesson attachments (Word: .docx/.doc, PDF: .pdf, Excel: .xlsx/.xls, PowerPoint: .pptx/.ppt, Text: .txt, AutoCAD: .dwg/.dxf, 3D models: .obj/.fbx/.stl/.blend/.step/.stp/.gltf/.glb). Archives (.zip, .rar, .7z, .tar, .gz, .bz2, .xz, .iso) are strictly forbidden with exact Vietnamese rejection message: "Hệ thống không hỗ trợ tệp nén (.zip, .rar, .7z...). Vui lòng tải trực tiếp tài liệu học tập (PDF, Word, Excel, CAD, 3D...)".
 - Current video limit is `< 1 GB`; older `~2 GB` references are superseded history only.
+- Video Protection & Clean Player Shell: Internal HLS fail-closed streaming with 12-hour (43,200s) DRM key token lifespan matching active student session. Clean Player Shell for YouTube and uploaded media. For YouTube hero/intro trailers: container scaling (-14% top, 128% height), click shield overlay (`pointer-events: none` on iframe with transparent overlay), autoplay, mute, loop, no controls/speed/volume/fullscreen buttons, zero YouTube branding. Visible watermark overlays on video and seek-lock indicator badges are eliminated from UI. Scrubbing frontier is enforced silently in the background; wall-clock pacing required. Independent per-video progress tracking via `MediaProgress`; 100% completion required across all videos in a lesson.
+- Sequential Lesson Completion Gate: Lessons evaluate blocks sequentially from top to bottom. Requirements: (1) Text content: dwell time >= 60 seconds; (2) Video content: 100% watched for all videos in the lesson; (3) Miniquiz: score >= instructor configured percentage (default 80%). The Next button is gray/disabled (`bg-slate-200 text-slate-400 cursor-not-allowed`, no lock icon, no "Đã khóa" text) when incomplete, and transitions to emerald green/enabled (`bg-emerald-600 text-white cursor-pointer`) when complete.
 - RAG retrieval must enforce authorization before retrieval; archived Courses are excluded.
 - Raw AI chat content is deleted after 5 minutes of inactivity, subject to the documented minimal-metadata rule.
 - Important Audit records are append-only; sensitive actions that require audit fail if the audit record cannot be reliably persisted.
 - Database restore must never automatically overwrite the live database; explicit Admin confirmation is required.
-- Video protection: internal HLS retains dynamic watermark and fail-closed streaming. YouTube uses the official IFrame API without obscuring overlays; PWD301 controls and identity stay outside the iframe. Completion requires server-clock pacing; client signals cannot prove attention.
 - Strict Lifetime Enrollment: Course enrollments are permanent. Self-unenrollment (leave course) is locked (POST `/student/courses/<id>/leave` returns HTTP 403). Instructors cannot remove students.
-- Unified Staging Draft: After first approval all legal instructor changes save into one existing `COURSE_VERSION_CHANGESET`/`DRAFT` aggregate (semantic `STAGING_DRAFT`), submitted once for atomic all-or-nothing Admin review. Piecemeal change requests are forbidden.
-- Anti-Leak Exam Security & Dynamic Progress: No right/wrong indicators during active exams; slots remain neutral; post-submission review renders granular green/red indicators with target answers. Course progress in student navigation is computed dynamically from actual completed lessons.
+- Unified Staging Draft: After first approval all legal instructor changes auto-save continuously into one existing `COURSE_VERSION_CHANGESET`/`DRAFT` aggregate (semantic `STAGING_DRAFT`), submitted once for atomic all-or-nothing Admin review. Manual per-lesson save buttons are eliminated. Changeset diff modal compares "Hiện tại" vs "Sau chỉnh sửa" with full operation details.
+- Anti-Leak Exam Security & Header Navigation: No right/wrong indicators during active exams; slots remain neutral; post-submission review renders granular green/red indicators with target answers. `#console-course-progress-badge` is removed from the header entirely; header displays only title and exit navigation. Course progress is displayed only in course outline/overview, eliminating obsolete header badge dynamic calculation.
 - Two-Tier Broadcast Notification RBAC: Only Primary Admin may broadcast any category; System Monitoring Admin is strictly locked to `SYSTEM` broadcasts only (backend 403 on other categories); all other sub-admins have broadcast UI hidden and API blocked.
 
 When in doubt, follow the canonical specification rather than this abbreviated list.
@@ -164,6 +166,7 @@ Dựa trên toàn bộ lịch sử 304 cuộc trò chuyện và 271 chỉ đạo
 
 ### 10.3. An toàn Kiểu Đóng (Fail-Closed) cho Tệp tin và Bài thi
 - Tệp tin đang chờ quét virus (`PENDING`), tệp bị cách ly (`QUARANTINED`), hoặc khi hệ thống ClamAV không khả dụng phải được xử lý theo nguyên tắc Fail-Closed: sinh viên hoàn toàn không thể tải hoặc xem tệp.
+- **Khóa trần 50MB và Cấm Tệp Nén (50MB Non-Archive Attachment Policy)**: Tài liệu đính kèm bài giảng (Word, PDF, Excel, PowerPoint, Text, AutoCAD `.dwg`/`.dxf`, 3D `.obj`/`.fbx`/`.stl`/`.blend`/`.step`/`.stp`/`.gltf`/`.glb`) giới hạn tối đa 50 MB (`50_000_000` bytes). Nghiêm cấm tuyệt đối các tệp nén (`.zip`, `.rar`, `.7z`, `.tar`, `.gz`, `.bz2`, `.xz`, `.iso`) với thông báo từ chối tiếng Việt chuẩn mực: `"Hệ thống không hỗ trợ tệp nén (.zip, .rar, .7z...). Vui lòng tải trực tiếp tài liệu học tập (PDF, Word, Excel, CAD, 3D...)"`.
 - Giới hạn video tải lên là `< 1 GB`.
 - Bài thi tuân thủ nghiêm ngặt Single Active Editing Lease (Algorithm 07): chỉ một tab được phép chỉnh sửa tại một thời điểm, submit là idempotent, autosave đảm bảo thứ tự gói tin.
 
@@ -186,14 +189,13 @@ Dựa trên toàn bộ lịch sử 304 cuộc trò chuyện và 271 chỉ đạo
 - **Cơ chế Bản nháp Lười (Lazy Draft Creation)**: Dữ liệu chỉ được phép tạo mới và ghi vào CSDL khi người dùng thực hiện một hành động chủ động rõ ràng (bấm nút "Lưu", "Xuất bản", hoặc kéo thả tệp tải lên bắt buộc phải có ID).
 - **Bảo toàn Ngăn xếp Lịch sử Trình duyệt (Clean History Stack)**: Khi một thực thể được tạo thành công từ giao diện `/new` và cần đồng bộ URL sang `/edit`, BẮT BUỘC sử dụng `window.history.replaceState` để thay thế mục lịch sử hiện tại. Nghiêm cấm gán `window.location.hash = ...` gây chèn thêm entry mới làm bẫy nút Quay lại (Browser Back) của người dùng.
  
-### 10.8. Bất biến Bản quyền Video & Tiến độ Zero-Trust (DRM & Anti-Tamper Invariants)
+### 10.8. Bất biến Bản quyền Video & Clean Player Shell (DRM & Clean Player Invariants)
 - **Cấm Tải Trực tiếp Video Thô**: Tuyệt đối cấm cung cấp URL tải trực tiếp file video bài học gốc (.mp4/.webm) cho học viên. Mọi video nội bộ phải được mã hóa phân đoạn HLS (AES-128) và cấp khóa thông qua token ngắn hạn gắn với phiên đăng nhập.
-- **YouTube Player Shell**: Dùng IFrame API chính thức, điều khiển PWD301 bên ngoài iframe. Không che logo, tiêu đề hoặc liên kết; không cam kết giấu 100% YouTube.
-- **Thủy ấn**: HLS nội bộ hiển thị watermark động; YouTube hiển thị định danh ngoài iframe và không tuyên bố là watermark gắn vào video.
-- **Client Armor**: HLS phát hiện xóa/ẩn watermark và dừng heartbeat; không dùng DevTools/blur như bằng chứng chắc chắn gian lận.
-- **Tiến độ Thời gian Thực Không Thể Nhảy Cóc (Wall-Clock Zero-Trust)**: Máy chủ chỉ công nhận hoàn thành bài học khi tích lũy đủ thời gian thực tế qua chuỗi nhịp tim (Heartbeat). Nghiêm cấm mọi logic tự động gán `seconds_spent = minimum_completion_seconds` chỉ vì client gửi `view_fraction >= 0.90`.
+- **YouTube Clean Player Shell**: Sử dụng kỹ thuật container che chắn/cắt viền thông minh (`overflow: hidden`, scaling + negative margins) kết hợp chặn toàn bộ sự kiện chuột trực tiếp trên iframe (`pointer-events: none`). Loại bỏ hoàn toàn logo YouTube, tiêu đề video, tên kênh, nút chia sẻ, gợi ý video ("More videos") và playlist của YouTube. Giao diện video YouTube phải sạch sẽ, tinh giản như video upload nội bộ.
+- **Triệt tiêu Watermark & Thông báo Gây Vướng**: Vô hiệu hóa khung watermark nổi nhảy múa (`Peppa Pig...`) trên video của học viên; loại bỏ hoàn toàn các banner cảnh báo màu đỏ/vàng ("Trusted YouTube duration...", "Không thể tải video...", banner bảo vệ bản quyền), nút "Thử Lưu Tiến Độ" và nút "Khóa tua nhanh".
+- **Tiến độ Thời gian Thực Không Thể Nhảy Cóc (Wall-Clock Zero-Trust)**: Máy chủ chỉ công nhận hoàn thành bài học khi tích lũy đủ thời gian thực tế qua chuỗi nhịp tim (Heartbeat). Giới hạn tua không vượt quá điểm đã học (frontier) được thực thi ngầm trên thanh trượt mà không hiển thị chữ/nút "Khóa tua nhanh" gây mất thẩm mỹ.
 
-### 10.9. Bất biến Tách rời Lưu trữ Đám mây & Khóa trần Phần cứng (Decoupled Cloud Storage & Hardware Hardening)
+### 10.9. Bất biến Tách rời Lưu trữ Đám mây & Khóa trần Phần hardware (Decoupled Cloud Storage & Hardware Hardening)
 - **Lưu trữ**: Video deployment dùng YouTube Unlisted. Tài liệu dùng Backblaze B2 private, quét fail-closed, URL tải ngắn hạn; vùng tạm local có giới hạn. Theo dõi chi phí egress thay vì cam kết miễn phí vô hạn.
 - **VPS 8 GB**: SQL Server Express container 2560 MiB/memorylimitmb 2048; ClamAV 3072 MiB; Web 600 MiB; Worker 300 MiB; proxy 128 MiB. Log rotation 10MB x 3; worker backoff tối đa 10s. Cấu hình cần kiểm chứng tải, không cam kết chống OOM tuyệt đối.
 
@@ -201,14 +203,16 @@ Dựa trên toàn bộ lịch sử 304 cuộc trò chuyện và 271 chỉ đạo
 - Ghi danh khóa học là tài sản vĩnh viễn gắn liền với tài khoản học viên. Tuyệt đối cấm tính năng tự rút khỏi khóa học (`POST /student/courses/<id>/leave` trả về HTTP 403 Forbidden).
 - Giảng viên hoàn toàn không có quyền xóa học viên ra khỏi khóa học. Chỉ duy nhất Admin chính có thẩm quyền đình chỉ hoặc xử lý kỷ luật học vụ.
 
-### 10.11. Bất biến Bản nháp Khóa học Tổng hợp Một Lần (Unified Staging Draft & Single Approval)
-- Mọi chỉnh sửa của giảng viên đối với khóa học đã từng được Admin duyệt, kể cả khóa đã công khai thiếu mốc duyệt (thông tin chung, ảnh bìa, chuẩn đầu ra, đề cương, bài học, tài liệu, quiz) bắt buộc phải tích lũy vào duy nhất 01 bản nháp (`CourseChangeRequest` loại `COURSE_VERSION_CHANGESET`, trạng thái `DRAFT`, tương đương `STAGING_DRAFT`).
-- Nghiêm cấm tạo các yêu cầu phê duyệt phân mảnh (`CourseChangeRequest`) riêng lẻ cho từng bài học gây quá tải cho quản trị viên. Toàn bộ thay đổi được gửi duyệt 01 lần và Admin phê duyệt All-or-Nothing trong 01 giao dịch CSDL nguyên khối.
+### 10.11. Bất biến Bản nháp Khóa học Tự Động Lưu Một Lần (Auto-Save Staging Draft & Single Approval)
+- Mọi chỉnh sửa của giảng viên đối với khóa học đã từng được Admin duyệt bắt buộc phải tích lũy vào duy nhất 01 bản nháp (`CourseChangeRequest` loại `COURSE_VERSION_CHANGESET`, trạng thái `DRAFT`, tương đương `STAGING_DRAFT`).
+- **Loại bỏ 2 nút Lưu bài giảng thủ công**: Soạn thảo bài giảng áp dụng cơ chế tự động lưu ngầm (Auto-save) sau 800ms khi gõ văn bản và lưu tức thì khi thay đổi cấu trúc block hoặc chuyển bài/chương.
+- **Xóa chương học an toàn**: Khi bấm Xóa chương, chương sẽ ẩn ngay khỏi cây đề cương, cascade ghi nhận lệnh xóa toàn bộ bài học con vào bản nháp, khóa tạo bài mới vào chương đã xóa, bảo toàn các thay đổi trước đó.
+- **Bảng đối chiếu "Hiện tại - Sau chỉnh sửa"**: Bảng "Xem thay đổi" (Diff Modal) chuẩn hóa 2 cột thành "Hiện tại" vs "Sau chỉnh sửa", phân tích và hiển thị đầy đủ mọi thay đổi về chương mục và bài giảng trong 5 phân nhóm học vụ.
 
-### 10.12. Bất biến Bảo mật Phòng thi & Tiến độ Động (Anti-Leak Exam Security & Dynamic Progress)
+### 10.12. Bất biến Bảo mật Phòng thi & Loại bỏ Huy hiệu Tiến độ Header (Anti-Leak Exam Security & Header Cleanup)
 - Triệt tiêu 100% việc rò rỉ đáp án đúng/sai khi học sinh đang trong phiên làm bài thi. Các ô kéo thả hoặc câu hỏi trắc nghiệm giữ màu trung tính cho đến khi nộp bài.
 - Trang xem lại kết quả sau nộp bài hiển thị chi tiết từng ô (xanh đúng / đỏ sai kèm đáp án chuẩn mực).
-- Tiến độ hoàn thành bài học và % tiến độ khóa học góc trên bên phải bắt buộc tính toán động từ dữ liệu bài học thực tế, cấm đọc các giá trị tĩnh giả lập (`100.00%`).
+- **Loại bỏ Huy hiệu Tiến độ trên Header**: Loại bỏ hoàn toàn huy hiệu `#console-course-progress-badge` khỏi thanh header điều hướng của học viên; header chỉ hiển thị tiêu đề và điều hướng thoát. Triệt tiêu yêu cầu tính toán tiến độ động trên header. Tiến độ học tập chỉ hiển thị tại trang tổng quan khóa học hoặc danh mục chương mục.
 
 ### 10.13. Bất biến Phân quyền Phát Thông báo 2 Cấp (Two-Tier Broadcast RBAC)
 - Quyền phát thông báo toàn trường được giới hạn nghiêm ngặt: Chỉ Admin chính (`ADMIN_PRIMARY`) được phát tất cả các danh mục.

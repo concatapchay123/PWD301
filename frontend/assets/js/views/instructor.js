@@ -15,25 +15,46 @@ class InstructorView {
     const existing = document.getElementById('pwd301-video-preview-modal');
     if (existing) existing.remove();
 
+    let cleanSrc = src;
+    let isYt = type === 'youtube';
+    if (src && (src.includes('youtube.com') || src.includes('youtu.be'))) {
+      isYt = true;
+      const ytMatch = src.match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/i);
+      if (ytMatch) {
+        cleanSrc = `https://www.youtube-nocookie.com/embed/${ytMatch[1]}?autoplay=1&rel=0&modestbranding=1&iv_load_policy=3&playsinline=1&enablejsapi=1`;
+      }
+    }
+
     const modal = document.createElement('div');
     modal.id = 'pwd301-video-preview-modal';
-    modal.className = 'fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn';
+    modal.className = 'fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn';
     modal.innerHTML = `
       <div class="w-full max-w-4xl bg-slate-900 border border-slate-700/80 rounded-2xl overflow-hidden shadow-2xl flex flex-col">
-        <div class="flex items-center justify-between px-5 py-3.5 border-b border-slate-800 bg-slate-900/90">
-          <div class="flex items-center gap-2 min-w-0">
-            <span class="material-symbols-outlined text-[20px] text-rose-500">play_circle</span>
+        <div class="flex items-center justify-between px-5 py-3.5 border-b border-slate-800 bg-slate-900/95">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span class="material-symbols-outlined text-[20px] ${isYt ? 'text-rose-500' : 'text-emerald-500'}">
+              ${isYt ? 'smart_display' : 'videocam'}
+            </span>
             <span class="text-sm font-bold text-white truncate">${UI.escapeHtml(title)}</span>
+            <span class="px-2 py-0.5 text-[10px] font-bold rounded-md uppercase tracking-wider font-mono ${isYt ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'}">
+              ${isYt ? 'YouTube Unlisted' : 'Video Bài Giảng'}
+            </span>
           </div>
-          <button type="button" class="btn-close-modal p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer" title="Đóng">
+          <button type="button" class="btn-close-modal p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer" title="Đóng (Esc)">
             <span class="material-symbols-outlined text-[20px]">close</span>
           </button>
         </div>
         <div class="aspect-video w-full bg-black flex items-center justify-center relative">
-          ${type === 'youtube' ? `
-            <iframe src="${src}" class="w-full h-full" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+          ${isYt ? `
+            <iframe
+              src="${cleanSrc}"
+              title="${UI.escapeHtml(title)}"
+              class="w-full h-full border-0"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowfullscreen
+            ></iframe>
           ` : `
-            <video src="${src}" controls autoplay playsinline class="w-full h-full object-contain"></video>
+            <video src="${cleanSrc}" controls autoplay playsinline class="w-full h-full object-contain"></video>
           `}
         </div>
       </div>
@@ -1184,10 +1205,14 @@ class InstructorView {
 
     // Refresh tree stats badge
     const updateTreeStats = () => {
+      const visibleUnits = currentUnits.filter(u => !u.pending_delete && !u.is_staged_delete);
       let totalL = 0;
-      currentUnits.forEach(u => { totalL += (u.lessons?.length || 0); });
+      visibleUnits.forEach(u => {
+        const visibleLessons = (u.lessons || []).filter(l => !l.pending_delete && !l.is_staged_delete);
+        totalL += visibleLessons.length;
+      });
       if (statsBadge) {
-        statsBadge.textContent = `${currentUnits.length} Chương • ${totalL} Bài giảng`;
+        statsBadge.textContent = `${visibleUnits.length} Chương • ${totalL} Bài giảng`;
       }
     };
 
@@ -1261,7 +1286,8 @@ class InstructorView {
     // Render tree function
     const renderTree = () => {
       updateTreeStats();
-      if (currentUnits.length === 0) {
+      const visibleUnits = currentUnits.filter(unit => !unit.pending_delete && !unit.is_staged_delete);
+      if (visibleUnits.length === 0) {
         treeContainer.innerHTML = `
           <div class="text-center py-8 px-4 bg-[#FAF9F5] dark:bg-[#18181b] rounded-xl border border-dashed border-[#E8E6DF] dark:border-[#2E2D2B]">
             <span class="material-symbols-outlined text-3xl text-[#8F8E8A] dark:text-[#6D6C68] mb-1">folder_open</span>
@@ -1282,7 +1308,7 @@ class InstructorView {
         return;
       }
 
-      treeContainer.innerHTML = currentUnits.map((unit, uIdx) => {
+      treeContainer.innerHTML = visibleUnits.map((unit, uIdx) => {
         const uId = unit.learning_unit_id || unit.id;
         const uLessons = unit.lessons || [];
         const isUnitActive = String(activeUnitId) === String(uId);
@@ -1578,20 +1604,14 @@ class InstructorView {
           if (!conf) return;
           try {
             const res = await ApiClient.deleteLearningUnit(uId);
-            if (res && (res.pending_approval || res.status === 202)) {
-              unit.pending_delete = true;
-              renderTree();
-              UI.showToast(res.message || 'Yêu cầu xóa Chương đã được gửi tới Quản trị viên để xét duyệt.', 'info');
-            } else {
-              currentUnits = currentUnits.filter(u => String(u.learning_unit_id || u.id) !== String(uId));
-              if (String(activeUnitId) === String(uId)) {
-                activeUnitId = currentUnits[0]?.learning_unit_id || currentUnits[0]?.id || null;
-                activeLessonId = null;
-              }
-              renderTree();
-              if (!activeLessonId) renderEmptyEditor();
-              UI.showToast('Đã xóa Chương bài học.', 'success');
+            currentUnits = currentUnits.filter(u => String(u.learning_unit_id || u.id) !== String(uId));
+            if (String(activeUnitId) === String(uId)) {
+              activeUnitId = currentUnits[0]?.learning_unit_id || currentUnits[0]?.id || null;
+              activeLessonId = null;
             }
+            renderTree();
+            if (!activeLessonId) renderEmptyEditor();
+            UI.showToast(res?.message || 'Đã lưu thay đổi xóa Chương vào bản nháp.', 'success');
           } catch (err) {
             UI.showToast(err.message || 'Lỗi xóa Chương.', 'error');
           }
@@ -2056,21 +2076,44 @@ class InstructorView {
 
     let selectLessonGen = 0;
     let isEditorDirty = false;
+    let performAutoSave = null;
     InstructorView.installLessonDepartureGuard(editorContainer, () => isEditorDirty);
-    editorContainer.addEventListener('input', () => { isEditorDirty = true; }, { passive: true });
-    editorContainer.addEventListener('change', () => { isEditorDirty = true; }, { passive: true });
-    editorContainer.addEventListener('paste', () => { isEditorDirty = true; }, { passive: true });
-    editorContainer.addEventListener('drop', () => { isEditorDirty = true; }, { passive: true });
+    editorContainer.addEventListener('input', () => {
+      isEditorDirty = true;
+      if (typeof performAutoSave === 'function') {
+        performAutoSave(false);
+      }
+    }, { passive: true });
+    editorContainer.addEventListener('change', () => {
+      isEditorDirty = true;
+      if (typeof performAutoSave === 'function') {
+        performAutoSave(false);
+      }
+    }, { passive: true });
+    editorContainer.addEventListener('paste', () => {
+      isEditorDirty = true;
+      if (typeof performAutoSave === 'function') {
+        performAutoSave(false);
+      }
+    }, { passive: true });
+    editorContainer.addEventListener('drop', () => {
+      isEditorDirty = true;
+      if (typeof performAutoSave === 'function') {
+        performAutoSave(false);
+      }
+    }, { passive: true });
 
     // Select and load lesson into editor
     const selectLesson = async (lessonId, unitId) => {
       if (activeLessonId && String(activeLessonId) !== String(lessonId) && isEditorDirty) {
-        const leave = await UI.confirm(
-          'Thay đổi chưa lưu',
-          'Bài giảng hiện tại có thay đổi chưa lưu. Bạn có muốn bỏ qua và chuyển sang bài học khác?',
-          'Bỏ thay đổi'
-        );
-        if (!leave) return;
+        if (typeof performAutoSave === 'function') {
+          await performAutoSave(true);
+        } else if (typeof window._triggerCurriculumAutoSave === 'function') {
+          await window._triggerCurriculumAutoSave(true);
+        } else if (typeof UI.confirm === 'function') {
+          const ok = await UI.confirm('Thay đổi chưa lưu', 'Bạn có thay đổi chưa lưu. Bạn có chắc chắn muốn chuyển bài học khác không?', 'Tiếp tục');
+          if (!ok) return;
+        }
       }
       const previousRouteLessonId = new URLSearchParams((window.location.hash || '').split('?')[1] || '').get('lesson_id');
       isEditorDirty = false;
@@ -2410,7 +2453,7 @@ class InstructorView {
                       <div
                         class="btn-open-video-preview relative aspect-video rounded-xl overflow-hidden bg-slate-900 border border-black/10 flex items-center justify-center cursor-pointer group/thumb"
                         data-video-type="youtube"
-                        data-video-src="${ytVideoId ? `https://www.youtube.com/embed/${ytVideoId}?autoplay=1` : UI.escapeHtml(block.url)}"
+                        data-video-src="${ytVideoId ? `https://www.youtube-nocookie.com/embed/${ytVideoId}?autoplay=1&rel=0&modestbranding=1&iv_load_policy=3&playsinline=1&enablejsapi=1` : UI.escapeHtml(block.url)}"
                         data-video-title="YouTube: ${UI.escapeHtml(block.url)}"
                         title="Bấm để xem trước video YouTube"
                       >
@@ -2531,8 +2574,8 @@ class InstructorView {
             ${!isLocked ? `
               <label class="inline-flex cursor-pointer items-center gap-2 px-3.5 py-2 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] hover:border-primary bg-white dark:bg-[#1E1E1E] text-xs font-bold text-[#222120] dark:text-[#EDEDEB] transition-colors shadow-2xs">
                 <span class="material-symbols-outlined text-[16px] text-primary">upload_file</span>
-                <span>Tải tệp đính kèm (PDF, DOCX, ZIP)</span>
-                <input type="file" class="block-file-input sr-only" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.zip" />
+                <span>Tải tệp đính kèm (PDF, Word, Excel, PPT, CAD, 3D...)</span>
+                <input type="file" class="block-file-input sr-only" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.dwg,.dxf,.obj,.fbx,.stl,.blend,.step,.stp,.gltf,.glb" />
               </label>
             ` : ''}
           </div>
@@ -2897,15 +2940,14 @@ class InstructorView {
                 <span>Xem trước</span>
               </button>
               ${!isLocked ? `
-                <button
-                  type="button"
-                  id="btn-save-lesson"
-                  class="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-                  title="Lưu lại bài giảng (Phím tắt: Ctrl+S)"
+                <span
+                  id="autosave-status-badge"
+                  class="px-3.5 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 text-xs font-bold border border-emerald-200 dark:border-emerald-800 flex items-center gap-1.5 transition-all shadow-2xs"
+                  title="Hệ thống tự động lưu mọi thay đổi vào bản nháp"
                 >
-                  <span class="material-symbols-outlined text-[16px]">save</span>
-                  <span id="save-btn-text">Lưu bài giảng</span>
-                </button>
+                  <span class="material-symbols-outlined text-[16px]">check_circle</span>
+                  <span id="autosave-text">Đã tự động lưu</span>
+                </span>
               ` : `
                 <span class="px-3.5 py-2 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-xs font-bold border border-blue-200 dark:border-blue-800 flex items-center gap-1.5">
                   <span class="material-symbols-outlined text-[16px]">lock</span>
@@ -3008,20 +3050,13 @@ class InstructorView {
             </div>
           ` : ''}
 
-          <!-- Bottom Save Shortcut Bar -->
+          <!-- Bottom Autosave Indicator -->
           ${!isLocked ? `
             <div class="pt-2 flex items-center justify-between">
-              <span class="text-[11px] text-[#8F8E8A] dark:text-[#6D6C68]">
-                Nhấn <strong>Ctrl + S</strong> bất cứ lúc nào để lưu bài giảng.
+              <span class="text-[11px] text-[#8F8E8A] dark:text-[#6D6C68] flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[15px] text-emerald-600 dark:text-emerald-400">cloud_done</span>
+                <span>Mọi thay đổi bài giảng được tự động lưu vào bản nháp. Nhấn <strong>Ctrl + S</strong> để lưu tức thì.</span>
               </span>
-              <button
-                type="button"
-                id="btn-save-lesson-bottom"
-                class="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-              >
-                <span class="material-symbols-outlined text-[16px]">save</span>
-                <span>Lưu bài giảng</span>
-              </button>
             </div>
           ` : ''}
         </div>
@@ -3032,112 +3067,177 @@ class InstructorView {
 
     // Wire listeners for editor pane
     const wireEditorListeners = () => {
-      // Save buttons
-      const saveBtn = editorContainer.querySelector('#btn-save-lesson');
-      const saveBtnBottom = editorContainer.querySelector('#btn-save-lesson-bottom');
-      const handleSave = async () => {
-        if (isSaving || isLocked) return;
-        scrapeBlocksFromDom();
-        if (!activeLessonMeta.title) {
-          UI.showToast('Vui lòng nhập tiêu đề bài giảng.', 'warning');
-          return;
-        }
-
-        isSaving = true;
-        const textSpan = editorContainer.querySelector('#save-btn-text');
-        if (textSpan) textSpan.textContent = 'Đang lưu...';
-        if (saveBtn) saveBtn.disabled = true;
-        if (saveBtnBottom) saveBtnBottom.disabled = true;
-
-        try {
-          const targetLessonId = activeLessonId;
-          const targetUnitId = activeUnitId;
-          const targetGen = selectLessonGen;
-          const payload = InstructorView.serializeBlocksToPayload(activeBlocks, activeLessonMeta);
-          const submittedSnapshot = JSON.stringify(payload);
-          const res = await ApiClient.updateLesson(targetLessonId, payload);
-
-          const newLessonId = res?.lesson?.lesson_id || res?.lesson_id || res?.id;
-          const resolvedId = newLessonId || targetLessonId;
-          if (newLessonId && String(newLessonId) !== String(targetLessonId)) {
-            if (String(activeLessonId) === String(targetLessonId) && selectLessonGen === targetGen) {
-              activeLessonId = newLessonId;
-              activeLessonMeta.status = res?.lesson?.status || res?.status || 'DRAFT';
-              InstructorView.replaceLessonEditorRoute(cId, targetLessonId, newLessonId);
-            }
-            const treeItem = treeContainer.querySelector(`.lesson-tree-item[data-lesson-id="${targetLessonId}"]`);
-            if (treeItem) {
-              treeItem.setAttribute('data-lesson-id', newLessonId);
-              treeItem.dataset.lessonId = newLessonId;
-            }
-            const unit = currentUnits.find(u => String(u.learning_unit_id || u.id) === String(targetUnitId));
-            if (unit && unit.lessons) {
-              const l = unit.lessons.find(item => String(item.lesson_id || item.id) === String(targetLessonId));
-              if (l) {
-                l.lesson_id = newLessonId;
-                l.id = newLessonId;
-                l.status = res?.lesson?.status || res?.status || 'DRAFT';
-              }
-            }
-          }
-
-          // Update memory state and tree DOM title for resolvedId
-          const unit = currentUnits.find(u => String(u.learning_unit_id || u.id) === String(targetUnitId));
-          if (unit && unit.lessons) {
-            const l = unit.lessons.find(item => String(item.lesson_id || item.id) === String(resolvedId));
-            if (l) {
-              l.title = res?.lesson?.title || payload.title;
-              if (l.status === 'PUBLISHED') l.status = 'MODIFIED';
-            }
-          }
-
-          const treeItem = treeContainer.querySelector(`.lesson-tree-item[data-lesson-id="${resolvedId}"]`);
-          if (treeItem) {
-            const titleEl = treeItem.querySelector('.lesson-item-title');
-            if (titleEl) titleEl.textContent = res?.lesson?.title || payload.title;
-          }
-
-          if (selectLessonGen === targetGen && String(activeLessonId) === String(resolvedId)) {
-            scrapeBlocksFromDom();
-            isEditorDirty = JSON.stringify(InstructorView.serializeBlocksToPayload(activeBlocks, activeLessonMeta)) !== submittedSnapshot;
-            if (String(resolvedId) !== String(targetLessonId)) {
-              const acknowledgedResources = (res?.lesson || res)?.resources || [];
-              for (const block of activeBlocks) {
-                for (const file of block.files || []) {
-                  const acknowledged = acknowledgedResources.find(resource =>
-                    (file.asset_id && String(resource.asset_id) === String(file.asset_id))
-                    || (file.resource_id && String(resource.resource_id) === String(file.resource_id)));
-                  if (acknowledged) Object.assign(file, acknowledged);
-                }
-              }
-              renderEditor();
-            }
-          }
-
-          if (res && (res.pending_approval || res.status === 202)) {
-            UI.showToast(res.message || 'Thay đổi đã được gửi duyệt tới Quản trị viên.', 'info');
-          } else {
-            UI.showToast(res?.message || 'Đã lưu bài giảng thành công!', 'success');
-          }
-
-          // Refresh changeset status immediately and dynamically update top staging draft action bar & notice banner
-          try {
-            await InstructorView.refreshChangesetStatus(cId, container);
-          } catch (csErr) {
-            console.warn('Silent changeset refresh failed:', csErr);
-          }
-        } catch (err) {
-          UI.showToast(err.message || 'Lỗi khi lưu bài giảng.', 'error');
-        } finally {
-          isSaving = false;
-          if (textSpan) textSpan.textContent = 'Lưu bài giảng';
-          if (saveBtn) saveBtn.disabled = false;
-          if (saveBtnBottom) saveBtnBottom.disabled = false;
+      // Autosave Status Badge Updater
+      const updateAutosaveBadge = (state, msg) => {
+        const badge = editorContainer.querySelector('#autosave-status-badge');
+        if (!badge) return;
+        if (state === 'saving') {
+          badge.className = 'px-3.5 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 text-xs font-bold border border-amber-200 dark:border-amber-800 flex items-center gap-1.5 transition-all shadow-2xs';
+          badge.innerHTML = '<span class="material-symbols-outlined text-[16px] animate-spin">sync</span><span>Đang lưu bài giảng...</span>';
+        } else if (state === 'saved') {
+          badge.className = 'px-3.5 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 text-xs font-bold border border-emerald-200 dark:border-emerald-800 flex items-center gap-1.5 transition-all shadow-2xs';
+          badge.innerHTML = '<span class="material-symbols-outlined text-[16px]">check_circle</span><span>Đã tự động lưu</span>';
+        } else if (state === 'error') {
+          badge.className = 'px-3.5 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 text-xs font-bold border border-rose-200 dark:border-rose-800 flex items-center gap-1.5 transition-all shadow-2xs';
+          badge.innerHTML = `<span class="material-symbols-outlined text-[16px]">error</span><span>${msg || 'Lỗi lưu bài giảng - Đang thử lại...'}</span>`;
         }
       };
 
-      if (saveBtn) saveBtn.onclick = handleSave;
-      if (saveBtnBottom) saveBtnBottom.onclick = handleSave;
+      let autosaveTimer = null;
+      const triggerAutoSave = async (immediate = false) => {
+        if (isSaving || isLocked) return;
+        if (autosaveTimer) {
+          clearTimeout(autosaveTimer);
+          autosaveTimer = null;
+        }
+
+        const executeSave = async () => {
+          if (isSaving || isLocked) return;
+          scrapeBlocksFromDom();
+          if (!activeLessonMeta.title || !activeLessonMeta.title.trim()) {
+            return;
+          }
+
+          isSaving = true;
+          updateAutosaveBadge('saving');
+
+          try {
+            const targetLessonId = activeLessonId;
+            const targetUnitId = activeUnitId;
+            const targetGen = selectLessonGen;
+            const payload = InstructorView.serializeBlocksToPayload(activeBlocks, activeLessonMeta);
+            const submittedSnapshot = JSON.stringify(payload);
+            const res = await ApiClient.updateLesson(targetLessonId, payload);
+
+            const newLessonId = res?.lesson?.lesson_id || res?.lesson_id || res?.id;
+            const resolvedId = newLessonId || targetLessonId;
+            if (newLessonId && String(newLessonId) !== String(targetLessonId)) {
+              if (String(activeLessonId) === String(targetLessonId) && selectLessonGen === targetGen) {
+                activeLessonId = newLessonId;
+                activeLessonMeta.status = res?.lesson?.status || res?.status || 'DRAFT';
+                InstructorView.replaceLessonEditorRoute(cId, targetLessonId, newLessonId);
+              }
+              const treeItem = treeContainer.querySelector(`.lesson-tree-item[data-lesson-id="${targetLessonId}"]`);
+              if (treeItem) {
+                treeItem.setAttribute('data-lesson-id', newLessonId);
+                treeItem.dataset.lessonId = newLessonId;
+              }
+              const unit = currentUnits.find(u => String(u.learning_unit_id || u.id) === String(targetUnitId));
+              if (unit && unit.lessons) {
+                const l = unit.lessons.find(item => String(item.lesson_id || item.id) === String(targetLessonId));
+                if (l) {
+                  l.lesson_id = newLessonId;
+                  l.id = newLessonId;
+                  l.status = res?.lesson?.status || res?.status || 'DRAFT';
+                }
+              }
+            }
+
+            // Update memory state and tree DOM title for resolvedId
+            const unit = currentUnits.find(u => String(u.learning_unit_id || u.id) === String(targetUnitId));
+            if (unit && unit.lessons) {
+              const l = unit.lessons.find(item => String(item.lesson_id || item.id) === String(resolvedId));
+              if (l) {
+                l.title = res?.lesson?.title || payload.title;
+                if (l.status === 'PUBLISHED') l.status = 'MODIFIED';
+              }
+            }
+
+            const treeItem = treeContainer.querySelector(`.lesson-tree-item[data-lesson-id="${resolvedId}"]`);
+            if (treeItem) {
+              const titleEl = treeItem.querySelector('.lesson-item-title');
+              if (titleEl) titleEl.textContent = res?.lesson?.title || payload.title;
+            }
+
+            if (selectLessonGen === targetGen && String(activeLessonId) === String(resolvedId)) {
+              scrapeBlocksFromDom();
+              isEditorDirty = JSON.stringify(InstructorView.serializeBlocksToPayload(activeBlocks, activeLessonMeta)) !== submittedSnapshot;
+            }
+
+            updateAutosaveBadge('saved');
+
+            // Refresh changeset status quietly
+            try {
+              await InstructorView.refreshChangesetStatus(cId, container);
+            } catch (csErr) {
+              console.warn('Silent changeset refresh failed:', csErr);
+            }
+          } catch (err) {
+            updateAutosaveBadge('error', 'Lỗi lưu bài giảng - Đang thử lại...');
+          } finally {
+            isSaving = false;
+          }
+        };
+
+        if (immediate) {
+          await executeSave();
+        } else {
+          autosaveTimer = setTimeout(executeSave, 800);
+        }
+      };
+
+      performAutoSave = triggerAutoSave;
+      window._triggerCurriculumAutoSave = triggerAutoSave;
+
+      // Wire debounce auto-save on title and summary
+      const titleInput = editorContainer.querySelector('#input-lesson-title');
+      const summaryInput = editorContainer.querySelector('#input-lesson-summary');
+      if (titleInput) {
+        titleInput.addEventListener('input', () => {
+          updateAutosaveBadge('saving');
+          triggerAutoSave();
+        });
+      }
+      if (summaryInput) {
+        summaryInput.addEventListener('input', () => {
+          updateAutosaveBadge('saving');
+          triggerAutoSave();
+        });
+      }
+
+      // Wire debounce auto-save on content fields
+      editorContainer.querySelectorAll('.word-editor-canvas, .block-text-textarea, .block-quiz-question, .block-quiz-opt-text, .block-quiz-blank, .block-quiz-pair-left, .block-quiz-pair-right, .block-video-url').forEach(el => {
+        el.addEventListener('input', () => {
+          updateAutosaveBadge('saving');
+          triggerAutoSave();
+        });
+      });
+
+      // Programmatic save compatibility
+      const saveBtn = editorContainer.querySelector('#btn-save-lesson');
+      if (saveBtn) {
+        saveBtn.onclick = async () => {
+          if (isSaving || isLocked) return;
+          scrapeBlocksFromDom();
+          const targetLessonId = activeLessonId;
+          const targetUnitId = activeUnitId;
+          const submittedTitle = activeLessonMeta?.title || 'Bài giảng';
+          const payload = InstructorView.serializeBlocksToPayload(activeBlocks, activeLessonMeta);
+          isSaving = true;
+          try {
+            const res = await ApiClient.updateLesson(cId, targetLessonId, payload);
+            if (String(activeLessonId) === String(targetLessonId)) {
+              const u = currentUnits.find(unit => unit.id === targetUnitId || unit.learning_unit_id === targetUnitId);
+              const l = u?.lessons?.find(les => les.id === targetLessonId || les.lesson_id === targetLessonId);
+              if (l) l.title = submittedTitle;
+              if (res?.lesson?.resources && Array.isArray(res.lesson.resources)) {
+                res.lesson.resources.forEach(r => {
+                  activeBlocks.forEach(b => {
+                    (b.files || []).forEach(f => {
+                      if (f.asset_id && f.asset_id === r.asset_id) {
+                        f.resource_id = r.resource_id;
+                      }
+                    });
+                  });
+                });
+                renderEditor();
+              }
+            }
+          } finally {
+            isSaving = false;
+          }
+        };
+      }
 
       // Add Block buttons
       const addTextBtn = editorContainer.querySelector('#btn-add-block-text');
@@ -3155,6 +3255,7 @@ class InstructorView {
           });
           isEditorDirty = true;
           renderEditor();
+          if (typeof triggerAutoSave === 'function') triggerAutoSave(true);
         };
       }
       if (addVidBtn) {
@@ -3168,6 +3269,7 @@ class InstructorView {
           });
           isEditorDirty = true;
           renderEditor();
+          if (typeof triggerAutoSave === 'function') triggerAutoSave(true);
         };
       }
       if (addDocBtn) {
@@ -3181,6 +3283,7 @@ class InstructorView {
           });
           isEditorDirty = true;
           renderEditor();
+          if (typeof triggerAutoSave === 'function') triggerAutoSave(true);
         };
       }
       if (addQuizBtn) {
@@ -3202,6 +3305,7 @@ class InstructorView {
           });
           isEditorDirty = true;
           renderEditor();
+          if (typeof triggerAutoSave === 'function') triggerAutoSave(true);
         };
       }
 
@@ -3216,7 +3320,8 @@ class InstructorView {
           if (activeBlocks[bIdx]) {
             activeBlocks[bIdx].q_type = newType;
             isEditorDirty = true;
-          renderEditor();
+            renderEditor();
+            if (typeof triggerAutoSave === 'function') triggerAutoSave(true);
           }
         };
       });
@@ -3231,7 +3336,8 @@ class InstructorView {
             if (!activeBlocks[bIdx].pairs) activeBlocks[bIdx].pairs = [];
             activeBlocks[bIdx].pairs.push({ left: '', right: '' });
             isEditorDirty = true;
-          renderEditor();
+            renderEditor();
+            if (typeof triggerAutoSave === 'function') triggerAutoSave(true);
           }
         };
       });
@@ -3246,7 +3352,8 @@ class InstructorView {
           if (activeBlocks[bIdx] && activeBlocks[bIdx].pairs) {
             activeBlocks[bIdx].pairs.splice(pIdx, 1);
             isEditorDirty = true;
-          renderEditor();
+            renderEditor();
+            if (typeof triggerAutoSave === 'function') triggerAutoSave(true);
           }
         };
       });
@@ -3262,6 +3369,7 @@ class InstructorView {
           activeBlocks[idx - 1] = temp;
           isEditorDirty = true;
           renderEditor();
+          if (typeof triggerAutoSave === 'function') triggerAutoSave(true);
         };
       });
 
@@ -3275,6 +3383,7 @@ class InstructorView {
           activeBlocks[idx + 1] = temp;
           isEditorDirty = true;
           renderEditor();
+          if (typeof triggerAutoSave === 'function') triggerAutoSave(true);
         };
       });
 
@@ -3301,14 +3410,14 @@ class InstructorView {
                     f.pending_delete = true;
                     UI.showToast(res.message || 'Yêu cầu gỡ tệp đính kèm đã gửi Quản trị viên để xét duyệt.', 'info');
                     isEditorDirty = true;
-          renderEditor();
+                    renderEditor();
                     return;
                   }
                   targetBlock.files = targetBlock.files.filter(file => file !== f);
                 } catch (e) {
                   if (ownsBlock()) {
                     isEditorDirty = true;
-          renderEditor();
+                    renderEditor();
                     UI.showToast(e.message || 'Không thể gỡ tệp đính kèm.', 'error');
                   }
                   return;
@@ -3319,8 +3428,8 @@ class InstructorView {
           if (ownsBlock()) {
             activeBlocks.splice(activeBlocks.indexOf(targetBlock), 1);
             isEditorDirty = true;
-            isEditorDirty = true;
-          renderEditor();
+            renderEditor();
+            if (typeof triggerAutoSave === 'function') triggerAutoSave(true);
           }
         };
       });
@@ -3329,7 +3438,7 @@ class InstructorView {
       editorContainer.querySelectorAll('.curriculum-block-card').forEach((card, bIdx) => {
         const fileInput = card.querySelector('.block-file-input');
         const cardBlockId = activeBlocks[bIdx]?.id;
-        const targetLessonId = activeLessonId;
+        let targetLessonId = activeLessonId;
         const uploadGen = selectLessonGen;
         const ownsCard = () => selectLessonGen === uploadGen && String(activeLessonId) === String(targetLessonId) && activeBlocks.some(block => block.id === cardBlockId);
         if (fileInput) {
@@ -3337,6 +3446,18 @@ class InstructorView {
             const file = e.target.files?.[0];
             e.target.value = '';
             if (!file || !ownsCard()) return;
+
+            const forbiddenArchiveExts = ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz', '.iso'];
+            const fileNameLower = (file.name || '').toLowerCase();
+            if (forbiddenArchiveExts.some(ext => fileNameLower.endsWith(ext))) {
+              UI.showToast("Hệ thống không hỗ trợ tệp nén (.zip, .rar, .7z...). Vui lòng tải trực tiếp tài liệu học tập (PDF, Word, Excel, CAD, 3D...)", 'error');
+              return;
+            }
+            if (file.size > 50_000_000) {
+              UI.showToast("Tệp vượt quá giới hạn 50 MB cho phép.", 'error');
+              return;
+            }
+
             scrapeBlocksFromDom();
             const formData = new FormData();
             formData.append('file', file);
@@ -3349,7 +3470,39 @@ class InstructorView {
                 UI.showToast(res.message || 'Tài liệu đã được gửi yêu cầu phê duyệt đính kèm (chờ Quản trị viên duyệt).', 'info');
                 return;
               }
-              if (selectLessonGen === uploadGen && String(activeLessonId) === String(targetLessonId)) {
+              const newLessonId = res?.lesson_id || res?.lesson?.lesson_id || res?.lesson?.id;
+              if (newLessonId && String(newLessonId) !== String(targetLessonId)) {
+                const oldLessonId = targetLessonId;
+                if (String(activeLessonId) === String(oldLessonId)) {
+                  activeLessonId = newLessonId;
+                  if (activeLessonMeta) activeLessonMeta.status = res?.lesson?.status || res?.status || 'DRAFT';
+                  InstructorView.replaceLessonEditorRoute(cId, oldLessonId, newLessonId);
+                }
+                targetLessonId = newLessonId;
+                const treeItem = treeContainer.querySelector(`.lesson-tree-item[data-lesson-id="${oldLessonId}"]`);
+                if (treeItem) {
+                  treeItem.setAttribute('data-lesson-id', newLessonId);
+                  treeItem.dataset.lessonId = newLessonId;
+                  treeItem.querySelectorAll('[data-lesson-id]').forEach(el => {
+                    el.setAttribute('data-lesson-id', newLessonId);
+                    el.dataset.lessonId = newLessonId;
+                  });
+                }
+                const unit = currentUnits.find(u => String(u.learning_unit_id || u.id) === String(activeUnitId));
+                if (unit && unit.lessons) {
+                  const l = unit.lessons.find(item => String(item.lesson_id || item.id) === String(oldLessonId));
+                  if (l) {
+                    l.lesson_id = newLessonId;
+                    l.id = newLessonId;
+                    l.status = res?.lesson?.status || res?.status || 'DRAFT';
+                  }
+                }
+                document.querySelectorAll(`[data-lesson-id="${oldLessonId}"]`).forEach(el => {
+                  el.setAttribute('data-lesson-id', newLessonId);
+                  el.dataset.lessonId = newLessonId;
+                });
+              }
+              if (selectLessonGen === uploadGen && (String(activeLessonId) === String(targetLessonId) || String(activeLessonId) === String(newLessonId))) {
                 const targetBlock = activeBlocks.find(b => b.id === cardBlockId);
                 if (targetBlock) {
                   if (!targetBlock.files) targetBlock.files = [];
@@ -3361,7 +3514,8 @@ class InstructorView {
                     file_size_bytes: file.size
                   });
                   isEditorDirty = true;
-          renderEditor();
+                  renderEditor();
+                  if (typeof triggerAutoSave === 'function') triggerAutoSave(true);
                 }
               }
               UI.showToast('Đã tải tài liệu thành công!', 'success');
@@ -3389,7 +3543,7 @@ class InstructorView {
                   if (ownsCard() && targetBlock.files.includes(targetFile)) {
                     targetFile.pending_delete = true;
                     isEditorDirty = true;
-          renderEditor();
+                    renderEditor();
                   }
                   return;
                 }
@@ -3397,10 +3551,10 @@ class InstructorView {
               if (ownsCard()) {
                 if (targetBlock?.files) {
                   targetBlock.files = targetBlock.files.filter(file => file !== targetFile);
-                  isEditorDirty = true;
                 }
                 isEditorDirty = true;
-          renderEditor();
+                renderEditor();
+                if (typeof triggerAutoSave === 'function') triggerAutoSave(true);
               }
               UI.showToast('Đã xóa tệp đính kèm.', 'success');
             } catch (err) {
@@ -3426,6 +3580,7 @@ class InstructorView {
             }
             isEditorDirty = true;
             renderEditor();
+            if (typeof triggerAutoSave === 'function') triggerAutoSave(true);
             UI.showToast('Đã thêm liên kết video thành công.', 'success');
           };
         }
@@ -3458,6 +3613,7 @@ class InstructorView {
             }
             isEditorDirty = true;
             renderEditor();
+            if (typeof triggerAutoSave === 'function') triggerAutoSave(true);
             UI.showToast('Đã xóa video YouTube.', 'success');
           };
         }
@@ -3518,6 +3674,38 @@ class InstructorView {
                 UI.showToast(res.message || 'Video đang chờ phê duyệt.', 'info');
                 continue;
               }
+              const newLessonId = res?.lesson_id || res?.lesson?.lesson_id || res?.lesson?.id;
+              if (newLessonId && String(newLessonId) !== String(targetLessonId)) {
+                const oldLessonId = targetLessonId;
+                if (String(activeLessonId) === String(oldLessonId)) {
+                  activeLessonId = newLessonId;
+                  if (activeLessonMeta) activeLessonMeta.status = res?.lesson?.status || res?.status || 'DRAFT';
+                  InstructorView.replaceLessonEditorRoute(cId, oldLessonId, newLessonId);
+                }
+                targetLessonId = newLessonId;
+                const treeItem = treeContainer.querySelector(`.lesson-tree-item[data-lesson-id="${oldLessonId}"]`);
+                if (treeItem) {
+                  treeItem.setAttribute('data-lesson-id', newLessonId);
+                  treeItem.dataset.lessonId = newLessonId;
+                  treeItem.querySelectorAll('[data-lesson-id]').forEach(el => {
+                    el.setAttribute('data-lesson-id', newLessonId);
+                    el.dataset.lessonId = newLessonId;
+                  });
+                }
+                const unit = currentUnits.find(u => String(u.learning_unit_id || u.id) === String(activeUnitId));
+                if (unit && unit.lessons) {
+                  const l = unit.lessons.find(item => String(item.lesson_id || item.id) === String(oldLessonId));
+                  if (l) {
+                    l.lesson_id = newLessonId;
+                    l.id = newLessonId;
+                    l.status = res?.lesson?.status || res?.status || 'DRAFT';
+                  }
+                }
+                document.querySelectorAll(`[data-lesson-id="${oldLessonId}"]`).forEach(el => {
+                  el.setAttribute('data-lesson-id', newLessonId);
+                  el.dataset.lessonId = newLessonId;
+                });
+              }
               if (ownsCard()) {
                 const targetBlock = activeBlocks.find(b => b.id === cardBlockId);
                 if (targetBlock) {
@@ -3546,7 +3734,8 @@ class InstructorView {
           if (uploadProgress) uploadProgress.classList.add('hidden');
           if (successCount > 0 && ownsCard()) {
             isEditorDirty = true;
-          renderEditor();
+            renderEditor();
+            if (typeof triggerAutoSave === 'function') triggerAutoSave(true);
             UI.showToast(`Đã tải lên ${successCount} video thành công!`, 'success');
           }
         };
@@ -3608,7 +3797,7 @@ class InstructorView {
                 if (res && (res.pending_approval || res.status === 202)) {
                   targetFile.pending_delete = true;
                   isEditorDirty = true;
-          renderEditor();
+                  renderEditor();
                   UI.showToast(res.message || 'Yêu cầu gỡ video đang chờ phê duyệt.', 'info');
                   return;
                 }
@@ -3616,8 +3805,8 @@ class InstructorView {
               if (!ownsCard()) return;
               targetBlock.files = targetBlock.files.filter(file => file !== targetFile);
               isEditorDirty = true;
-              isEditorDirty = true;
-          renderEditor();
+              renderEditor();
+              if (typeof triggerAutoSave === 'function') triggerAutoSave(true);
               UI.showToast('Đã xóa video bài giảng.', 'success');
             } catch (err) {
               UI.showToast(err.message || 'Lỗi xóa video bài giảng.', 'error');
@@ -3646,7 +3835,7 @@ class InstructorView {
       editorContainer.querySelectorAll('.btn-save-single-quiz').forEach(btn => {
         btn.onclick = async (e) => {
           e.stopPropagation();
-          await handleSave();
+          await triggerAutoSave(true);
         };
       });
 
@@ -3688,6 +3877,7 @@ class InstructorView {
                 targetBlock.image_url = re.target.result;
                 isEditorDirty = true;
                 renderEditor();
+                if (typeof triggerAutoSave === 'function') triggerAutoSave(true);
               }
             };
             reader.readAsDataURL(file);
@@ -3712,6 +3902,7 @@ class InstructorView {
                       targetBlock.image_url = re.target.result;
                       isEditorDirty = true;
                       renderEditor();
+                      if (typeof triggerAutoSave === 'function') triggerAutoSave(true);
                       UI.showToast('Đã dán ảnh minh họa vào câu hỏi!', 'success');
                     }
                   };
@@ -3731,7 +3922,8 @@ class InstructorView {
               activeBlocks[bIdx].image_url = '';
               activeBlocks[bIdx].question_image_url = '';
               isEditorDirty = true;
-          renderEditor();
+              renderEditor();
+              if (typeof triggerAutoSave === 'function') triggerAutoSave(true);
             }
           };
         }
@@ -3754,6 +3946,7 @@ class InstructorView {
                 targetBlock.option_images[oIdx] = re.target.result;
                 isEditorDirty = true;
                 renderEditor();
+                if (typeof triggerAutoSave === 'function') triggerAutoSave(true);
               }
             };
             reader.readAsDataURL(file);
@@ -3781,6 +3974,7 @@ class InstructorView {
                       targetBlock.option_images[oIdx] = re.target.result;
                       isEditorDirty = true;
                       renderEditor();
+                      if (typeof triggerAutoSave === 'function') triggerAutoSave(true);
                       UI.showToast(`Đã dán ảnh cho phương án ${String.fromCharCode(65 + oIdx)}!`, 'success');
                     }
                   };
@@ -3800,7 +3994,8 @@ class InstructorView {
             if (activeBlocks[bIdx] && activeBlocks[bIdx].option_images) {
               activeBlocks[bIdx].option_images[oIdx] = '';
               isEditorDirty = true;
-          renderEditor();
+              renderEditor();
+              if (typeof triggerAutoSave === 'function') triggerAutoSave(true);
             }
           };
         });
@@ -3815,8 +4010,9 @@ class InstructorView {
         const activeRoot = document.getElementById('curriculum-active-editor-root');
         if (activeRoot) {
           e.preventDefault();
-          const saveBtn = activeRoot.querySelector('#btn-save-lesson');
-          if (saveBtn) saveBtn.click();
+          if (typeof window._triggerCurriculumAutoSave === 'function') {
+            window._triggerCurriculumAutoSave(true);
+          }
         }
       }
     };
@@ -4955,29 +5151,63 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
       let actionBtn = '';
       if (!isPassed) {
         if (item.id === 'cover_image') {
-          actionBtn = `<button type="button" id="chk-act-cover" class="px-2.5 py-1 text-xs font-semibold rounded-lg bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border border-amber-500/30 flex items-center gap-1 transition-colors"><span class="material-symbols-outlined text-[14px]">image</span>Tải ảnh bìa</button>`;
-        } else if (item.id === 'intro_video' || item.id === 'course_info') {
-          actionBtn = `<button type="button" id="chk-act-landing" class="px-2.5 py-1 text-xs font-semibold rounded-lg bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 border border-indigo-500/30 flex items-center gap-1 transition-colors"><span class="material-symbols-outlined text-[14px]">edit_note</span>Sửa thông tin</button>`;
+          actionBtn = `<button type="button" id="chk-act-cover" class="px-2.5 py-1 text-xs font-semibold rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 flex items-center gap-1 transition-colors"><span class="material-symbols-outlined text-[14px]">image</span>Tải ảnh bìa</button>`;
+        } else if (item.id === 'intro_video') {
+          actionBtn = `<button type="button" id="chk-act-landing" class="px-2.5 py-1 text-xs font-semibold rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1 transition-colors"><span class="material-symbols-outlined text-[14px]">edit_note</span>Sửa video</button>`;
+        } else if (item.id === 'course_info') {
+          const descSub = item.sub_items?.find(s => s.id === 'description');
+          const loSub = item.sub_items?.find(s => s.id === 'learning_objectives');
+          const btns = [];
+          if (descSub && !descSub.passed) {
+            btns.push(`<button type="button" class="chk-act-landing-sub px-2.5 py-1 text-xs font-semibold rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1 transition-colors" data-tab="overview"><span class="material-symbols-outlined text-[14px]">edit_note</span>Sửa mô tả</button>`);
+          }
+          if (loSub && !loSub.passed) {
+            btns.push(`<button type="button" class="chk-act-landing-sub px-2.5 py-1 text-xs font-semibold rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1 transition-colors" data-tab="curriculum-slos"><span class="material-symbols-outlined text-[14px]">verified</span>Sửa SLO</button>`);
+          }
+          if (btns.length === 0) {
+            btns.push(`<button type="button" id="chk-act-landing" class="px-2.5 py-1 text-xs font-semibold rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1 transition-colors"><span class="material-symbols-outlined text-[14px]">edit_note</span>Sửa thông tin</button>`);
+          }
+          actionBtn = `<div class="flex flex-col gap-1.5 items-end">${btns.join('')}</div>`;
         } else if (item.id === 'academic_settings') {
-          actionBtn = `<button type="button" id="chk-act-academic" class="px-2.5 py-1 text-xs font-semibold rounded-lg bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 border border-sky-500/30 flex items-center gap-1 transition-colors"><span class="material-symbols-outlined text-[14px]">school</span>Cài đặt học vụ</button>`;
+          actionBtn = `<button type="button" id="chk-act-academic" class="px-2.5 py-1 text-xs font-semibold rounded-lg bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/40 dark:hover:bg-sky-900/40 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800 flex items-center gap-1 transition-colors"><span class="material-symbols-outlined text-[14px]">school</span>Cài đặt học vụ</button>`;
         } else if (item.id === 'curriculum') {
-          actionBtn = `<button type="button" id="chk-act-curriculum" class="px-2.5 py-1 text-xs font-semibold rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/30 flex items-center gap-1 transition-colors"><span class="material-symbols-outlined text-[14px]">add_circle</span>Thêm bài giảng</button>`;
+          actionBtn = `<button type="button" id="chk-act-curriculum" class="px-2.5 py-1 text-xs font-semibold rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1 transition-colors"><span class="material-symbols-outlined text-[14px]">add_circle</span>Thêm bài giảng</button>`;
         }
       }
 
+      let subItemsHtml = '';
+      if (item.sub_items && item.sub_items.length > 0) {
+        subItemsHtml = `
+          <div class="mt-2.5 pt-2 border-t border-slate-200 dark:border-slate-700/60 space-y-1.5">
+            ${item.sub_items.map(sub => `
+              <div class="flex items-center justify-between text-[11px] gap-2 py-0.5">
+                <span class="flex items-center gap-1.5 ${sub.passed ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}">
+                  <span class="material-symbols-outlined text-[15px]">${sub.passed ? 'check_circle' : 'cancel'}</span>
+                  <span class="font-medium text-slate-800 dark:text-slate-200">${UI.escapeHtml(sub.title)}</span>
+                </span>
+                <span class="px-1.5 py-0.5 text-[9px] font-bold rounded ${sub.passed ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' : 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800'}">
+                  ${sub.passed ? 'ĐẠT' : 'CHƯA ĐẠT'}
+                </span>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+
       return `
-        <div class="p-3.5 rounded-xl border ${isPassed ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-rose-500/20 bg-rose-500/5'} flex items-start gap-3 transition-colors">
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${isPassed ? 'bg-emerald-500/15 text-emerald-400' : 'bg-rose-500/15 text-rose-400'}">
+        <div class="p-3.5 rounded-xl border ${isPassed ? 'border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/40 dark:bg-emerald-950/20' : 'border-rose-200 dark:border-rose-900/40 bg-rose-50/40 dark:bg-rose-950/20'} flex items-start gap-3 transition-colors">
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${isPassed ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' : 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300'}">
             <span class="material-symbols-outlined text-[18px]">${isPassed ? 'check_circle' : 'cancel'}</span>
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center justify-between gap-2 flex-wrap">
-              <h4 class="text-xs font-bold text-slate-200">${idx + 1}. ${UI.escapeHtml(item.title)}</h4>
-              <span class="px-2 py-0.5 text-[10px] font-bold rounded-full ${isPassed ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/15 text-rose-300 border border-rose-500/30'}">
+              <h4 class="text-xs font-bold text-slate-900 dark:text-slate-100">${idx + 1}. ${UI.escapeHtml(item.title)}</h4>
+              <span class="px-2 py-0.5 text-[10px] font-bold rounded-full ${isPassed ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-200 dark:border-rose-800'}">
                 ${isPassed ? 'ĐẠT TIÊU CHUẨN' : 'CHƯA ĐẠT'}
               </span>
             </div>
-            <p class="text-[11px] mt-1 ${isPassed ? 'text-slate-400' : 'text-rose-300'} leading-relaxed">${UI.escapeHtml(item.detail)}</p>
+            <p class="text-[11px] mt-1 ${isPassed ? 'text-slate-600 dark:text-slate-400' : 'text-rose-700 dark:text-rose-300'} leading-relaxed">${UI.escapeHtml(item.detail)}</p>
+            ${subItemsHtml}
           </div>
           ${actionBtn ? `<div class="shrink-0 self-center">${actionBtn}</div>` : ''}
         </div>
@@ -4986,16 +5216,16 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
 
     const statusBanner = isReady
       ? `
-        <div class="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 flex items-center gap-2.5 text-xs">
-          <span class="material-symbols-outlined text-emerald-400 text-[20px]">verified</span>
+        <div class="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200 flex items-center gap-2.5 text-xs">
+          <span class="material-symbols-outlined text-emerald-600 dark:text-emerald-400 text-[20px]">verified</span>
           <div>
             <span class="font-bold">Đã sẵn sàng xét duyệt!</span> Khóa học đã hoàn thành xuất sắc ${passedCount}/${totalCount} tiêu chuẩn chất lượng.
           </div>
         </div>
       `
       : `
-        <div class="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 flex items-center gap-2.5 text-xs">
-          <span class="material-symbols-outlined text-amber-400 text-[20px]">warning</span>
+        <div class="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 flex items-center gap-2.5 text-xs">
+          <span class="material-symbols-outlined text-amber-600 dark:text-amber-400 text-[20px]">warning</span>
           <div>
             <span class="font-bold">Chưa đủ điều kiện xét duyệt (${passedCount}/${totalCount} tiêu chuẩn).</span> Vui lòng bấm vào nút thao tác tương ứng để hoàn thiện các mục màu đỏ trước khi gửi duyệt xuất bản.
           </div>
@@ -5003,8 +5233,8 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
       `;
 
     const bodyHtml = `
-      <div class="space-y-4 text-slate-200">
-        <p class="text-xs text-slate-400 leading-relaxed">
+      <div class="space-y-4 text-slate-800 dark:text-slate-200">
+        <p class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
           Nhằm đảm bảo tính chuẩn hóa học liệu và trải nghiệm tối ưu cho người học, hệ thống áp dụng bộ tiêu chuẩn tiền kiểm định (Pre-flight Publish Checklist) bắt buộc trước khi khóa học được chuyển tiếp tới Ban Quản trị xét duyệt xuất bản.
         </p>
 
@@ -5018,10 +5248,10 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
 
     const footerHtml = `
       <div class="flex items-center justify-between w-full">
-        <button type="button" id="btn-checklist-cancel" class="px-4 py-2 text-xs font-semibold rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 transition-colors">
+        <button type="button" id="btn-checklist-cancel" class="px-4 py-2 text-xs font-semibold rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors border border-slate-200 dark:border-slate-700 cursor-pointer">
           Đóng
         </button>
-        <button type="button" id="btn-checklist-confirm" class="px-5 py-2 text-xs font-bold rounded-xl transition-all shadow-sm flex items-center gap-1.5 ${isReady ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer' : 'bg-slate-800 text-slate-500 border border-slate-700/50 cursor-not-allowed opacity-60'}" ${isReady ? '' : 'disabled'}>
+        <button type="button" id="btn-checklist-confirm" class="px-5 py-2 text-xs font-bold rounded-xl transition-all shadow-sm flex items-center gap-1.5 ${isReady ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer' : 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-300 dark:border-slate-700/50 cursor-not-allowed opacity-60'}" ${isReady ? '' : 'disabled'}>
           <span class="material-symbols-outlined text-[16px]">send</span>
           ${isReady ? 'Xác nhận gửi duyệt xuất bản' : 'Chưa đủ điều kiện xuất bản'}
         </button>
@@ -5046,6 +5276,14 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
     document.getElementById('chk-act-landing')?.addEventListener('click', () => {
       UI.closeModal();
       InstructorView.openCourseLandingEditorModal(course);
+    });
+
+    document.querySelectorAll('.chk-act-landing-sub').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const targetTab = btn.dataset.tab || 'overview';
+        UI.closeModal();
+        InstructorView.openCourseLandingEditorModal(course, targetTab);
+      });
     });
 
     document.getElementById('chk-act-academic')?.addEventListener('click', () => {
@@ -5327,13 +5565,13 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
               </div>
 
               <!-- Preview Box (Inline preview container) -->
-              <div id="unified-trailer-preview-box" class="${videoUrl ? '' : 'hidden'} p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
-                <div class="flex items-center justify-between text-xs text-slate-300">
-                  <span class="font-bold flex items-center gap-1.5 text-emerald-400">
+              <div id="unified-trailer-preview-box" class="${videoUrl ? '' : 'hidden'} p-3 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2">
+                <div class="flex items-center justify-between text-xs text-slate-700 dark:text-slate-300">
+                  <span class="font-bold flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
                     <span class="material-symbols-outlined text-[16px]">visibility</span>
                     <span>Xem trước Trailer</span>
                   </span>
-                  <button type="button" id="btn-close-trailer-preview" class="text-slate-400 hover:text-white text-xs cursor-pointer">
+                  <button type="button" id="btn-close-trailer-preview" class="text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white text-xs cursor-pointer">
                     Đóng preview
                   </button>
                 </div>
@@ -5688,7 +5926,33 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
         `;
         return;
       }
-      sloContainer.innerHTML = slos.map((s, idx) => `
+
+      let totalWeight = 0;
+      let hasInvalidWeight = false;
+      slos.forEach(s => {
+        if (s.weight && String(s.weight).trim()) {
+          const num = parseFloat(String(s.weight).replace('%', '').trim());
+          if (Number.isNaN(num) || num < 0 || num > 100) {
+            hasInvalidWeight = true;
+          } else {
+            totalWeight += num;
+          }
+        }
+      });
+
+      const weightStatusHtml = `
+        <div id="slo-weight-summary-bar" class="flex items-center justify-between p-3 rounded-xl border ${hasInvalidWeight ? 'border-rose-500/30 bg-rose-500/10 text-rose-400' : totalWeight === 100 ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' : 'border-amber-500/30 bg-amber-500/10 text-amber-400'} text-xs font-semibold">
+          <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-[18px]">${hasInvalidWeight ? 'error' : totalWeight === 100 ? 'check_circle' : 'info'}</span>
+            <span>${hasInvalidWeight ? 'Phát hiện tỷ trọng không hợp lệ (mỗi chuẩn đầu ra phải từ 0% đến 100%)' : totalWeight === 100 ? 'Tổng tỷ trọng chuẩn hóa đạt 100%' : 'Khuyến nghị chuẩn hóa tổng tỷ trọng các chuẩn đầu ra về 100%'}</span>
+          </div>
+          <span class="font-mono font-bold px-2.5 py-1 rounded-lg text-xs ${hasInvalidWeight ? 'bg-rose-500/20 text-rose-300' : totalWeight === 100 ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}">
+            Tổng tỷ trọng: ${totalWeight}%
+          </span>
+        </div>
+      `;
+
+      sloContainer.innerHTML = weightStatusHtml + slos.map((s, idx) => `
         <div class="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-2 slo-item-card" data-idx="${idx}">
           <div class="flex items-center justify-between gap-2">
             <div class="flex items-center gap-2 flex-1">
@@ -5764,8 +6028,13 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
               const formatted = `${num}%`;
               e.target.value = formatted;
               if (slos[idx]) slos[idx].weight = formatted;
+            } else if (!Number.isNaN(num) && num > 100) {
+              UI.showToast(`Trọng số không thể vượt quá 100% (${val}). Đã điều chỉnh về 100%.`, 'warning');
+              e.target.value = '100%';
+              if (slos[idx]) slos[idx].weight = '100%';
             }
           }
+          renderSLOs();
         };
       });
       sloContainer.querySelectorAll('.slo-desc-input').forEach(input => {
@@ -5813,12 +6082,13 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
 
       previewBox.classList.remove('hidden');
       const cleanUrl = url.trim();
-      const ytMatch = cleanUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/i);
+      const ytMatch = cleanUrl.match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/i);
 
       if (ytMatch) {
         playerContainer.innerHTML = `
           <iframe
-            src="https://www.youtube-nocookie.com/embed/${ytMatch[1]}?autoplay=1&rel=0"
+            src="https://www.youtube-nocookie.com/embed/${ytMatch[1]}?autoplay=1&rel=0&modestbranding=1&iv_load_policy=3&playsinline=1&enablejsapi=1"
+            title="Video Trailer Preview"
             class="w-full h-full border-0"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowfullscreen

@@ -147,7 +147,7 @@ test('categorized review shows both 16:9 covers and an explicit proposed removal
   const removalHtml = context.window.UI.renderCategorizedDiffHtml({
     governance_rules: { is_changed: true, current_cover_url: '/current.jpg', proposed_cover_url: null },
   });
-  assert.ok(removalHtml.includes('Ảnh bìa đề xuất'));
+  assert.ok(removalHtml.includes('Ảnh bìa sau chỉnh sửa'));
   assert.ok(removalHtml.includes('Không có ảnh bìa'));
 });
 

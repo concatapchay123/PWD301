@@ -1702,7 +1702,7 @@ class UI {
               <span class="material-symbols-outlined text-[18px] text-indigo-600">account_tree</span>
               <span>1. Cấu trúc Đề cương & Vị trí Bài học (${struct.length})</span>
             </div>
-            <span class="text-[10px] text-slate-400">So sánh 2 cột: Hiện tại (Published) vs Đề xuất (Proposed)</span>
+            <span class="text-[10px] text-slate-400">So sánh 2 cột: Hiện tại vs Sau chỉnh sửa</span>
           </div>
           ${struct.length === 0 ? `
             <div class="p-3 text-slate-400 italic text-[11px] bg-slate-50 dark:bg-slate-800/40 rounded-xl">Không có thay đổi về cấu trúc chương/bài.</div>
@@ -1720,11 +1720,11 @@ class UI {
                     <span class="text-[10px] text-slate-400 font-mono">${UI.escapeHtml(item.description || '')}</span>
                   </div>
                   ${renderTwoColDiff(
-                    'Hiện tại (Published / Live)',
+                    'Hiện tại',
                     item.change_type === 'ADDED'
                       ? '<span class="italic text-slate-400">(Bài học chưa có trong giáo trình chính thức)</span>'
                       : `<div>Chương: <strong class="line-through text-rose-600 dark:text-rose-400">${UI.escapeHtml(item.old_unit_title || item.title || 'Mặc định')}</strong></div>${item.old_position ? `<div class="text-[11px] text-slate-500 font-mono">Vị trí: #${item.old_position}</div>` : ''}`,
-                    'Đề xuất (Proposed / Draft)',
+                    'Sau chỉnh sửa',
                     item.change_type === 'REMOVED'
                       ? '<span class="italic text-rose-600 dark:text-rose-400 font-bold">(Đề xuất xóa khỏi giáo trình)</span>'
                       : `<div>Chương: <strong class="text-emerald-700 dark:text-emerald-300">${UI.escapeHtml(item.new_unit_title || item.old_unit_title || item.title || 'Mặc định')}</strong></div>${item.new_position ? `<div class="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 font-mono">Vị trí: #${item.new_position}</div>` : ''}`
@@ -1760,9 +1760,9 @@ class UI {
                     <span class="text-[10px] text-slate-400 font-mono">${UI.escapeHtml(item.description || '')}</span>
                   </div>
                   ${renderTwoColDiff(
-                    'Hiện tại (Published / Live)',
+                    'Hiện tại',
                     `${item.old_summary ? `<div class="italic text-slate-500">"${UI.escapeHtml(item.old_summary)}"</div>` : ''}${item.old_length !== undefined ? `<div class="text-[11px] text-slate-500">Độ dài văn bản: ${item.old_length} ký tự</div>` : '<span class="italic text-slate-400">(Nội dung ban đầu)</span>'}`,
-                    'Đề xuất (Proposed / Draft)',
+                    'Sau chỉnh sửa',
                     `${item.new_summary ? `<div class="font-medium text-slate-800 dark:text-slate-200">"${UI.escapeHtml(item.new_summary)}"</div>` : ''}${item.new_length !== undefined ? `<div class="text-[11px] font-bold text-emerald-700 dark:text-emerald-400">Độ dài văn bản mới: ${item.new_length} ký tự</div>` : '<span class="font-medium text-slate-800 dark:text-slate-200">' + UI.escapeHtml(item.description || '') + '</span>'}`
                   )}
                 </div>
@@ -1798,9 +1798,9 @@ class UI {
                     </div>
                   </div>
                   ${renderTwoColDiff(
-                    'Hiện tại (Published / Live)',
+                    'Hiện tại',
                     item.change_type === 'ADDED' ? '<span class="italic text-slate-400">(Chưa có câu hỏi tương tác này)</span>' : '<span class="italic text-slate-500">(Câu hỏi tương tác đang lưu hành)</span>',
-                    'Đề xuất (Proposed / Draft)',
+                    'Sau chỉnh sửa',
                     `<div class="font-medium text-slate-800 dark:text-slate-200">"${UI.escapeHtml(item.question)}"</div>`
                   )}
                 </div>
@@ -1834,9 +1834,9 @@ class UI {
                   </div>
                 </div>
                 ${renderTwoColDiff(
-                  'Hiện tại (Published / Live)',
+                  'Hiện tại',
                   item.change_type === 'ADDED' ? '<span class="italic text-slate-400">(Câu hỏi mới chưa có trong ngân hàng đề)</span>' : '<span class="italic text-slate-500">(Phiên bản câu hỏi hiện tại đang lưu hành)</span>',
-                  'Đề xuất (Proposed / Draft)',
+                  'Sau chỉnh sửa',
                   `<div class="font-medium text-slate-900 dark:text-slate-100">"${UI.escapeHtml(item.content || item.description || '')}"</div>${item.explanation ? `<div class="text-[11px] text-slate-500 italic mt-1">Giải thích: ${UI.escapeHtml(item.explanation)}</div>` : ''}`
                 )}
               </div>
@@ -1869,9 +1869,9 @@ class UI {
                     </div>
                   </div>
                   ${renderTwoColDiff(
-                    'Hiện tại (Published / Live)',
+                    'Hiện tại',
                     item.change_type === 'ADDED' ? '<span class="italic text-slate-400">(Bài kiểm tra mới)</span>' : '<span class="italic text-slate-500">(Phiên bản bài kiểm tra đang áp dụng)</span>',
-                    'Đề xuất (Proposed / Draft)',
+                    'Sau chỉnh sửa',
                     `<div class="font-bold text-slate-900 dark:text-slate-100">${UI.escapeHtml(item.title)}</div><div class="text-[11px] text-emerald-700 dark:text-emerald-400 font-mono mt-0.5">${item.time_limit_minutes ? `${item.time_limit_minutes} phút` : 'Không giới hạn thời gian'} · ${item.total_points || 10} điểm · ${item.assessment_type === 'FINAL_EXAM' ? 'Final Test' : 'Kiểm tra chương'}</div>`
                   )}
                 </div>
@@ -1902,9 +1902,9 @@ class UI {
                   </div>
                 </div>
                 ${renderTwoColDiff(
-                  'Hiện tại (Published / Live)',
+                  'Hiện tại',
                   item.change_type === 'ADDED' ? '<span class="italic text-slate-400">(Chưa có tệp tài liệu này trong môn học)</span>' : `<span class="text-slate-600 dark:text-slate-400">${UI.escapeHtml(item.file_name)}</span>`,
-                  'Đề xuất (Proposed / Draft)',
+                  'Sau chỉnh sửa',
                   `<div class="flex items-center justify-between gap-2"><span class="font-bold text-slate-900 dark:text-slate-100 truncate">${UI.escapeHtml(item.file_name)}</span><span class="font-mono text-emerald-700 dark:text-emerald-400 font-bold shrink-0">${item.file_size_bytes ? `${Math.round(item.file_size_bytes / 1024)} KB` : '0 KB'} · ${UI.escapeHtml(item.scan_status || 'CLEAN')}</span></div>`
                 )}
               </div>
@@ -1924,20 +1924,20 @@ class UI {
           </div>
           <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-850 overflow-hidden shadow-2xs">
             ${renderTwoColDiff(
-              'Môn tiên quyết hiện tại (Published / Live)',
+              'Hiện tại',
               currentPrereqs.length > 0 ? `
                 <div class="space-y-1.5">
                   ${currentPrereqs.map(cp => `
                     <div class="flex items-center gap-2">
                       <span class="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 font-mono font-bold text-[10px] text-slate-800 dark:text-slate-200">
-                        ${UI.escapeHtml(cp.course_code || 'MÃ MÔN')}
+                        [${UI.escapeHtml(cp.course_code || 'MÃ MÔN')}]
                       </span>
                       <span class="font-medium text-slate-800 dark:text-slate-200">${UI.escapeHtml(cp.title || '')}</span>
                     </div>
                   `).join('')}
                 </div>
               ` : '<span class="italic text-slate-400">Khóa học hiện tại không yêu cầu môn tiên quyết.</span>',
-              'Môn tiên quyết đề xuất (Proposed / Draft)',
+              'Sau chỉnh sửa',
               prereqs.length > 0 ? `
                 <div class="space-y-1.5">
                   ${prereqs.map(p => `
@@ -1946,7 +1946,7 @@ class UI {
                         ${badgeLabels[p.change_type] || p.change_type}
                       </span>
                       <span class="px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/80 font-mono font-bold text-[10px] text-emerald-800 dark:text-emerald-300">
-                        ${UI.escapeHtml(p.course_code || 'MÃ MÔN')}
+                        [${UI.escapeHtml(p.course_code || 'MÃ MÔN')}]
                       </span>
                       <span class="font-bold text-slate-900 dark:text-slate-100">${UI.escapeHtml(p.title || '')}</span>
                     </div>
@@ -1968,7 +1968,7 @@ class UI {
           </div>
           <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-850 overflow-hidden shadow-2xs space-y-3 p-4">
             ${renderTwoColDiff(
-              'Quy chế hiện tại (Published)',
+              'Hiện tại',
               `
                 <div class="space-y-1.5">
                   <div><span class="text-slate-400">GPA tối thiểu:</span> <strong>${gov.current?.minimum_grade_score != null ? `${gov.current.minimum_grade_score}/10` : 'Chưa đặt'}</strong></div>
@@ -1977,7 +1977,7 @@ class UI {
                   <div><span class="text-slate-400">Làm bài thi:</span> <strong>${gov.current?.require_required_assessments ? 'Có' : 'Không'}</strong></div>
                 </div>
               `,
-              'Quy chế đề xuất (Proposed)',
+              'Sau chỉnh sửa',
               `
                 <div class="space-y-1.5 font-medium">
                   <div><span class="text-slate-400">GPA tối thiểu:</span> <strong class="text-emerald-700 dark:text-emerald-300">${gov.proposed?.minimum_grade_score != null ? `${gov.proposed.minimum_grade_score}/10` : 'Chưa đặt'}</strong></div>
@@ -1992,12 +1992,15 @@ class UI {
               <div class="pt-3 border-t border-slate-100 dark:border-slate-800">
                 <div class="font-bold text-slate-700 dark:text-slate-200 text-[11px] mb-2">Thay đổi Thông tin Khóa học (Metadata):</div>
                 <div class="space-y-2">
-                  ${metaChanges.map(item => renderTwoColDiff(
-                    `Trường [${UI.escapeHtml(item.field)}] hiện tại`,
-                    `<span class="line-through text-rose-600 dark:text-rose-400">${UI.escapeHtml(String(item.old_value ?? '(Trống)'))}</span>`,
-                    `Trường [${UI.escapeHtml(item.field)}] đề xuất`,
-                    `<strong class="text-emerald-700 dark:text-emerald-300">${UI.escapeHtml(String(item.new_value ?? '(Trống)'))}</strong>`
-                  )).join('')}
+                  ${metaChanges.map(item => `
+                    <div class="text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">Trường: <span class="font-mono text-primary font-bold">[${UI.escapeHtml(item.field)}]</span></div>
+                    ${renderTwoColDiff(
+                      'Hiện tại',
+                      `<span class="line-through text-rose-600 dark:text-rose-400">${UI.escapeHtml(String(item.old_value ?? '(Trống)'))}</span>`,
+                      'Sau chỉnh sửa',
+                      `<strong class="text-emerald-700 dark:text-emerald-300">${UI.escapeHtml(String(item.new_value ?? '(Trống)'))}</strong>`
+                    )}
+                  `).join('')}
                 </div>
               </div>
             ` : ''}
@@ -2005,8 +2008,8 @@ class UI {
             ${(Object.hasOwn(gov, 'proposed_cover_url') || gov.cover_image_url) ? `
               <div class="pt-3 border-t border-slate-100 dark:border-slate-800 grid gap-4 lg:grid-cols-2">
                 ${(Object.hasOwn(gov, 'proposed_cover_url') ? [
-                  { label: 'Ảnh bìa hiện tại (Published)', url: gov.current_cover_url },
-                  { label: 'Ảnh bìa đề xuất (Proposed)', url: gov.proposed_cover_url }
+                  { label: 'Ảnh bìa hiện tại', url: gov.current_cover_url },
+                  { label: 'Ảnh bìa sau chỉnh sửa', url: gov.proposed_cover_url }
                 ] : [{ label: 'Ảnh bìa khóa học', url: gov.cover_image_url }]).map(cover => `
                   <figure class="min-w-0 space-y-2">
                     <figcaption class="text-xs font-semibold text-slate-700 dark:text-slate-200">${cover.label}</figcaption>

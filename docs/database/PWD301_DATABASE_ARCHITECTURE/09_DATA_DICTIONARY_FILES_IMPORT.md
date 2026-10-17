@@ -253,7 +253,7 @@ Untrusted until all checks pass; macro-enabled Office rejected; parser resource 
 ### Important invariants
 
 - Scan unavailable/fail không được ACTIVE
-- Video <1GB; image~10MB PDF/DOCX~50MB PPTX~100MB enforced service before processing
+- Video <1GB; image~10MB; non-archive attachments <= 50MB (50,000,000 bytes; Word, PDF, Excel, PPT, text, CAD, 3D); archives (.zip, .rar, .7z, .tar, .gz, .bz2, .xz, .iso) strictly forbidden; enforced by service before processing
 
 ---
 

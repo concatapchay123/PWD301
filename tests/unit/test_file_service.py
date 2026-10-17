@@ -199,6 +199,38 @@ def test_forbidden_file_extensions() -> None:
     validate_file_metadata("notes.docx")
     validate_file_metadata("slides.pptx")
     validate_file_metadata("video.mp4")
+    validate_file_metadata("cad.dwg")
+    validate_file_metadata("plan.dxf")
+    validate_file_metadata("sculpture.obj")
+    validate_file_metadata("model.fbx")
+    validate_file_metadata("part.stl")
+    validate_file_metadata("scene.blend")
+    validate_file_metadata("assembly.step")
+    validate_file_metadata("assembly.stp")
+    validate_file_metadata("mesh.gltf")
+    validate_file_metadata("mesh.glb")
+
+
+def test_reject_archive_extensions_with_exact_vietnamese_message() -> None:
+    """Canonical invariant: archives (.zip, .rar, .7z, etc.) are strictly rejected with exact Vietnamese message."""
+    expected_msg = (
+        "Hệ thống không hỗ trợ tệp nén (.zip, .rar, .7z...). Vui lòng tải trực tiếp tài liệu học tập (PDF, Word, Excel, CAD, 3D...)"
+    )
+    archive_files = [
+        "archive.zip",
+        "archive.rar",
+        "archive.7z",
+        "archive.tar",
+        "archive.gz",
+        "archive.bz2",
+        "archive.xz",
+        "archive.iso",
+        "data.tar.gz",
+    ]
+    for fname in archive_files:
+        with pytest.raises(FileValidationError) as exc_info:
+            validate_file_metadata(fname)
+        assert str(exc_info.value) == expected_msg
 
 
 def test_file_size_limits(app: Flask) -> None:
@@ -226,10 +258,19 @@ def test_file_size_limits(app: Flask) -> None:
     with pytest.raises(FileSizeLimitExceededError):
         check_file_size_limit(50_000_001, "syllabus.docx")
 
-    # PPTX limit: 100 MB
-    check_file_size_limit(100_000_000, "lecture.pptx")
+    # PPTX limit: 50 MB (strict 50MB attachment ceiling)
+    check_file_size_limit(50_000_000, "lecture.pptx")
     with pytest.raises(FileSizeLimitExceededError):
-        check_file_size_limit(100_000_001, "lecture.pptx")
+        check_file_size_limit(50_000_001, "lecture.pptx")
+
+    # CAD & 3D limit: 50 MB
+    check_file_size_limit(50_000_000, "blueprint.dwg")
+    with pytest.raises(FileSizeLimitExceededError):
+        check_file_size_limit(50_000_001, "blueprint.dwg")
+
+    check_file_size_limit(50_000_000, "character.blend")
+    with pytest.raises(FileSizeLimitExceededError):
+        check_file_size_limit(50_000_001, "character.blend")
 
     # 0-byte file rejected
     with pytest.raises(FileValidationError):
@@ -422,3 +463,150 @@ def test_adr002_file_asset_serialization(app: Flask, instructor: User, course: C
     assert "file_asset_id" not in serialized
     assert "storage_key" not in serialized
     assert "storage_path" not in serialized
+
+
+def test_store_file_stream_rejects_archives_with_exact_vietnamese_message(
+    app: Flask, instructor: User, course: Course
+) -> None:
+    """Verify store_file_stream blocks archive extensions with exact Vietnamese message."""
+    expected_msg = (
+        "Hệ thống không hỗ trợ tệp nén (.zip, .rar, .7z...). Vui lòng tải trực tiếp tài liệu học tập (PDF, Word, Excel, CAD, 3D...)"
+    )
+    for ext in [".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".iso"]:
+        with pytest.raises(FileValidationError) as exc_info:
+            store_file_stream(
+                actor=instructor,
+                course_id=course.public_id,
+                file_stream=io.BytesIO(b"Fake archive bytes"),
+                filename=f"lecture{ext}",
+                session=db.session,
+            )
+        assert str(exc_info.value) == expected_msg
+
+
+def test_store_file_stream_rejects_archive_magic_bytes(
+    app: Flask, instructor: User, course: Course
+) -> None:
+    """Verify archive magic bytes are detected and rejected even if file extension is masqueraded."""
+    expected_msg = (
+        "Hệ thống không hỗ trợ tệp nén (.zip, .rar, .7z...). Vui lòng tải trực tiếp tài liệu học tập (PDF, Word, Excel, CAD, 3D...)"
+    )
+    # Generic ZIP disguised as PDF
+    zip_bytes = io.BytesIO()
+    import zipfile
+
+    with zipfile.ZipFile(zip_bytes, "w") as zf:
+        zf.writestr("test.txt", b"secret")
+    zip_payload = zip_bytes.getvalue()
+
+    with pytest.raises(FileValidationError) as exc_info:
+        store_file_stream(
+            actor=instructor,
+            course_id=course.public_id,
+            file_stream=io.BytesIO(zip_payload),
+            filename="document.pdf",
+            session=db.session,
+        )
+    assert str(exc_info.value) == expected_msg
+
+    # Generic ZIP disguised as DOCX (no OOXML structure)
+    with pytest.raises(FileValidationError) as exc_info:
+        store_file_stream(
+            actor=instructor,
+            course_id=course.public_id,
+            file_stream=io.BytesIO(zip_payload),
+            filename="document.docx",
+            session=db.session,
+        )
+    assert str(exc_info.value) == expected_msg
+
+    # RAR disguised as CAD
+    rar_payload = b"Rar!\x1a\x07\x00\x00\x00\x00Payload"
+    with pytest.raises(FileValidationError) as exc_info:
+        store_file_stream(
+            actor=instructor,
+            course_id=course.public_id,
+            file_stream=io.BytesIO(rar_payload),
+            filename="blueprint.dwg",
+            session=db.session,
+        )
+    assert str(exc_info.value) == expected_msg
+
+    # 7z disguised as 3D OBJ
+    sevenz_payload = b"7z\xbc\xaf\x27\x1c\x00\x00Payload"
+    with pytest.raises(FileValidationError) as exc_info:
+        store_file_stream(
+            actor=instructor,
+            course_id=course.public_id,
+            file_stream=io.BytesIO(sevenz_payload),
+            filename="model.obj",
+            session=db.session,
+        )
+    assert str(exc_info.value) == expected_msg
+
+
+def test_store_file_stream_accepts_cad_and_3d_files(
+    app: Flask, instructor: User, course: Course
+) -> None:
+    """Verify AutoCAD and 3D files are successfully uploaded, categorized, and given proper MIME types."""
+    cad_3d_samples = [
+        ("plan.dwg", b"AC1032\x00\x00AutoCAD drawing payload", "application/acad"),
+        ("drawing.dxf", b"SECTION\n  2\nHEADER\n  0\nENDSEC\n  0\nEOF\n", "application/dxf"),
+        ("mesh.obj", b"v 0.0 0.0 0.0\nv 1.0 1.0 1.0\nf 1 2 3\n", "model/obj"),
+        ("model.fbx", b"Kaydara FBX Binary  \x00Payload", "application/octet-stream"),
+        ("part.stl", b"solid cube\n  facet normal 0 0 0\n  endfacet\nendsolid cube\n", "model/stl"),
+        ("scene.blend", b"BLENDER_v300ScenePayloadBytes", "application/x-blender"),
+        (
+            "step1.step",
+            b"ISO-10303-21;\nHEADER;\nENDSEC;\nDATA;\nENDSEC;\nEND-ISO-10303-21;\n",
+            "application/step",
+        ),
+        (
+            "step2.stp",
+            b"ISO-10303-21;\nHEADER;\nENDSEC;\nDATA;\nENDSEC;\nEND-ISO-10303-21;\n",
+            "application/step",
+        ),
+        ("model.gltf", b'{"asset": {"version": "2.0"}, "scenes": []}', "model/gltf+json"),
+        ("model.glb", b"glTF\x02\x00\x00\x00\x0c\x00\x00\x00BinaryPayload", "model/gltf-binary"),
+    ]
+
+    for filename, payload, expected_mime in cad_3d_samples:
+        asset = store_file_stream(
+            actor=instructor,
+            course_id=course.public_id,
+            file_stream=io.BytesIO(payload),
+            filename=filename,
+            session=db.session,
+        )
+        assert asset is not None
+        assert asset.status == "ACTIVE"
+        assert asset.current_revision is not None
+        assert asset.current_revision.detected_mime_type == expected_mime
+
+
+def test_store_file_stream_50mb_ceiling(
+    app: Flask, instructor: User, course: Course
+) -> None:
+    """Verify strict 50MB ceiling: 50,000,001 bytes is rejected with FileSizeLimitExceededError."""
+
+    class OversizedStream:
+        def __init__(self, size: int) -> None:
+            self.remaining = size
+
+        def read(self, n: int = -1) -> bytes:
+            if self.remaining <= 0:
+                return b""
+            chunk_size = min(n if n > 0 else 65536, self.remaining)
+            self.remaining -= chunk_size
+            return b"B" * chunk_size
+
+    # 50,000,001 bytes should be rejected
+    stream = OversizedStream(50_000_001)
+    with pytest.raises(FileSizeLimitExceededError):
+        store_file_stream(
+            actor=instructor,
+            course_id=course.public_id,
+            file_stream=stream,  # type: ignore[arg-type]
+            filename="oversized.pdf",
+            session=db.session,
+        )

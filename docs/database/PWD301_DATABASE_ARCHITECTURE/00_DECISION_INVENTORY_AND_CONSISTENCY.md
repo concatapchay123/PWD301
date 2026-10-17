@@ -81,9 +81,9 @@ Tài liệu này là bước kiểm tra trước schema. Nó phân biệt:
 
 - Upload vào quarantine; Student không access trước toàn bộ security check.
 - Malware scanner unavailable/error = fail-closed.
-- `.docm/.pptm` và macro-enabled Office bị từ chối.
-- Archive/Office/PDF parser có size/entry/ratio/time/memory/resource limits.
-- Initial limits: image ~10MB; PDF 50MB; DOCX 50MB; PPTX 100MB; **video <1GB**.
+- `.docm/.pptm` và macro-enabled Office bị từ chối. Nghiêm cấm hoàn toàn tệp nén archive (.zip, .rar, .7z, .tar, .gz, .bz2, .xz, .iso).
+- Office/PDF/CAD/3D parser có size/ratio/time/memory/resource limits.
+- Limits: image ~10MB; non-archive attachments <= 50MB (50,000,000 bytes: PDF, DOCX, XLSX, PPTX, TXT, CAD .dwg/.dxf, 3D .obj/.fbx/.stl/.blend/.step/.stp/.gltf/.glb); **video <1GB**.
 - SHA-256 dedup physical file; nhiều logical refs dùng chung blob.
 - Replacement chỉ active sau check; old version recovery ~30 ngày.
 - Direct storage path private; download qua authorized app route.

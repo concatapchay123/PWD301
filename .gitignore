@@ -79,6 +79,7 @@ _archives/
 # Agent worktrees and artifacts
 .worktrees/
 .agents/
+artifacts/
 prompts/
 skill-observations/
 reports/

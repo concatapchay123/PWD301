@@ -312,12 +312,16 @@ def _cleanup_lesson_resources(
         )
         if not other_active_ref:
             fa = sess.get(FileAsset, fa_id)
-            if fa and fa.deleted_at is None and fa.status != "TRASH":
-                if fa.asset_type not in ("COURSE_IMAGE", "QUESTION_IMAGE", "IMPORT_SOURCE"):
-                    fa.deleted_at = now
-                    fa.status = "TRASH"
-                    fa.deleted_by_user_id = actor.id
-                    fa.restore_until = now + datetime.timedelta(days=30)
+            if (
+                fa
+                and fa.deleted_at is None
+                and fa.status != "TRASH"
+                and fa.asset_type not in ("COURSE_IMAGE", "QUESTION_IMAGE", "IMPORT_SOURCE")
+            ):
+                fa.deleted_at = now
+                fa.status = "TRASH"
+                fa.deleted_by_user_id = actor.id
+                fa.restore_until = now + datetime.timedelta(days=30)
 
 
 def delete_learning_unit(
@@ -345,10 +349,37 @@ def delete_learning_unit(
         stage_course_operation(
             actor,
             course,
-            {"action": "DELETE_LEARNING_UNIT", "unit_id": str(unit.public_id)},
+            {
+                "action": "DELETE_LEARNING_UNIT",
+                "unit_id": str(unit.public_id),
+                "title": unit.title,
+            },
             key=f"unit:{unit.public_id}",
             session=sess,
         )
+        now = utc_now()
+        for lesson in unit.lessons:
+            if lesson.deleted_at is None and lesson.status != "TRASH":
+                if lesson.change_request_id is not None:
+                    lesson.deleted_at = now
+                    lesson.deleted_by_user_id = actor.id
+                    lesson.status = "TRASH"
+                    lesson.position = TRASH_POSITION_BASE + lesson.id
+                    lesson.updated_at = now
+                    _cleanup_lesson_resources(sess, lesson, actor, now)
+                else:
+                    stage_course_operation(
+                        actor,
+                        course,
+                        {
+                            "action": "DELETE_LESSON",
+                            "lesson_id": str(lesson.public_id),
+                            "title": lesson.title,
+                            "unit_id": str(unit.public_id),
+                        },
+                        key=f"lesson:{lesson.public_id}",
+                        session=sess,
+                    )
         if session is None:
             sess.commit()
         return True
@@ -359,6 +390,7 @@ def delete_learning_unit(
             lesson.deleted_at = now
             lesson.status = "TRASH"
             lesson.deleted_by_user_id = actor.id
+            lesson.position = TRASH_POSITION_BASE + lesson.id
             lesson.updated_at = now
             _cleanup_lesson_resources(sess, lesson, actor, now)
 
@@ -887,6 +919,11 @@ def create_lesson(
             or existing_unit.deleted_at is not None
         ):
             raise LessonValidationError("Learning unit does not belong to this course.")
+        if should_stage(actor, course, sess):
+            record = active_changeset(course.id, sess)
+            operations = payload_for(record).get("operations", {}) if record else {}
+            if operations.get(f"unit:{existing_unit.public_id}", {}).get("action") == "DELETE_LEARNING_UNIT":
+                raise LessonStateViolationError("Cannot add lesson to a unit scheduled for deletion.")
         unit = existing_unit
         child_count = (
             sess.query(sa.func.count(Lesson.id))
@@ -2002,7 +2039,7 @@ def record_lesson_progress(
         sec = int(seconds_increment)
     except (ValueError, TypeError):
         raise LessonValidationError("seconds_increment must be an integer.") from None
-    if sec < (0 if (server_verified or vf >= 0.95) else 1) or sec > MAX_PING_SECONDS:
+    if sec < (0 if (server_verified or vf >= 1.0) else 1) or sec > MAX_PING_SECONDS:
         raise LessonValidationError(
             f"seconds_increment must be between 1 and {MAX_PING_SECONDS} seconds."
         )
@@ -2169,7 +2206,7 @@ def record_lesson_progress(
         )
     )
     viewed_fraction_required = (
-        0.95 if requires_video else float(lesson.viewed_fraction_required or 0.0)
+        1.0 if requires_video else float(lesson.viewed_fraction_required or 0.0)
     )
 
     progress_snapshot: dict[str, Any] = {}
@@ -2187,8 +2224,8 @@ def record_lesson_progress(
     )
     if requires_video:
         fraction_ok = (
-            float(progress.max_view_fraction) >= 0.95
-            or vf >= 0.95
+            float(progress.max_view_fraction) >= 1.0
+            or vf >= 1.0
             or is_completed
         )
         criteria_met = fraction_ok and quiz_is_complete
@@ -2281,7 +2318,7 @@ def complete_lesson_mini_quiz(
 
     requires_video_watch = _lesson_requires_video_watch(lesson)
     video_view_fraction_required = (
-        0.90 if requires_video_watch else float(lesson.viewed_fraction_required)
+        1.0 if requires_video_watch else float(lesson.viewed_fraction_required)
     )
     existing_progress = get_lesson_progress(actor, lesson_id, session=sess)
     video_watch_complete = bool(
@@ -2362,6 +2399,9 @@ def complete_lesson_mini_quiz(
             sess.rollback()
             raise
     return progress
+
+
+submit_lesson_quiz = complete_lesson_mini_quiz
 
 
 def get_lesson_progress(
@@ -2793,6 +2833,22 @@ def _apply_sealed_course_changeset(actor, req, proposed, sess):
             update_course(
                 actor, course, proposed["course_metadata"], session=sess, is_approved_review=True
             )
+        # Sanitize any lingering soft-deleted lessons in this course that still hold active/published status
+        # to ensure they never collide with active lesson positions in uq_lessons_course_position_active
+        lingering = (
+            sess.query(Lesson)
+            .filter(
+                Lesson.course_id == course.id,
+                Lesson.deleted_at.isnot(None),
+                Lesson.status.in_(("ACTIVE", "PUBLISHED")),
+            )
+            .all()
+        )
+        for bad_l in lingering:
+            bad_l.status = "TRASH"
+            bad_l.position = TRASH_POSITION_BASE + bad_l.id
+        if lingering:
+            sess.flush()
         snapshots = proposed["submitted_snapshot"].get("lessons") or []
         submitted_ids = [item["id"] for item in snapshots]
         members = (
@@ -2991,6 +3047,7 @@ def _apply_sealed_course_changeset(actor, req, proposed, sess):
         sess.flush()
         for index, lesson in enumerate(remaining, 1):
             lesson.position = index
+        sess.flush()
         req.status = "APPROVED"
         req.reviewed_by_user_id = actor.id
         req.reviewed_at = now
@@ -3406,9 +3463,9 @@ def submit_course_changeset(actor, course_id, payload, session=None):
         raise LessonValidationError("Không có thay đổi để gửi xét duyệt.")
 
     record = record or working_changeset(actor, course, sess)
-    for l in staged:
-        if l.change_request_id != record.id:
-            l.change_request_id = record.id
+    for staged_lesson in staged:
+        if staged_lesson.change_request_id != record.id:
+            staged_lesson.change_request_id = record.id
     for a in staged_assessments:
         if a.change_request_id != record.id:
             a.change_request_id = record.id
@@ -4100,6 +4157,23 @@ def get_course_changeset_diff(
     del_set = {
         (item.get("lesson_id") if isinstance(item, dict) else item) for item in deleted_lessons
     }
+    for op_val in (p_data.get("operations") or {}).values():
+        if isinstance(op_val, dict) and op_val.get("action") == "DELETE_LESSON":
+            lid = op_val.get("lesson_id")
+            if lid:
+                del_set.add(str(lid))
+                if not any(str(item.get("lesson_id") if isinstance(item, dict) else item) == str(lid) for item in deleted_lessons):
+                    les_found = None
+                    try:
+                        les_found = sess.query(Lesson).filter(Lesson.public_id == uuid.UUID(str(lid))).first()
+                    except Exception:
+                        pass
+                    deleted_lessons.append(
+                        {
+                            "lesson_id": str(lid),
+                            "title": les_found.title if les_found else "Bài giảng",
+                        }
+                    )
 
     proposed_curriculum = []
     for les in live_lessons:
@@ -4156,6 +4230,47 @@ def get_course_changeset_diff(
             except Exception:
                 return []
         return []
+
+    # 0. Structure: Learning Unit operations (Chapters)
+    for op_val in (p_data.get("operations") or {}).values():
+        if not isinstance(op_val, dict):
+            continue
+        act = op_val.get("action")
+        if act == "DELETE_LEARNING_UNIT":
+            uid = op_val.get("unit_id")
+            unit_title = op_val.get("title") or "Chương học"
+            if uid and not op_val.get("title"):
+                try:
+                    u_obj = sess.query(LearningUnit).filter(LearningUnit.public_id == uuid.UUID(str(uid))).first()
+                    if u_obj:
+                        unit_title = u_obj.title
+                except Exception:
+                    pass
+            curriculum_structure.append(
+                {
+                    "change_type": "REMOVED",
+                    "title": f"Chương: {unit_title}",
+                    "description": f"Xóa toàn bộ chương '{unit_title}'",
+                }
+            )
+        elif act == "CREATE_LEARNING_UNIT":
+            u_title = op_val.get("title") or "Chương mới"
+            curriculum_structure.append(
+                {
+                    "change_type": "ADDED",
+                    "title": f"Chương: {u_title}",
+                    "description": f"Thêm chương mục mới: {u_title}",
+                }
+            )
+        elif act == "UPDATE_LEARNING_UNIT":
+            u_title = op_val.get("title") or "Chương mục"
+            curriculum_structure.append(
+                {
+                    "change_type": "MODIFIED",
+                    "title": f"Chương: {u_title}",
+                    "description": f"Đổi tên chương mục thành '{u_title}'",
+                }
+            )
 
     # 1. Structure: Added lessons
     for item in added_lessons:

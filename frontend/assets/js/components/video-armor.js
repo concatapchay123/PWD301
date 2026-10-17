@@ -62,26 +62,22 @@ class VideoArmor {
 
     Object.assign(el.style, {
       position: 'absolute',
-      top: '12%',
-      left: '12%',
-      zIndex: '9999',
-      pointerEvents: 'none',
-      userSelect: 'none',
-      webkitUserSelect: 'none',
+      top: '0',
+      left: '0',
+      width: '1px',
+      height: '1px',
+      overflow: 'hidden',
       display: 'block',
       visibility: 'visible',
-      opacity: '0.9',
-      color: '#f8fafc',
-      fontFamily: 'SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace',
-      fontSize: '12px',
-      letterSpacing: '0.5px',
-      padding: '6px 12px',
-      borderRadius: '6px',
-      backgroundColor: 'rgba(15, 23, 42, 0.92)',
-      border: '1px solid rgba(239, 68, 68, 0.5)',
-      boxShadow: '0 4px 14px rgba(0, 0, 0, 0.6)',
-      transition: 'top 2s ease, left 2s ease, opacity 0.3s ease',
-      whiteSpace: 'nowrap'
+      opacity: '0.001',
+      pointerEvents: 'none',
+      fontSize: '0px',
+      lineHeight: '0',
+      color: 'transparent',
+      backgroundColor: 'transparent',
+      border: 'none',
+      boxShadow: 'none',
+      zIndex: '1'
     });
 
     this.watermarkEl = el;
@@ -102,15 +98,8 @@ class VideoArmor {
   }
 
   _startRepositioning() {
-    const win = (typeof window !== 'undefined') ? window : global;
-    if (win && win.setInterval) {
-      this.repositionTimer = win.setInterval(() => {
-        this.reposition();
-      }, this.repositionIntervalMs);
-      if (this.repositionTimer && typeof this.repositionTimer.unref === 'function') {
-        this.repositionTimer.unref();
-      }
-    }
+    // Disabled jumping interval to eliminate distracting floating watermark across video
+    return;
   }
 
   _attachObserver() {
@@ -130,6 +119,7 @@ class VideoArmor {
   }
 
   _inspectMutations(mutations) {
+    if (this.options.silentWatermark) return;
     if (this.isBlackedOut) return;
     if (!this.container || this.container.isConnected === false) return;
     if (this.container.closest?.('.route-render-stage[aria-hidden="true"]')) {
@@ -137,18 +127,59 @@ class VideoArmor {
       return;
     }
 
+    // If the watermark parent element is temporarily detached (e.g. route transition or tab switch)
+    if (this.container.parentElement && this.container.parentElement.isConnected === false) {
+      return;
+    }
+
     let tampered = false;
 
     // Check if the watermark element was forcefully removed from DOM while container is active
     if (!this.watermarkEl || this.watermarkEl.parentElement !== this.container) {
-      tampered = true;
+      // Gracefully re-attach if watermark was temporarily shifted or detached during DOM lifecycle
+      if (this.watermarkEl && (this.container.contains?.(this.watermarkEl) || this.options.gracefulReattach)) {
+        try {
+          this.container.appendChild(this.watermarkEl);
+        } catch (e) {
+          tampered = true;
+        }
+      } else {
+        tampered = true;
+      }
     }
 
     let element = this.watermarkEl;
     while (element && !tampered) {
       const computed = typeof window !== 'undefined' && window.getComputedStyle ? window.getComputedStyle(element) : element.style;
-      if (element.hidden || computed?.display === 'none' || computed?.visibility === 'hidden' || computed?.visibility === 'collapse' || (computed?.opacity !== undefined && computed.opacity !== '' && Number(computed.opacity) <= 0)) {
-        tampered = true;
+      const isAnimating = Boolean(
+        element.style?.animation ||
+        element.style?.transition ||
+        (typeof element.className === 'string' && (element.className.includes('animate-') || element.className.includes('transition'))) ||
+        (computed?.animationName && computed.animationName !== 'none') ||
+        (computed?.transitionProperty && computed.transitionProperty !== 'none')
+      );
+
+      if (element === this.watermarkEl) {
+        // Guard against false-positive blackouts caused by sub-pixel rendering (e.g. opacity: 0.001 rounding to 0 in computedStyle)
+        const isInlineZero = element.style?.opacity !== undefined && element.style.opacity !== '' && Number(element.style.opacity) === 0;
+        const isComputedZero = computed?.opacity !== undefined && computed.opacity !== '' && Number(computed.opacity) === 0;
+        const isLegitSubPixel = element.style?.opacity === '0.001' || Number(element.style?.opacity) === 0.001;
+
+        if (element.hidden ||
+            computed?.display === 'none' ||
+            computed?.visibility === 'hidden' ||
+            computed?.visibility === 'collapse' ||
+            (isInlineZero) ||
+            (isComputedZero && !isLegitSubPixel && !isAnimating)) {
+          tampered = true;
+        }
+      } else {
+        // Ancestor element in player container: ignore 0 opacity during CSS animations / transitions
+        const isAncestorHidden = element.hidden || computed?.display === 'none' || computed?.visibility === 'hidden' || computed?.visibility === 'collapse';
+        const isAncestorZeroOpacity = computed?.opacity !== undefined && computed.opacity !== '' && Number(computed.opacity) <= 0;
+        if (isAncestorHidden || (isAncestorZeroOpacity && !isAnimating)) {
+          tampered = true;
+        }
       }
       if (element === this.container) break; // Confine DOM check to player container to avoid false positive from tab/route wrappers
       element = element.parentElement;
@@ -160,6 +191,13 @@ class VideoArmor {
   }
 
   triggerBlackout(reason = 'SECURITY_VIOLATION') {
+    if (this.options.silentWatermark) {
+      this.onSecurityViolation(reason, {
+        student: this.student,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
     if (this.isBlackedOut) return;
     this.isBlackedOut = true;
 
@@ -353,6 +391,7 @@ class VideoArmor {
   }
 
   _onWindowBlur() {
+    if (this.options.silentWatermark) return;
     // Pause playback when focus is lost, without disruptive lockout
     this._pauseAllMedia();
   }

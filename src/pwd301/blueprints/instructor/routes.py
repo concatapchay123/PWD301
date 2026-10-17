@@ -954,6 +954,26 @@ def validate_course_publish_readiness(
                 "title": "Thông tin khóa học & Chuẩn đầu ra (SLOs)",
                 "passed": has_info,
                 "detail": info_detail,
+                "sub_items": [
+                    {
+                        "id": "description",
+                        "title": "Mô tả khóa học (tối thiểu 20 ký tự thực tế)",
+                        "passed": has_valid_desc,
+                        "action_tab": "overview",
+                        "detail": "Đã có mô tả chi tiết đạt chuẩn."
+                        if has_valid_desc
+                        else "Cần tối thiểu 20 ký tự mô tả thực tế (không dùng nội dung mẫu) tại Tab 'Tổng quan'.",
+                    },
+                    {
+                        "id": "learning_objectives",
+                        "title": f"Chuẩn đầu ra môn học / SLOs ({len(lo_list)} mục)",
+                        "passed": has_lo,
+                        "action_tab": "curriculum-slos",
+                        "detail": f"Đã thiết lập {len(lo_list)} chuẩn đầu ra môn học."
+                        if has_lo
+                        else "Cần bổ sung ít nhất 1 chuẩn đầu ra (Learning Objective) tại Tab 'Đề cương & Chuẩn đầu ra'.",
+                    },
+                ],
             },
             {
                 "id": "academic_settings",
@@ -1909,8 +1929,15 @@ def update_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
             or position_changed
         )
 
+        has_resource_diff = False
+        if existing_draft:
+            live_resource_ids = {r.file_asset_id for r in lesson.resources}
+            draft_resource_ids = {r.file_asset_id for r in existing_draft.resources}
+            has_resource_diff = (live_resource_ids != draft_resource_ids)
+
         is_identical = (
-            not rules_changed
+            not has_resource_diff
+            and not rules_changed
             and new_title == orig_title
             and new_summary == orig_summary
             and new_content == orig_content
