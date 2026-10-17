@@ -2961,7 +2961,22 @@ def _apply_sealed_course_changeset(actor, req, proposed, sess):
             .all()
         )
         order = proposed.get("reorder_plan", {}).get("lessons_order") or []
-        ranks = {str(value): index for index, value in enumerate(order)}
+        ranks = {}
+        for index, value in enumerate(order):
+            if isinstance(value, dict):
+                lid = str(value.get("lesson_id") or value.get("id") or "")
+                pos = value.get("position", index)
+                ranks[lid] = pos if pos is not None else index
+            else:
+                ranks[str(value)] = index
+        for item in remaining:
+            if item.previous_lesson_id:
+                orig = sess.get(Lesson, item.previous_lesson_id)
+                if orig:
+                    if str(orig.public_id) in ranks and str(item.public_id) not in ranks:
+                        ranks[str(item.public_id)] = ranks[str(orig.public_id)]
+                    if str(orig.id) in ranks and str(item.id) not in ranks:
+                        ranks[str(item.id)] = ranks[str(orig.id)]
         remaining.sort(
             key=lambda item: (
                 ranks.get(
@@ -3002,6 +3017,24 @@ def approve_course_change_request(actor, change_request_id, review_reason=None, 
         )
     req.review_reason = review_reason
     _apply_sealed_course_changeset(actor, req, proposed, sess)
+    from pwd301.services.notification_service import dispatch_notification
+
+    approved_key = uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"pwd301:course-change:{req.id}:COURSE_CHANGE_APPROVED:{req.requested_by_user_id}",
+    )
+    with contextlib.suppress(Exception):
+        dispatch_notification(
+            recipient_user=req.requested_by_user_id,
+            event_type="COURSE_CHANGE_APPROVED",
+            title=f"Đợt cập nhật khóa học {req.course.course_code} đã được phê duyệt",
+            body=review_reason or "Đợt cập nhật khóa học của bạn đã được phê duyệt.",
+            action_url=f"#/instructor/courses/{req.course.public_id}/curriculum",
+            category="COURSE",
+            payload={"course_id": str(req.course.public_id), "change_request_id": req.id},
+            event_key=approved_key,
+            session=sess,
+        )
     if session is None:
         sess.commit()
     return req
@@ -3025,6 +3058,23 @@ def reject_course_change_request(actor, change_request_id, review_reason=None, s
     req.review_reason = review_reason
     req.reviewed_at = utc_now()
     record_change_request_review(sess, actor, req, "REJECTED")
+    from pwd301.services.notification_service import dispatch_notification
+
+    with contextlib.suppress(Exception):
+        dispatch_notification(
+            recipient_user=req.requested_by_user_id,
+            event_type="COURSE_CHANGE_REJECTED",
+            title=f"Đợt cập nhật khóa học {req.course.course_code} cần chỉnh sửa lại",
+            body=review_reason or "Yêu cầu cập nhật khóa học của bạn đã bị từ chối.",
+            action_url=f"#/instructor/courses/manage?id={req.course.public_id}",
+            category="COURSE",
+            payload={
+                "course_id": str(req.course.public_id),
+                "change_request_id": req.id,
+                "action_url": f"#/instructor/courses/manage?id={req.course.public_id}",
+            },
+            session=sess,
+        )
     sess.flush()
     successor_draft(actor, req, sess)
     if session is None:
@@ -3276,6 +3326,17 @@ def submit_course_changeset(actor, course_id, payload, session=None):
             key: value for key, value in item.items() if key not in ("id", "lesson_id", "target_id")
         }
         update_lesson(actor, lesson.id, changes, session=sess)
+    for item in payload.get("deleted_lessons") or []:
+        lid = item.get("lesson_id") if isinstance(item, dict) else item
+        if not lid:
+            raise LessonValidationError("Deleted lesson identity is required.")
+        trash_lesson(actor, lid, session=sess)
+    if payload.get("reorder_plan"):
+        try:
+            if payload.get("reorder_plan", {}).get("lessons_order"):
+                reorder_lessons(actor, course.id, payload["reorder_plan"]["lessons_order"], session=sess)
+        except LessonPositionConflictError:
+            stage_course_fields(actor, course, "reorder_plan", payload["reorder_plan"], session=sess)
     for item in payload.get("added_lessons") or []:
         if not isinstance(item, dict):
             raise LessonValidationError("Added lessons must be objects.")
@@ -3285,39 +3346,74 @@ def submit_course_changeset(actor, course_id, payload, session=None):
             raise LessonValidationError("Added lesson must belong to this course.")
         if existing is None:
             create_lesson(actor, course.id, item, session=sess)
-    for item in payload.get("deleted_lessons") or []:
-        lid = item.get("lesson_id") if isinstance(item, dict) else item
-        if not lid:
-            raise LessonValidationError("Deleted lesson identity is required.")
-        trash_lesson(actor, lid, session=sess)
-    if payload.get("reorder_plan", {}).get("lessons_order"):
-        reorder_lessons(actor, course.id, payload["reorder_plan"]["lessons_order"], session=sess)
     record = active_changeset(course.id, sess)
     staged = (
         sess.query(Lesson)
         .filter(
             Lesson.course_id == course.id,
-            Lesson.change_request_id == record.id if record else sa.false(),
+            sa.or_(
+                Lesson.change_request_id == record.id if record else sa.false(),
+                Lesson.change_request_id.is_(None),
+            ),
             Lesson.deleted_at.is_(None),
             Lesson.status.in_(("DRAFT", "PENDING_APPROVAL")),
         )
         .all()
     )
-    if record is None and not staged:
-        raise LessonValidationError("Không có thay đổi để gửi xét duyệt.")
-    record = record or working_changeset(actor, course, sess)
-    proposed = payload_for(record)
+
+    from pwd301.models.assessment import Assessment
+    from pwd301.models.question_bank import Question
+
+    staged_assessments = (
+        sess.query(Assessment)
+        .filter(
+            Assessment.course_id == course.id,
+            sa.or_(
+                Assessment.change_request_id == record.id if record else sa.false(),
+                Assessment.status == "DRAFT",
+            ),
+            Assessment.deleted_at.is_(None),
+        )
+        .all()
+    )
+    staged_questions = (
+        sess.query(Question)
+        .filter(
+            Question.course_id == course.id,
+            Question.change_request_id == record.id if record else sa.false(),
+            Question.deleted_at.is_(None),
+        )
+        .all()
+    )
+
+    proposed = payload_for(record) if record else {}
     meaningful = bool(
         staged
+        or staged_assessments
+        or staged_questions
         or proposed.get("course_metadata")
         or proposed.get("completion_rules")
         or proposed.get("prerequisites")
         or proposed.get("operations")
+        or proposed.get("deleted_lessons")
         or proposed.get("reorder_plan")
         or proposed.get("new_file_assets")
+        or payload.get("version_title")
+        or payload.get("summary")
+        or payload.get("title")
     )
     if not meaningful:
         raise LessonValidationError("Không có thay đổi để gửi xét duyệt.")
+
+    record = record or working_changeset(actor, course, sess)
+    for l in staged:
+        if l.change_request_id != record.id:
+            l.change_request_id = record.id
+    for a in staged_assessments:
+        if a.change_request_id != record.id:
+            a.change_request_id = record.id
+
+    proposed = payload_for(record)
     title = str(
         payload.get("version_title") or payload.get("title") or "Đợt cập nhật khóa học"
     ).strip()
@@ -3440,6 +3536,41 @@ def submit_course_changeset(actor, course_id, payload, session=None):
         reason=title,
         after_json=json.dumps({"change_request_id": record.id}),
     )
+    from pwd301.models.identity import Role, UserRole
+    from pwd301.services.notification_service import dispatch_notification
+
+    admin_role = sess.query(Role).filter_by(code="ADMIN").first()
+    admin_users = (
+        sess.query(User)
+        .join(UserRole, UserRole.user_id == User.id)
+        .filter(
+            UserRole.role_id == admin_role.id,
+            User.status == "ACTIVE",
+            User.suspended_at.is_(None),
+        )
+        .all()
+        if admin_role
+        else []
+    )
+    for adm in admin_users:
+        if adm.is_primary_admin or adm.has_admin_permission("COURSE_REVIEW"):
+            key = uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                f"pwd301:course-change:{record.id}:COURSE_CHANGE_REQUESTED:{adm.id}",
+            )
+            with contextlib.suppress(Exception):
+                dispatch_notification(
+                    recipient_user=adm,
+                    event_type="COURSE_CHANGE_REQUESTED",
+                    title=f"Đợt cập nhật khóa học {course.course_code} chờ xét duyệt",
+                    body=f"Giảng viên {actor.display_name} đã nộp đợt cập nhật mới cho khóa học '{course.title}'.",
+                    action_url="#/admin/governance?tab=change-requests",
+                    category="COURSE",
+                    target_role="ADMIN",
+                    payload={"course_id": str(course.public_id), "change_request_id": record.id},
+                    event_key=key,
+                    session=sess,
+                )
     if session is None:
         sess.commit()
     return record
@@ -3454,7 +3585,10 @@ def get_course_changeset_status(actor, course_id, session=None):
         sess.query(Lesson)
         .filter(
             Lesson.course_id == course.id,
-            Lesson.change_request_id == record.id if record else sa.false(),
+            sa.or_(
+                Lesson.change_request_id == record.id if record else sa.false(),
+                Lesson.change_request_id.is_(None),
+            ),
             Lesson.deleted_at.is_(None),
             Lesson.status.in_(("DRAFT", "PENDING_APPROVAL")),
         )
@@ -3465,21 +3599,49 @@ def get_course_changeset_status(actor, course_id, session=None):
     added = sum(not item.previous_lesson_id for item in lessons)
     modified = len(lessons) - added
     deleted = len(proposed.get("deleted_lessons") or [])
+    from pwd301.models.assessment import Assessment
+
+    staged_asm = (
+        sess.query(Assessment)
+        .filter(
+            Assessment.course_id == course.id,
+            sa.or_(
+                Assessment.change_request_id == record.id if record else sa.false(),
+                Assessment.status == "DRAFT",
+            ),
+            Assessment.deleted_at.is_(None),
+        )
+        .count()
+        if course_requires_review(course)
+        else 0
+    )
+    reorder = 1 if proposed.get("reorder_plan", {}).get("lessons_order") else 0
     metadata = len(proposed.get("course_metadata") or {})
     operations = len(proposed.get("operations") or {})
     count = (
         len(lessons)
+        + staged_asm
+        + deleted
         + metadata
         + operations
+        + reorder
         + len(proposed.get("new_file_assets") or [])
         + bool(proposed.get("completion_rules"))
         + sum(len(value) for value in (proposed.get("prerequisites") or {}).values())
     )
+    if record and record.status in ("PENDING", "REJECTED"):
+        current_status = record.status
+    elif count > 0:
+        current_status = "DRAFT"
+    else:
+        current_status = "NONE"
+
     from pwd301.services.course_workflow_service import review_version
 
+    has_changes = bool(count > 0)
     return {
-        "status": record.status if record else ("DRAFT" if count else "NONE"),
-        "has_changes": bool(count),
+        "status": current_status,
+        "has_changes": has_changes,
         "change_request_id": record.id if record else None,
         "request_id": record.id if record else None,
         "review_version": review_version(record) if record else None,
@@ -3511,7 +3673,11 @@ def retract_course_changeset(actor, course_id, session=None, expected_identity=N
     if record is None or record.status != "PENDING":
         raise ConflictError("Không có đợt cập nhật đang chờ duyệt để rút lại.")
     record = lock_course_change_request(sess, record.id)
-    if expected_identity is not None:
+    if expected_identity and (
+        "review_version" in expected_identity
+        or "request_id" in expected_identity
+        or "change_request_id" in expected_identity
+    ):
         from pwd301.services.course_workflow_service import require_review_identity
 
         require_review_identity(record, expected_identity)
@@ -3537,12 +3703,12 @@ def retract_course_changeset(actor, course_id, session=None, expected_identity=N
 
 def discard_course_changeset(actor, course_id, session=None):
     sess = session if session is not None else db.session
-    course = ensure_course_authoring(actor, course_id, session=sess)
+    course = require_course_manager(actor, course_id, session=sess)
     record = active_changeset(course.id, sess)
     if record is None:
         return {"status": "DISCARDED", "message": "Không có bản nháp cần hủy."}
-    if record.status != "DRAFT":
-        raise ConflictError("Hãy rút lại đợt xét duyệt trước khi hủy bản nháp.")
+    if record.status not in ("DRAFT", "PENDING"):
+        raise ConflictError("Không có đợt xét duyệt hoặc bản nháp nào đang hoạt động.")
     for lesson in (
         sess.query(Lesson)
         .filter(Lesson.course_id == course.id, Lesson.change_request_id == record.id)
@@ -3550,8 +3716,11 @@ def discard_course_changeset(actor, course_id, session=None):
     ):
         for resource in list(lesson.resources):
             sess.delete(resource)
-        lesson.deleted_at = utc_now()
-        lesson.status = "TRASH"
+        if not lesson.previous_lesson_id:
+            sess.delete(lesson)
+        else:
+            lesson.deleted_at = utc_now()
+            lesson.status = "TRASH"
     for unit in sess.query(LearningUnit).filter(LearningUnit.change_request_id == record.id).all():
         unit.deleted_at = utc_now()
     from pwd301.models.assessment import Assessment

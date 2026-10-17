@@ -297,7 +297,7 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
             if not fa:
                 continue
             is_scan_ok = getattr(fa, "virus_scan_status", None) == "CLEAN"
-            is_status_ok = fa.status == "ACTIVE"
+            is_status_ok = fa.status == "ACTIVE" and fa.deleted_at is None
             if not (is_scan_ok and is_status_ok):
                 continue
 

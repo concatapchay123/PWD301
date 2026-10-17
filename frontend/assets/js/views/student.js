@@ -88,11 +88,15 @@ class StudentView {
   }
 
   static getAssessmentScoreLabel(data) {
-    const score = data?.display_score;
+    const score = data?.display_score || data?.score;
     if (!score) return 'Chưa có điểm';
-    if (!score.is_released) return 'Chưa công bố';
-    const value = Number(score.score_out_of_10);
-    return Number.isFinite(value) && score.score_out_of_10 != null ? `${value} / 10` : 'Chưa có điểm';
+    if (score.is_released === false) return 'Chưa công bố';
+    const value = score.score_out_of_10 != null ? Number(score.score_out_of_10) : (score.raw_score != null ? Number(score.raw_score) : null);
+    const maxVal = score.max_score != null ? Number(score.max_score) : 10;
+    if (value != null && Number.isFinite(value)) {
+      return `${value} / ${maxVal}`;
+    }
+    return score.is_released ? 'Chưa có điểm' : 'Chưa công bố';
   }
 
   static renderMatchingBoard({ pairs, rights, attributes = '', selectClass = 'interactive-slot-select', questionIndex = '' }) {
@@ -587,14 +591,6 @@ class StudentView {
                 >
                   <span class="material-symbols-outlined text-[18px]">play_circle</span>
                   <span>Vào bài học ngay</span>
-                </a>
-                <a
-                  href="#/student/courses"
-                  id="hero-view-syllabus-btn"
-                  class="c-btn c-btn-secondary c-btn-md"
-                >
-                  <span class="material-symbols-outlined text-[18px]">toc</span>
-                  <span>Xem đề cương chi tiết</span>
                 </a>
               </div>
             </div>
@@ -1742,9 +1738,9 @@ class StudentView {
                       <span>Ghi danh khóa học</span>
                     </button>
                   `}
-                  <button type="button" id="overview-view-syllabus-btn" class="btn-scroll-syllabus px-6 py-3.5 rounded-2xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 font-bold text-sm transition-all border border-slate-700/80 inline-flex items-center gap-2 cursor-pointer shadow-sm active:scale-95">
-                    <span class="material-symbols-outlined text-[18px]">list_alt</span>
-                    <span>Xem đề cương chi tiết</span>
+                  <button type="button" id="btn-scroll-to-syllabus" class="px-6 py-3.5 rounded-2xl bg-slate-800/80 hover:bg-slate-700/80 text-white font-bold text-sm transition-all border border-slate-700/80 inline-flex items-center gap-2 cursor-pointer">
+                    <span class="material-symbols-outlined text-[20px]">menu_book</span>
+                    <span>Xem chi tiết</span>
                   </button>
                 </div>
               </div>
@@ -1797,11 +1793,8 @@ class StudentView {
               <div class="flex items-center justify-between pb-3 border-b border-slate-800/70">
                 <h3 class="text-lg sm:text-xl font-bold text-white flex items-center gap-2.5">
                   <span class="material-symbols-outlined text-emerald-400 text-2xl">psychology</span>
-                  <span>Chuẩn đầu ra môn học (Student Learning Outcomes - SLO)</span>
+                  <span>Chuẩn đầu ra</span>
                 </h3>
-                <span class="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-bold font-mono">
-                  ${slos.length} Chuẩn đầu ra
-                </span>
               </div>
               <div class="space-y-3.5">
                 ${slos.map((s, sIdx) => `
@@ -1935,9 +1928,8 @@ class StudentView {
               <div>
                 <h3 class="text-xl font-bold text-white flex items-center gap-2.5">
                   <span class="material-symbols-outlined text-emerald-400 text-2xl">account_tree</span>
-                  <span>Lộ trình đào tạo & Đề cương chi tiết</span>
+                  <span>Lộ trình đào tạo</span>
                 </h3>
-                <p class="text-xs text-slate-400 mt-1">Nội dung bài giảng được cấu trúc bài bản theo từng chuyên đề.</p>
               </div>
               <div class="flex items-center gap-2.5 self-start sm:self-auto">
                 <button type="button" id="syllabus-toggle-all-btn" class="text-xs font-semibold text-slate-400 hover:text-emerald-400 px-3 py-1.5 rounded-xl bg-slate-800/60 hover:bg-slate-800 border border-slate-700/60 transition-colors flex items-center gap-1 cursor-pointer">
@@ -2053,6 +2045,17 @@ class StudentView {
           size: 'xl'
         });
       };
+
+      // Wire Scroll to Syllabus Button (BUG-04)
+      const scrollSyllabusBtn = container.querySelector('#btn-scroll-to-syllabus') || document.getElementById('btn-scroll-to-syllabus');
+      if (scrollSyllabusBtn) {
+        scrollSyllabusBtn.onclick = () => {
+          const target = container.querySelector('#syllabus-section') || document.getElementById('syllabus-section');
+          if (target) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        };
+      }
 
       // Wire Active Hero Trailer Play Button
       const playHeroBtn = document.getElementById('btn-play-hero-trailer');
@@ -3577,7 +3580,7 @@ class StudentView {
         modules.forEach((mod, mIdx) => {
           // Filter lessons that actually have resources
           const lessonsWithFiles = (mod.lessons || []).map((les, lIdx) => {
-            const lRes = (les.resources || []).filter(r => !isCoverAsset(r));
+            const lRes = (les.resources || []).filter(r => !isCoverAsset(r) && !r.is_deleted && !r.deleted_at && r.status !== 'TRASH');
             return {
               les,
               lIdx,
@@ -3585,7 +3588,7 @@ class StudentView {
               lesId: String(les.lesson_id || les.id),
               displayCode: les._displayCode || `${mod.position || mIdx + 1}.${lIdx + 1}`
             };
-          }).filter(item => item.lRes.length > 0);
+          }).filter(item => item.lRes.length > 0 && !item.les.deleted_at && item.les.status !== 'TRASH');
 
           if (lessonsWithFiles.length === 0) return;
 
@@ -4056,7 +4059,7 @@ class StudentView {
                     </div>
                     <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
                       <span class="text-slate-400 block text-[11px]">Điểm</span>
-                      <strong class="text-sm font-bold text-emerald-600">${UI.escapeHtml(StudentView.getAssessmentScoreLabel(asm))}</strong>
+                      <strong class="text-sm font-bold ${asm.display_score?.is_released ? 'text-emerald-600' : 'text-slate-500 dark:text-slate-400'}">${UI.escapeHtml(StudentView.getAssessmentScoreLabel(asm))}</strong>
                     </div>
                     <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
                       <span class="text-slate-400 block text-[11px]">Lượt đã làm</span>
@@ -4079,18 +4082,35 @@ class StudentView {
                             </tr>
                           </thead>
                           <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                            ${attemptsHistory.map((att, idx) => `
-                              <tr>
-                                <td class="p-3 font-bold text-slate-900 dark:text-white">Lần ${idx + 1}</td>
-                                <td class="p-3 text-slate-500">${att.submitted_at ? UI.formatDate(att.submitted_at) : 'Đang xử lý'}</td>
-                                <td class="p-3 font-mono font-bold text-slate-900 dark:text-white">${att.score !== null && att.score !== undefined ? `${att.score} / ${att.max_score || 100}` : 'Chờ công bố'}</td>
-                                <td class="p-3">
-                                  <span class="px-2 py-0.5 rounded text-[10px] font-bold ${att.passed ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300' : 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300'}">
-                                    ${att.passed == null ? 'Chưa công bố' : att.passed ? 'Đạt' : 'Chưa đạt'}
-                                  </span>
-                                </td>
-                              </tr>
-                            `).join('')}
+                            ${attemptsHistory.map((att, idx) => {
+                              const attemptScore = (att.score !== null && att.score !== undefined) ? att.score : att.raw_score;
+                              const isReleased = Boolean(att.is_score_released ?? (attemptScore !== null && attemptScore !== undefined));
+                              const maxScore = att.max_score || asm.max_points || 10;
+                              const scoreDisplay = (isReleased && attemptScore !== null && attemptScore !== undefined)
+                                ? `${attemptScore} / ${maxScore}`
+                                : 'Chưa công bố';
+                              const passedDisplay = (!isReleased || att.passed == null)
+                                ? 'Chưa công bố'
+                                : (att.passed ? 'Đạt' : 'Chưa đạt');
+                              const badgeClass = (!isReleased || att.passed == null)
+                                ? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                                : (att.passed
+                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300'
+                                  : 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300');
+
+                              return `
+                                <tr>
+                                  <td class="p-3 font-bold text-slate-900 dark:text-white">Lần ${idx + 1}</td>
+                                  <td class="p-3 text-slate-500">${att.submitted_at ? UI.formatDate(att.submitted_at) : 'Đang xử lý'}</td>
+                                  <td class="p-3 font-mono font-bold text-slate-900 dark:text-white">${scoreDisplay}</td>
+                                  <td class="p-3">
+                                    <span class="px-2 py-0.5 rounded text-[10px] font-bold ${badgeClass}">
+                                      ${passedDisplay}
+                                    </span>
+                                  </td>
+                                </tr>
+                              `;
+                            }).join('')}
                           </tbody>
                         </table>
                       </div>
@@ -5821,11 +5841,12 @@ class StudentView {
       void tracker?.flush();
       const icon = get('play-btn')?.querySelector('.material-symbols-outlined');
       if (icon) icon.textContent = playing ? 'pause' : 'play_arrow';
+      get('big-play')?.classList.toggle('hidden', playing);
       if (state === 'ended') {
         options.onEnded?.();
       }
     };
-    const toggle = () => { if (playing) pause(); else if (youtube) driver?.playVideo?.(); else video?.play().catch(reportError); };
+    const toggle = () => { if (playing) pause(); else { status(''); if (youtube) driver?.playVideo?.(); else video?.play().catch(reportError); } };
     const paint = () => {
       if (container.isConnected === false) { controller?.destroy(); return; }
       if (disposed || !driver) return;
@@ -5956,6 +5977,15 @@ class StudentView {
               failPlayback(`${reason} Hãy thử lại video.`);
               engine.destroy(); hls = null;
             });
+            if (Hls.Events?.MANIFEST_PARSED) {
+              engine.on(Hls.Events.MANIFEST_PARSED, () => {
+                if (!disposed && generation === initialization) {
+                  status('');
+                  get('retry')?.classList.add('hidden');
+                  if (!tracker && !options.supplementary) startTracker();
+                }
+              });
+            }
             engine.loadSource(sourceUrl); engine.attachMedia(video);
           } else if (video.canPlayType?.('application/vnd.apple.mpegurl')) { video.src = sourceUrl; video.load?.(); }
           else failPlayback('Trình duyệt chưa hỗ trợ video này hoặc thư viện phát video chưa tải được. Hãy thử lại.');
@@ -5965,13 +5995,19 @@ class StudentView {
         if (!nativeBound) {
           nativeBound = true;
           listen(video, 'playing', () => { status(''); get('retry')?.classList.add('hidden'); transition('playing'); });
+          listen(video, 'canplay', () => { status(''); get('retry')?.classList.add('hidden'); if (!tracker && !options.supplementary) startTracker(); });
+          listen(video, 'loadeddata', () => { status(''); get('retry')?.classList.add('hidden'); });
           for (const event of ['pause', 'waiting', 'ended']) listen(video, event, () => transition(event === 'ended' ? 'ended' : 'paused'));
           listen(video, 'error', () => failPlayback(video.error?.code === 4 ? 'Không thể tải video: định dạng hoặc bộ mã hóa không được hỗ trợ. Hãy thử lại.' : 'Không thể tải video. Kiểm tra kết nối và thử lại.'));
           listen(video, 'seeking', () => { if (!unlocked && position() > frontier) seek(frontier); });
           listen(video, 'loadedmetadata', () => { status(''); get('retry')?.classList.add('hidden'); if (!tracker && !options.supplementary) startTracker(); });
           listen(video, 'ratechange', () => { void handleRateChange(); });
         }
-        if (video.readyState >= 1 && !options.supplementary) startTracker();
+        if (video.readyState >= 1) {
+          status('');
+          get('retry')?.classList.add('hidden');
+          if (!options.supplementary) startTracker();
+        }
       }
     };
     const initializeSafely = () => {
@@ -6767,11 +6803,30 @@ class StudentView {
                             }
                           });
                         });
-                        const shuffledRight = [...allRightOptions].sort((a, b) => {
-                          const hashA = (a.text + (q.id || idx)).split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-                          const hashB = (b.text + (q.id || idx)).split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-                          return hashA - hashB;
-                        });
+                        const shuffleOptions = (arr, seedStr) => {
+                          const result = [...arr];
+                          let seed = 0;
+                          for (let i = 0; i < seedStr.length; i++) seed = (seed * 31 + seedStr.charCodeAt(i)) & 0xffffffff;
+                          const rand = () => {
+                            seed = (seed * 1664525 + 1013904223) & 0xffffffff;
+                            return (seed >>> 0) / 4294967296;
+                          };
+                          for (let i = result.length - 1; i > 0; i--) {
+                            const j = Math.floor(rand() * (i + 1));
+                            [result[i], result[j]] = [result[j], result[i]];
+                          }
+                          if (result.length > 1 && pairs.length === result.length) {
+                            for (let i = 0; i < result.length; i++) {
+                              if (pairs[i].choices[0]?.answerText === result[i].text) {
+                                const swapIdx = (i + 1) % result.length;
+                                [result[i], result[swapIdx]] = [result[swapIdx], result[i]];
+                              }
+                            }
+                          }
+                          return result;
+                        };
+                        const qSeed = String(q.attempt_id || q.id || q.question_id || idx || '') + '_match';
+                        const shuffledRight = shuffleOptions(allRightOptions, qSeed);
 
                         return StudentView.renderMatchingBoard({
                           pairs: pairs.map(pair => ({ key: String(pair.groupIndex), left: pair.left,
@@ -6809,7 +6864,23 @@ class StudentView {
                       const escapedQuestion = UI.escapeHtml(questionText);
                       const promptWithSlots = escapedQuestion.replace(/_{3,}/g, () => renderDragSlot(grouped.groups[groupCursor++] || grouped.groups[grouped.groups.length - 1]));
                       const remainingSlots = grouped.groups.slice(groupCursor).map(renderDragSlot).join('');
-                      const tokenLabels = Array.from(new Set(grouped.groups.flatMap(group => group.choices.map(choice => choice.answerText))));
+                      const rawTokenLabels = Array.from(new Set(grouped.groups.flatMap(group => group.choices.map(choice => choice.answerText))));
+                      const shuffleTokens = (arr, seedStr) => {
+                        const result = [...arr];
+                        let seed = 0;
+                        for (let i = 0; i < seedStr.length; i++) seed = (seed * 31 + seedStr.charCodeAt(i)) & 0xffffffff;
+                        const rand = () => {
+                          seed = (seed * 1664525 + 1013904223) & 0xffffffff;
+                          return (seed >>> 0) / 4294967296;
+                        };
+                        for (let i = result.length - 1; i > 0; i--) {
+                          const j = Math.floor(rand() * (i + 1));
+                          [result[i], result[j]] = [result[j], result[i]];
+                        }
+                        return result;
+                      };
+                      const dragSeed = String(q.attempt_id || q.id || q.question_id || idx || '') + '_drag';
+                      const tokenLabels = shuffleTokens(rawTokenLabels, dragSeed);
 
                       const tokenBank = tokenLabels.length ? `
                         <div class="interactive-token-bank mt-4 p-3 rounded-2xl bg-slate-100/80 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 select-none" aria-label="Ngân hàng từ">

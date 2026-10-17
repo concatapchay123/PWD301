@@ -1665,6 +1665,7 @@ class InstructorView {
               });
               renderTree();
               UI.showToast(res.message || 'Đã đánh dấu xóa bài giảng trong bản nháp cập nhật.', 'info');
+              await InstructorView.refreshChangesetStatus(cId, container);
               return;
             }
             currentUnits.forEach(u => {
@@ -1676,6 +1677,7 @@ class InstructorView {
             }
             renderTree();
             UI.showToast('Đã xóa bài giảng thành công.', 'success');
+            await InstructorView.refreshChangesetStatus(cId, container);
           } catch (err) {
             UI.showToast(err.message || 'Lỗi xóa bài giảng.', 'error');
           }
@@ -1968,6 +1970,7 @@ class InstructorView {
         if (!activeUnitId) activeUnitId = newUnit.id;
         renderTree();
         UI.showToast('Đã tạo Chương mới thành công!', 'success');
+        await InstructorView.refreshChangesetStatus(cId, container);
       } catch (err) {
         UI.showToast(err.message || 'Lỗi tạo Chương mới.', 'error');
       }
@@ -2005,6 +2008,7 @@ class InstructorView {
         unit.lessons.push(newLessonObj);
         await selectLesson(lId, targetUnitId);
         UI.showToast('Đã tạo bài giảng mới! Thầy/Cô hãy soạn nội dung ở cột bên phải.', 'success');
+        await InstructorView.refreshChangesetStatus(cId, container);
       } catch (err) {
         UI.showToast(err.message || 'Lỗi tạo bài giảng mới.', 'error');
       }
@@ -3116,17 +3120,11 @@ class InstructorView {
             UI.showToast(res?.message || 'Đã lưu bài giảng thành công!', 'success');
           }
 
-          // BUG-05 Fix: Refresh changeset status immediately and dynamically update top staging draft action bar & notice banner
-          if (course.status === 'PUBLISHED') {
-            try {
-              const latestCs = await ApiClient.getCourseChangesetStatus(cId);
-              if (latestCs) {
-                changesetStatus = latestCs;
-                InstructorView.updateChangesetActionBar(container, cId, latestCs);
-              }
-            } catch (csErr) {
-              console.warn('Silent changeset refresh failed:', csErr);
-            }
+          // Refresh changeset status immediately and dynamically update top staging draft action bar & notice banner
+          try {
+            await InstructorView.refreshChangesetStatus(cId, container);
+          } catch (csErr) {
+            console.warn('Silent changeset refresh failed:', csErr);
           }
         } catch (err) {
           UI.showToast(err.message || 'Lỗi khi lưu bài giảng.', 'error');
@@ -4046,7 +4044,7 @@ class InstructorView {
                   <span>Đang chỉnh sửa bản nháp. Những thay đổi này chưa ảnh hưởng đến khóa học đang xuất bản</span>
                 </h4>
                 <p class="text-xs text-amber-900/80 dark:text-amber-300/80 mt-1 leading-relaxed">
-                  Mọi chỉnh sửa giáo trình, đề cương, câu hỏi và tài liệu được lưu an toàn trong bản nháp tổng hợp. Học viên vẫn đang học phiên bản xuất bản chính thức. Hãy bấm <strong>"Gửi xét duyệt bản nháp"</strong> khi Thầy/Cô đã hoàn tất các thay đổi.
+                  Mọi chỉnh sửa giáo trình, đề cương, câu hỏi và tài liệu được lưu an toàn trong bản nháp tổng hợp. Học viên vẫn đang học phiên bản xuất bản chính thức. Hãy bấm <strong>"Gửi xét duyệt"</strong> khi Thầy/Cô đã hoàn tất các thay đổi.
                 </p>
               </div>
             </div>
@@ -4629,7 +4627,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
           title="Gửi đợt cập nhật sau khi hoàn thiện"
         >
           <span class="material-symbols-outlined text-[16px]">send</span>
-          <span>Gửi xét duyệt bản nháp</span>
+          <span>Gửi xét duyệt</span>
         </button>
         <button
           type="button"
@@ -4641,7 +4639,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
         </button>
       `;
     }
-    if (changesetStatus && (changesetStatus.has_changes || changesetStatus.changes_count > 0)) {
+    if (changesetStatus && (changesetStatus.has_changes || changesetStatus.changes_count > 0 || changesetStatus.status === 'DRAFT' || changesetStatus.change_request_id)) {
       return `
         <button
           type="button"
@@ -4660,7 +4658,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
           title="Gộp và gửi xét duyệt toàn bộ cập nhật giáo trình môn học"
         >
           <span class="material-symbols-outlined text-[16px]">playlist_add_check</span>
-          <span>Gửi xét duyệt bản nháp</span>
+          <span>Gửi xét duyệt</span>
         </button>
         <button
           type="button"
@@ -4681,7 +4679,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
         title="Chưa có thay đổi nào trong bản nháp"
       >
         <span class="material-symbols-outlined text-[16px]">playlist_add_check</span>
-        <span>Gửi xét duyệt bản nháp</span>
+        <span>Gửi xét duyệt</span>
       </button>
     `;
   }
@@ -4868,6 +4866,19 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
     }
   }
 
+  static async refreshChangesetStatus(cId, container = null) {
+    try {
+      const status = await ApiClient.getCourseChangesetStatus(cId);
+      if (status) {
+        InstructorView.updateChangesetActionBar(container, cId, status);
+      }
+      return status;
+    } catch (err) {
+      console.warn('Failed to refresh changeset status:', err);
+      return null;
+    }
+  }
+
   static updateChangesetActionBar(container, cId, changesetStatus) {
     const root = container || document;
     const actionsContainer = root.querySelector('#course-changeset-actions') || document.getElementById('course-changeset-actions');
@@ -4876,15 +4887,19 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
       InstructorView.bindChangesetActions(container, cId, changesetStatus);
     }
 
-    // Ensure changeset notice banner is visible when there are draft changes
+    // Ensure changeset notice banner is visible when there are draft changes, hidden when clean
     let noticeBanner = root.querySelector('#banner-draft-editing-notice') || document.getElementById('banner-draft-editing-notice');
+    const hasDraftChanges = Boolean(changesetStatus && (changesetStatus.has_changes || changesetStatus.changes_count > 0));
     if (noticeBanner) {
-      noticeBanner.classList.remove('hidden');
-      noticeBanner.style.display = '';
-      if (changesetStatus && (changesetStatus.has_changes || changesetStatus.changes_count > 0)) {
+      if (hasDraftChanges) {
+        noticeBanner.classList.remove('hidden');
+        noticeBanner.style.display = '';
         noticeBanner.classList.add('ring-2', 'ring-amber-400/50');
+      } else {
+        noticeBanner.classList.add('hidden');
+        noticeBanner.style.display = 'none';
       }
-    } else if (root && changesetStatus && (changesetStatus.has_changes || changesetStatus.changes_count > 0)) {
+    } else if (root && hasDraftChanges) {
       const headerCard = root.querySelector('#course-manage-root > div:nth-child(2)') || root.querySelector('#curriculum-studio-section');
       if (headerCard && headerCard.parentNode) {
         const bannerEl = document.createElement('div');
@@ -4899,7 +4914,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
               <span>Đang chỉnh sửa bản nháp. Những thay đổi này chưa ảnh hưởng đến khóa học đang xuất bản</span>
             </h4>
             <p class="text-xs text-amber-900/80 dark:text-amber-300/80 mt-1 leading-relaxed">
-              Mọi chỉnh sửa giáo trình, đề cương, câu hỏi và tài liệu được lưu an toàn trong bản nháp tổng hợp. Học viên vẫn đang học phiên bản xuất bản chính thức. Hãy bấm <strong>"Gửi xét duyệt bản nháp"</strong> khi Thầy/Cô đã hoàn tất các thay đổi.
+              Mọi chỉnh sửa giáo trình, đề cương, câu hỏi và tài liệu được lưu an toàn trong bản nháp tổng hợp. Học viên vẫn đang học phiên bản xuất bản chính thức. Hãy bấm <strong>"Gửi xét duyệt"</strong> khi Thầy/Cô đã hoàn tất các thay đổi.
             </p>
           </div>
         `;
@@ -5181,7 +5196,10 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
     let selectedPrerequisites = initialPrerequisites.map(item => ({ ...item }));
     const prereqId = item => String(item.prerequisite_course_id || item.course_id || item.id);
     const minProgressVal = academicRules.minimum_progress_percent ?? 80;
-    const minScoreVal = academicRules.minimum_grade_score ?? 5;
+    let minScoreVal = academicRules.minimum_grade_score ?? 5;
+    if (minScoreVal > 10) {
+      minScoreVal = minScoreVal / 10;
+    }
 
     const modalBodyHtml = `
       <div class="space-y-5 text-sans">
@@ -5688,10 +5706,11 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
             <div class="flex items-center gap-2 shrink-0">
               <input
                 type="text"
+                inputmode="numeric"
                 class="slo-weight-input w-20 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono text-center text-slate-700 dark:text-slate-300"
                 data-idx="${idx}"
                 value="${UI.escapeHtml(s.weight || '')}"
-                placeholder="Trọng số %"
+                placeholder="VD: 20%"
               />
               <button
                 type="button"
@@ -5724,7 +5743,29 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
       sloContainer.querySelectorAll('.slo-weight-input').forEach(input => {
         input.oninput = (e) => {
           const idx = parseInt(e.target.dataset.idx, 10);
+          const val = e.target.value.trim();
+          const cleanNum = val.replace('%', '').trim();
+          const num = parseFloat(cleanNum);
+          if (cleanNum && (Number.isNaN(num) || num < 0 || num > 100)) {
+            e.target.classList.add('border-rose-500', 'text-rose-600', 'ring-1', 'ring-rose-500');
+            e.target.title = 'Trọng số phải nằm trong khoảng từ 0% đến 100%';
+          } else {
+            e.target.classList.remove('border-rose-500', 'text-rose-600', 'ring-1', 'ring-rose-500');
+            e.target.title = 'Trọng số %';
+          }
           if (slos[idx]) slos[idx].weight = e.target.value;
+        };
+        input.onblur = (e) => {
+          const idx = parseInt(e.target.dataset.idx, 10);
+          const val = e.target.value.trim();
+          if (val) {
+            const num = parseFloat(val.replace('%', '').trim());
+            if (!Number.isNaN(num) && num >= 0 && num <= 100) {
+              const formatted = `${num}%`;
+              e.target.value = formatted;
+              if (slos[idx]) slos[idx].weight = formatted;
+            }
+          }
         };
       });
       sloContainer.querySelectorAll('.slo-desc-input').forEach(input => {
@@ -5903,6 +5944,23 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
           return;
         }
 
+        // Validate SLO weights (BUG-01)
+        for (let i = 0; i < slos.length; i++) {
+          const s = slos[i];
+          if (s.weight && String(s.weight).trim()) {
+            const num = parseFloat(String(s.weight).replace('%', '').trim());
+            if (Number.isNaN(num) || num < 0 || num > 100) {
+              UI.showToast(`Trọng số của chuẩn đầu ra #${i + 1} không hợp lệ (${s.weight}). Trọng số phải nằm trong khoảng từ 0% đến 100%.`, 'warning');
+              const badInput = document.querySelector(`.slo-weight-input[data-idx="${i}"]`);
+              if (badInput) {
+                badInput.focus();
+                badInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }
+              return;
+            }
+          }
+        }
+
         saveBtn.disabled = true;
         const origHtml = saveBtn.innerHTML;
         saveBtn.innerHTML = `<span class="inline-block animate-spin text-[16px]">⏳</span> <span>Đang lưu...</span>`;
@@ -5934,6 +5992,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
           course.learning_objectives = result.course?.learning_objectives ?? slos;
           UI.showToast(result.staged || result.pending_approval ? 'Đã lưu vào bản nháp tổng hợp. Gửi duyệt khi bạn hoàn tất các thay đổi.' : 'Đã lưu Trang Giới thiệu & Học vụ.', 'success');
           UI.closeModal();
+          await InstructorView.refreshChangesetStatus(cId);
         } catch (err) {
           saveBtn.disabled = false;
           saveBtn.innerHTML = origHtml;

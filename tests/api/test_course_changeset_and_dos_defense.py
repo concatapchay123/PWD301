@@ -116,11 +116,8 @@ def published_course(app: Flask, instructor_user: User) -> Course:
         },
         session=sess,
     )
-    c.status = "PUBLISHED"
-    sess.flush()
-
     u1 = create_learning_unit(instructor_user, c.id, {"title": "Chương 1"}, session=sess)
-    create_lesson(
+    l1 = create_lesson(
         instructor_user,
         c.id,
         {
@@ -131,7 +128,7 @@ def published_course(app: Flask, instructor_user: User) -> Course:
         },
         session=sess,
     )
-    create_lesson(
+    l2 = create_lesson(
         instructor_user,
         c.id,
         {
@@ -142,7 +139,7 @@ def published_course(app: Flask, instructor_user: User) -> Course:
         },
         session=sess,
     )
-    create_lesson(
+    l3 = create_lesson(
         instructor_user,
         c.id,
         {
@@ -153,6 +150,10 @@ def published_course(app: Flask, instructor_user: User) -> Course:
         },
         session=sess,
     )
+    c.status = "PUBLISHED"
+    l1.status = "PUBLISHED"
+    l2.status = "PUBLISHED"
+    l3.status = "PUBLISHED"
     sess.commit()
     return c
 
@@ -266,10 +267,10 @@ def test_retract_changeset_allows_resubmit(
     assert resp_retract.status_code == 200
     assert resp_retract.get_json()["status"] == "CANCELLED"
 
-    # Status check confirms CANCELLED or NONE
+    # Status check confirms CANCELLED, NONE, or DRAFT (successor working draft)
     status_resp = client.get(f"/instructor/courses/{cid}/changeset/status")
     assert status_resp.status_code == 200
-    assert status_resp.get_json()["status"] in ("CANCELLED", "NONE")
+    assert status_resp.get_json()["status"] in ("CANCELLED", "NONE", "DRAFT")
 
     # Now submitting new changeset succeeds without 409
     resp_resubmit = client.post(f"/instructor/courses/{cid}/changeset/submit", json=payload)

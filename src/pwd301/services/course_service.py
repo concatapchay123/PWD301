@@ -132,6 +132,52 @@ def _normalize_json_or_text(val: Any) -> str | None:
     return str(val)
 
 
+def _normalize_and_validate_slos(val: Any) -> str | None:
+    """Normalize and validate learning objectives (SLOs), checking weight 0-100%."""
+    if val is None:
+        return None
+    raw_list = val
+    if isinstance(val, str):
+        val_str = val.strip()
+        if not val_str:
+            return None
+        if val_str.startswith("[") and val_str.endswith("]"):
+            with contextlib.suppress(Exception):
+                raw_list = json.loads(val_str)
+        else:
+            return val_str
+    if isinstance(raw_list, list):
+        normalized: list[dict[str, Any] | str] = []
+        for item in raw_list:
+            if isinstance(item, dict):
+                title = str(item.get("title") or item.get("name") or "").strip()
+                desc = str(item.get("description") or "").strip()
+                raw_weight = item.get("weight")
+                clean_weight = None
+                if raw_weight is not None and str(raw_weight).strip():
+                    weight_str = str(raw_weight).replace("%", "").strip()
+                    try:
+                        w_num = float(weight_str)
+                        if w_num < 0 or w_num > 100:
+                            raise CourseValidationError(
+                                f"Trọng số của chuẩn đầu ra '{title or 'SLO'}' không hợp lệ ({raw_weight}). Trọng số phải nằm trong khoảng từ 0% đến 100%."
+                            )
+                        clean_weight = f"{int(w_num)}%" if w_num.is_integer() else f"{w_num:.1f}%"
+                    except ValueError:
+                        raise CourseValidationError(
+                            f"Trọng số của chuẩn đầu ra '{title or 'SLO'}' phải là số phần trăm hợp lệ (0-100%)."
+                        )
+                normalized.append({
+                    "title": title or "Chuẩn đầu ra môn học",
+                    "description": desc,
+                    "weight": clean_weight,
+                })
+            elif isinstance(item, str) and item.strip():
+                normalized.append({"title": item.strip(), "description": "", "weight": None})
+        return json.dumps(normalized, ensure_ascii=False)
+    return _normalize_json_or_text(val)
+
+
 def _record_audit_event(
     sess: Session | scoped_session[Any],
     actor: User,
@@ -462,7 +508,7 @@ def create_course(
         title=title,
         title_normalized=norm_title,
         description=data.get("description"),
-        learning_objectives=_normalize_json_or_text(data.get("learning_objectives")),
+        learning_objectives=_normalize_and_validate_slos(data.get("learning_objectives")),
         target_audience=data.get("target_audience"),
         completion_requirements=_normalize_json_or_text(data.get("completion_requirements")),
         category=data.get("category"),
@@ -637,7 +683,7 @@ def update_course(
 
     if "learning_objectives" in data:
         lo = data["learning_objectives"]
-        course.learning_objectives = _normalize_json_or_text(lo)
+        course.learning_objectives = _normalize_and_validate_slos(lo)
 
     if "target_audience" in data:
         ta = data["target_audience"]
@@ -839,7 +885,7 @@ def queue_course_metadata_review(
         proposed["description"] = data["description"]
 
     if "learning_objectives" in data:
-        proposed["learning_objectives"] = _normalize_json_or_text(data["learning_objectives"])
+        proposed["learning_objectives"] = _normalize_and_validate_slos(data["learning_objectives"])
 
     if "target_audience" in data:
         ta = data["target_audience"]

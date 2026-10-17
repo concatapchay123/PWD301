@@ -848,7 +848,9 @@ def update_course_route(course_id: str) -> Any:
     return jsonify(_authoring_response(actor, course, _serialize_course(course))), 200
 
 
-def validate_course_publish_readiness(course_obj: Course) -> dict[str, Any]:
+def validate_course_publish_readiness(
+    course_obj: Course, actor: Any | None = None, session: Any | None = None
+) -> dict[str, Any]:
     """Validate 5 canonical pre-flight criteria before course publication:
     1. 16:9 Cover Image
     2. Intro video / Trailer URL
@@ -857,6 +859,11 @@ def validate_course_publish_readiness(course_obj: Course) -> dict[str, Any]:
     5. Curriculum completeness (>= 1 unit, >= 1 non-empty lesson)
     """
     from pwd301.models.course import CourseCompletionRule
+    from pwd301.services.course_workflow_service import effective_course
+
+    sess = session or db.session
+    if actor is not None:
+        course_obj = effective_course(course_obj, actor, sess)
 
     # 1. Cover Image
     has_cover = bool(
@@ -895,8 +902,17 @@ def validate_course_publish_readiness(course_obj: Course) -> dict[str, Any]:
     has_lo = bool(lo_list and len(lo_list) >= 1)
     has_info = bool(has_valid_desc and has_lo)
 
+    if has_info:
+        info_detail = f"Đầy đủ mô tả chi tiết và chuẩn đầu ra môn học ({len(lo_list)} mục)."
+    elif not has_valid_desc and not has_lo:
+        info_detail = "Cần bổ sung mô tả thực tế (tối thiểu 20 ký tự) và ít nhất 1 chuẩn đầu ra (Learning Objective)."
+    elif not has_valid_desc:
+        info_detail = f"Chuẩn đầu ra: Đã có {len(lo_list)} mục (Đạt). Tuy nhiên mô tả khóa học chưa đạt yêu cầu (cần tối thiểu 20 ký tự thực tế, không dùng nội dung mẫu)."
+    else:
+        info_detail = "Mô tả khóa học đã đạt yêu cầu (>= 20 ký tự). Cần bổ sung ít nhất 1 chuẩn đầu ra môn học (Learning Objective)."
+
     # 4. Academic Settings / Completion Rule
-    rule = db.session.query(CourseCompletionRule).filter_by(course_id=course_obj.id).first()
+    rule = sess.query(CourseCompletionRule).filter_by(course_id=course_obj.id).first()
     has_academic = bool(
         rule
         and rule.minimum_progress_percent is not None
@@ -937,9 +953,7 @@ def validate_course_publish_readiness(course_obj: Course) -> dict[str, Any]:
                 "id": "course_info",
                 "title": "Thông tin khóa học & Chuẩn đầu ra (SLOs)",
                 "passed": has_info,
-                "detail": "Đầy đủ mô tả chi tiết và chuẩn đầu ra môn học."
-                if has_info
-                else "Cần bổ sung mô tả thực tế (tối thiểu 20 ký tự) và ít nhất 1 chuẩn đầu ra (Learning Objective).",
+                "detail": info_detail,
             },
             {
                 "id": "academic_settings",
@@ -970,7 +984,7 @@ def course_publish_checklist_route(course_id: str) -> Any:
     if course_obj is None:
         raise ResourceNotFoundError("Khóa học không tồn tại.")
     require_course_manager(actor, course_obj.id, session=db.session)
-    checklist = validate_course_publish_readiness(course_obj)
+    checklist = validate_course_publish_readiness(course_obj, actor=actor, session=db.session)
     return jsonify(checklist), 200
 
 
@@ -986,7 +1000,7 @@ def submit_course_route(course_id: str) -> Any:
         raise ResourceNotFoundError("Khóa học không tồn tại.")
     require_course_manager(actor, course_obj.id, session=db.session)
 
-    checklist = validate_course_publish_readiness(course_obj)
+    checklist = validate_course_publish_readiness(course_obj, actor=actor, session=db.session)
     if not checklist["is_ready"]:
         failed_items = [c["detail"] for c in checklist["criteria"] if not c["passed"]]
         raise CourseValidationError(
@@ -1136,6 +1150,9 @@ def reorder_learning_units_route(course_id: str) -> Any:
     course = require_course_manager(actor, course_id, session=db.session)
     payload = request.get_json(silent=True) or {}
     unit_ids = payload.get("unit_ids") or payload.get("learning_unit_ids") or []
+    from pwd301.services.rate_limit_service import check_curriculum_mutation_rate_limit
+
+    check_curriculum_mutation_rate_limit(actor.id, course.id, limit=15, window_seconds=60)
     from pwd301.services.lesson_service import reorder_learning_units
 
     units = reorder_learning_units(actor, course.id, unit_ids, session=db.session)

@@ -131,10 +131,6 @@ def base_env(app: Flask) -> dict[str, Any]:
         },
         session=sess,
     )
-    change_course_status(inst_owner, course.id, "SUBMITTED_FOR_REVIEW", session=sess)
-    change_course_status(admin, course.id, "APPROVED", session=sess)
-    change_course_status(inst_owner, course.id, "PUBLISHED", session=sess)
-
     lesson_text = create_lesson(
         actor=inst_owner,
         course_id=course.id,
@@ -163,6 +159,10 @@ def base_env(app: Flask) -> dict[str, Any]:
         session=sess,
     )
 
+    change_course_status(inst_owner, course.id, "SUBMITTED_FOR_REVIEW", session=sess)
+    change_course_status(admin, course.id, "APPROVED", session=sess)
+    change_course_status(inst_owner, course.id, "PUBLISHED", session=sess)
+
     # 6. Another Course for cross-course tests
     other_course = create_course(
         actor=inst_foreign,
@@ -174,9 +174,6 @@ def base_env(app: Flask) -> dict[str, Any]:
         },
         session=sess,
     )
-    change_course_status(inst_foreign, other_course.id, "SUBMITTED_FOR_REVIEW", session=sess)
-    change_course_status(admin, other_course.id, "APPROVED", session=sess)
-    change_course_status(inst_foreign, other_course.id, "PUBLISHED", session=sess)
 
     other_lesson = create_lesson(
         actor=inst_foreign,
@@ -188,6 +185,10 @@ def base_env(app: Flask) -> dict[str, Any]:
         },
         session=sess,
     )
+
+    change_course_status(inst_foreign, other_course.id, "SUBMITTED_FOR_REVIEW", session=sess)
+    change_course_status(admin, other_course.id, "APPROVED", session=sess)
+    change_course_status(inst_foreign, other_course.id, "PUBLISHED", session=sess)
 
     # 7. Enroll Student 1 in Course
     enrollment = enroll_student(actor=student_1, course_id=course.id, session=sess)

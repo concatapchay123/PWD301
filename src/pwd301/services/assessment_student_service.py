@@ -200,8 +200,23 @@ def student_assessment_summary(
             block = "ENROLLMENT"
     history = []
     for attempt in attempts:
-        released = student_score_released(attempt, now)
         result = attempt.result
+        released = student_score_released(attempt, now)
+        score_val = (
+            float(result.raw_score)
+            if released and result and result.raw_score is not None
+            else None
+        )
+        max_score_val = (
+            float(result.max_score)
+            if released and result and result.max_score is not None
+            else (float(max_points) if max_points else 10.0)
+        )
+        passed_val = (
+            bool(result.passed)
+            if released and result and result.passed is not None
+            else None
+        )
         history.append(
             {
                 "attempt_id": str(attempt.public_id),
@@ -209,9 +224,10 @@ def student_assessment_summary(
                 "status": effective_status[attempt.id],
                 "started_at": attempt.started_at.isoformat() if attempt.started_at else None,
                 "submitted_at": attempt.submitted_at.isoformat() if attempt.submitted_at else None,
-                "raw_score": float(result.raw_score) if released else None,
-                "max_score": float(result.max_score) if released else None,
-                "passed": bool(result.passed) if released and result.passed is not None else None,
+                "score": score_val,
+                "raw_score": score_val,
+                "max_score": max_score_val,
+                "passed": passed_val,
                 "is_score_released": released,
             }
         )

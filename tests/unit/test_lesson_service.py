@@ -560,6 +560,8 @@ def test_record_lesson_progress_monotonic_completion(
             "viewed_fraction_required": 0.0,
         },
     )
+    lesson.status = "PUBLISHED"
+    sess.commit()
 
     # Enroll student
     enrollment = Enrollment(

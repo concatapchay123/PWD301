@@ -219,7 +219,10 @@ def set_course_completion_rule(
                 raise CompletionRuleValidationError(f"{key} must be a boolean.")
         if "minimum_grade_score" in proposed:
             try:
-                proposed["minimum_grade_score"] = float(proposed["minimum_grade_score"])
+                score_val = float(proposed["minimum_grade_score"])
+                if score_val > 10 and score_val <= 100:
+                    score_val = score_val / 10.0
+                proposed["minimum_grade_score"] = score_val
             except (ValueError, TypeError):
                 raise CompletionRuleValidationError(
                     "minimum_grade_score must be numeric."

@@ -178,6 +178,7 @@ def test_assessment_passing_percent_in_attempt_service(remediation_env: dict[str
     from pwd301.services.assessment_service import publish_assessment
 
     publish_assessment(actor=instructor, assessment_id=asm.id, session=sess)
+    asm.status = "PUBLISHED"
     sess.commit()
 
     # Enroll student in course
@@ -304,6 +305,7 @@ def test_assessment_passing_percent_in_attempt_service(remediation_env: dict[str
     )
     sess.commit()
     publish_assessment(actor=instructor, assessment_id=asm3.id, session=sess)
+    asm3.status = "PUBLISHED"
     sess.commit()
 
     att3, lease3 = start_assessment_attempt(

@@ -36,10 +36,27 @@ from pwd301.models.types import (
 )
 
 
-def _parse_string_list(raw: str | None) -> list[str]:
-    """Parse list of strings from JSON array or newline-delimited text."""
+def _parse_string_list(raw: Any) -> list[str]:
+    """Parse list of strings from list of dicts, JSON array, or newline-delimited text."""
     if not raw:
         return []
+    if isinstance(raw, list):
+        result = []
+        for item in raw:
+            if isinstance(item, dict):
+                text = (
+                    item.get("title")
+                    or item.get("description")
+                    or item.get("name")
+                    or str(item)
+                )
+                if text and str(text).strip():
+                    result.append(str(text).strip())
+            elif item is not None and str(item).strip():
+                result.append(str(item).strip())
+        return result
+    if not isinstance(raw, str):
+        raw = str(raw)
     stripped = raw.strip()
     if not stripped:
         return []
@@ -47,7 +64,7 @@ def _parse_string_list(raw: str | None) -> list[str]:
         try:
             parsed = json.loads(stripped)
             if isinstance(parsed, list):
-                return [str(item).strip() for item in parsed if str(item).strip()]
+                return _parse_string_list(parsed)
         except Exception:
             pass
     lines = [line.strip() for line in stripped.splitlines()]

@@ -98,7 +98,7 @@ def ensure_course_authoring(actor, course, session=None):
     active = active_changeset(course.id, sess)
     if active is not None and active.status == "PENDING":
         raise ConflictError(
-            "Đợt cập nhật đang chờ duyệt. Hãy rút lại xét duyệt trước khi chỉnh sửa."
+            "Đợt cập nhật đang chờ Quản trị viên xét duyệt. Hãy rút lại xét duyệt trước khi chỉnh sửa."
         )
     return course
 
@@ -560,6 +560,14 @@ class AuthoringProjection:
     def __getattr__(self, name):
         return self._overrides[name] if name in self._overrides else getattr(self._original, name)
 
+    @property
+    def learning_objectives_list(self):
+        if "learning_objectives" in self._overrides:
+            from pwd301.models.course import _parse_string_list
+
+            return _parse_string_list(self._overrides["learning_objectives"])
+        return getattr(self._original, "learning_objectives_list", [])
+
 
 def effective_course(course, actor, session=None):
     sess = session if session is not None else db.session
@@ -568,9 +576,12 @@ def effective_course(course, actor, session=None):
     record = active_changeset(course.id, sess)
     if record is None:
         return course
-    metadata = dict(payload_for(record).get("course_metadata") or {})
+    pl = payload_for(record)
+    metadata = dict(pl.get("course_metadata") or {})
     if "thumbnail_file_asset_id" in metadata:
         metadata["thumbnail_url"] = cover_url(course, metadata["thumbnail_file_asset_id"], sess)
+    if "learning_objectives" in pl and "learning_objectives" not in metadata:
+        metadata["learning_objectives"] = pl["learning_objectives"]
     return AuthoringProjection(course, metadata)
 
 

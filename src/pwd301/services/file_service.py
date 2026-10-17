@@ -1704,7 +1704,30 @@ def detach_resource_from_lesson(
         if res is None:
             raise ResourceNotFoundError("Lesson resource link is already absent from the draft.")
 
+    fa_id = res.file_asset_id
     sess.delete(res)
+    sess.flush()
+
+    from pwd301.models.course import Lesson
+
+    other_ref = (
+        sess.query(LessonResource)
+        .join(Lesson, LessonResource.lesson_id == Lesson.id)
+        .filter(
+            LessonResource.file_asset_id == fa_id,
+            Lesson.deleted_at.is_(None),
+            Lesson.status.notin_(("TRASH", "HISTORICAL")),
+        )
+        .first()
+    )
+    if not other_ref:
+        fa = sess.get(FileAsset, fa_id)
+        if fa and fa.asset_type not in ("COURSE_IMAGE", "QUESTION_IMAGE", "IMPORT_SOURCE"):
+            fa.status = "TRASH"
+            fa.deleted_at = utc_now()
+            fa.deleted_by_user_id = actor.id
+            fa.restore_until = utc_now() + timedelta(days=30)
+
     try:
         if commit:
             sess.commit()

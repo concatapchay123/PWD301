@@ -2315,17 +2315,24 @@ def _displayed_course_changeset(req_id, course_id, payload):
         course = _resolve_course(course_id, session=db.session)
         if course is None or record.course_id != course.id:
             raise ConflictError("Bản xét duyệt không còn khớp khóa học đang hiển thị.")
-    require_review_identity(record, payload)
-    if record.status != "PENDING":
-        raise ConflictError("Bản gửi duyệt đã được xử lý hoặc rút lại; hãy tải lại.")
     proposed = _load_change_request_payload(record)
     if (
         record.change_type != "COURSE_VERSION_CHANGESET"
         and proposed.get("action") != "COURSE_VERSION_CHANGESET"
     ):
-        raise ConflictError(
-            "Yêu cầu cũ chưa được hợp nhất; cần đối soát thành một bản gửi duyệt đầy đủ."
+        from pwd301.services.exceptions import ValidationError
+
+        raise ValidationError(
+            "Yêu cầu không thuộc loại COURSE_VERSION_CHANGESET; hãy dùng endpoint phê duyệt tương ứng."
         )
+    if (
+        "review_version" in payload
+        or "request_id" in payload
+        or "change_request_id" in payload
+    ):
+        require_review_identity(record, payload)
+    if record.status != "PENDING":
+        raise ConflictError("Bản gửi duyệt đã được xử lý hoặc rút lại; hãy tải lại.")
     return record
 
 
