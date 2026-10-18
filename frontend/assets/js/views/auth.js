@@ -93,12 +93,7 @@ class AuthView {
         
         <!-- Brand Header -->
         <div class="mb-6 text-center select-none flex flex-col items-center">
-          <div class="mb-3 flex justify-center">
-            <img src="/frontend/assets/img/pptq_logo_light.png" alt="PPTQ Logo" class="h-16 w-auto object-contain dark:hidden rounded-xl shadow-xs" />
-            <img src="/frontend/assets/img/pptq_logo_dark.png" alt="PPTQ Logo" class="h-16 w-auto object-contain hidden dark:block rounded-xl shadow-xs" />
-          </div>
-          <h1 class="text-xl sm:text-2xl font-bold text-[#222120] dark:text-[#EDEDEB] tracking-tight">PPTQ LMS</h1>
-          <p class="text-xs text-[#8F8E8A] mt-0.5">People • Passion • Team • Quality</p>
+          <h1 class="text-2xl sm:text-3xl font-extrabold text-[#222120] dark:text-[#EDEDEB] tracking-tight">PPTQ LMS</h1>
         </div>
 
         <div class="w-full max-w-sm">

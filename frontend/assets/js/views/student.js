@@ -10095,13 +10095,9 @@ class StudentView {
           
           <!-- Page Header -->
           <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4 border-b border-slate-200 dark:border-slate-800">
-            <div class="flex items-center gap-3">
-              <img src="/frontend/assets/img/pptq_logo_light.png" alt="PPTQ" class="h-10 w-auto object-contain dark:hidden rounded-lg shadow-2xs" />
-              <img src="/frontend/assets/img/pptq_logo_dark.png" alt="PPTQ" class="h-10 w-auto object-contain hidden dark:block rounded-lg shadow-2xs" />
-              <div>
-                <h1 class="text-xl font-bold text-slate-900 dark:text-white">Cài Đặt Tài Khoản</h1>
-                <p class="text-xs text-slate-500 mt-0.5">Quản lý thông tin định danh cá nhân, an toàn mật khẩu và tùy chọn nhận thông báo học vụ.</p>
-              </div>
+            <div>
+              <h1 class="text-xl font-bold text-slate-900 dark:text-white">Cài Đặt Tài Khoản</h1>
+              <p class="text-xs text-slate-500 mt-0.5">Quản lý thông tin định danh cá nhân, an toàn mật khẩu và tùy chọn nhận thông báo học vụ.</p>
             </div>
             <div class="flex items-center gap-2 text-xs font-mono text-slate-400 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
               <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
