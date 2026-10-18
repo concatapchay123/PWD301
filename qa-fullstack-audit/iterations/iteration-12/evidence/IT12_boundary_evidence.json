@@ -1,0 +1,4 @@
+{
+  "prerequisite_cycle_prevention": "VERIFIED",
+  "anti_leak_exam_invariants": "VERIFIED"
+}

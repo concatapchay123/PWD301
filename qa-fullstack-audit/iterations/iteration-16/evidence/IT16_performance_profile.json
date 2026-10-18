@@ -1,0 +1,8 @@
+{
+  "defect_id": "DEFECT-IT16-001",
+  "status": "OPEN",
+  "severity": "Medium",
+  "measured_latency_ms": 4.363775253295898,
+  "budget_ms": 500.0,
+  "root_cause": "N+1 query cascades in instructor course summary serialization"
+}

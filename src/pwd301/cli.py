@@ -78,3 +78,102 @@ def register_cli_commands(app: Flask) -> None:
             f"Admin created: {summary['admin_created']}, "
             f"Admin roles assigned: {summary['admin_roles_assigned']}"
         )
+
+    @app.cli.command("clean-db")
+    @click.option(
+        "--keep-baseline/--no-keep-baseline",
+        default=True,
+        show_default=True,
+        help="Re-seed canonical roles and root administrator after cleaning.",
+    )
+    @click.option(
+        "--clean-storage/--no-clean-storage",
+        default=True,
+        show_default=True,
+        help="Clean physical storage blobs, quarantine files, exports, and dev caches.",
+    )
+    @click.option(
+        "--yes",
+        "-y",
+        is_flag=True,
+        default=False,
+        help="Bypass interactive confirmation prompt.",
+    )
+    def clean_db_cmd(keep_baseline: bool, clean_storage: bool, yes: bool) -> None:
+        """Hard delete all test and demonstration records from database and storage."""
+        if not yes and not click.confirm(
+            "WARNING: This will permanently delete all test records from the database. Continue?"
+        ):
+            click.echo("Database cleanup aborted.")
+            return
+
+        click.echo("Executing production database cleanup...")
+        from pwd301.services.database_cleanup_service import clean_database
+
+        report = clean_database(
+            session=db.session,
+            engine=db.engine,
+            keep_baseline=keep_baseline,
+            clean_storage=clean_storage,
+        )
+        click.echo(
+            f"Done! Cleaned {report['tables_targeted']} tables, "
+            f"deleted {report['total_records_deleted']} records, "
+            f"reseeded {report['identities_reseeded']} identity sequences."
+        )
+        if report.get("baseline_summary"):
+            b = report["baseline_summary"]
+            click.echo(
+                f"Baseline re-seeded: Roles: {b['roles_created']}, "
+                f"Admin created: {b['admin_created']}."
+            )
+        if report.get("storage_summary"):
+            s = report["storage_summary"]
+            click.echo(
+                f"Storage cleaned: {s['total_files_deleted']} files deleted "
+                f"({s['bytes_freed']} bytes freed)."
+            )
+
+    @app.cli.command("reset-db")
+    @click.option(
+        "--seed-demo",
+        is_flag=True,
+        default=False,
+        help="Seed full demonstration dataset after cleaning instead of baseline only.",
+    )
+    @click.option(
+        "--yes",
+        "-y",
+        is_flag=True,
+        default=False,
+        help="Bypass interactive confirmation prompt.",
+    )
+    def reset_db_cmd(seed_demo: bool, yes: bool) -> None:
+        """Reset database to a pristine baseline (or seed demo data if --seed-demo)."""
+        if not yes and not click.confirm(
+            "WARNING: This will reset the database. Continue?"
+        ):
+            click.echo("Database reset aborted.")
+            return
+
+        from pwd301.services.database_cleanup_service import clean_database
+
+        report = clean_database(
+            session=db.session,
+            engine=db.engine,
+            keep_baseline=not seed_demo,
+            clean_storage=True,
+        )
+        click.echo(
+            f"Wiped {report['tables_targeted']} tables ({report['total_records_deleted']} records deleted)."
+        )
+        if seed_demo:
+            click.echo("Seeding demonstration dataset...")
+            demo_summary = seed_demo(db.session)
+            click.echo(
+                f"Done! Courses created: {len(demo_summary['courses_created'])}, "
+                f"Users: {len(demo_summary['users_created'])}."
+            )
+        else:
+            click.echo("Pristine baseline established.")
+

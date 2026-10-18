@@ -321,23 +321,52 @@ Nạp dữ liệu vai trò chuẩn (`STUDENT`, `INSTRUCTOR`, `ADMIN`) và tài k
 
 ### Cách 3: Khởi chạy Môi trường Phát triển Cục bộ (Local Development)
 
-```bash
-# 1. Khởi tạo môi trường ảo Python
-python -m venv .venv
-# Windows: .venv\Scripts\activate | Linux/macOS: source .venv/bin/activate
+Hệ thống hỗ trợ cơ chế phát triển linh hoạt với cơ sở dữ liệu **SQLite** tích hợp sẵn (không yêu cầu cài đặt MS SQL Server) hoặc kết nối trực tiếp với **MS SQL Server 2022**.
 
-# 2. Cài đặt các gói phụ thuộc
+```bash
+# 1. Khởi tạo môi trường ảo Python (Yêu cầu Python 3.11+)
+python -m venv .venv
+# Trên Windows: .venv\Scripts\activate | Trên Linux/macOS: source .venv/bin/activate
+
+# 2. Cài đặt các gói phụ thuộc và liên kết package cục bộ
+pip install --upgrade pip
 pip install -r requirements.txt
 pip install -r requirements-dev.txt
+pip install -e .
+
+# (Tùy chọn) Cài đặt module render công thức toán offline nếu máy có Node.js:
+# npm --prefix tools/pdf-math install
 
 # 3. Cấu hình biến môi trường và chạy di chuyển CSDL
 cp .env.example .env
+# Mặc định .env sử dụng SQLite (sqlite:///instance/pwd301_dev.db), sẵn sàng chạy ngay.
 flask db upgrade
-flask seed-baseline
 
-# 4. Khởi chạy máy chủ phát triển
+# 4. Nạp dữ liệu nền tảng và dữ liệu mẫu đầy đủ (Khóa học, Bài giảng, Giảng viên, Sinh viên, Đề thi)
+flask seed-baseline
+flask seed-demo
+
+# 5. Khởi chạy máy chủ phát triển
 flask run --host=0.0.0.0 --port=5000
 ```
+
+> **Tài khoản đăng nhập thử nghiệm có sẵn sau khi seed**:
+> - **Quản trị viên (Admin)**: `admin@pwd301.local` / Mật khẩu: `Admin@123456`
+> - **Giảng viên (Instructor)**: `instructor1@pwd301.local` / Mật khẩu: `Admin@123456`
+> - **Sinh viên (Student)**: `student1@pwd301.local` / Mật khẩu: `Admin@123456`
+
+> **Làm sạch & Chuẩn bị Cơ sở Dữ liệu cho Môi trường Production**:
+> - Xóa cứng toàn bộ dữ liệu rác, đệm thử nghiệm, và tệp lưu trữ, bảo toàn cấu trúc bảng và nạp lại Baseline Roles + Root Admin:
+>   ```bash
+>   flask clean-db --yes
+>   # Hoặc dùng kịch bản độc lập:
+>   python scripts/clean_database.py --yes
+>   ```
+> - Khôi phục CSDL về trạng thái dữ liệu mẫu (dành cho phát triển/demo):
+>   ```bash
+>   flask reset-db --seed-demo --yes
+>   ```
+
 
 ---
 

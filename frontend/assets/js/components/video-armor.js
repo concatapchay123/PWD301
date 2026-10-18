@@ -76,7 +76,11 @@ class VideoArmor {
         if (typeof e?.preventDefault === 'function') e.preventDefault();
         if (typeof e?.stopPropagation === 'function') e.stopPropagation();
         VideoArmor._clearClipboardStatic();
-        VideoArmor.triggerGlobalLockdown('CONTEXT_MENU_BLOCKED');
+        // In local development (localhost / 127.0.0.1), prevent default inspect menu without revoking session
+        const isLocalHost = Boolean(win && win.location && (win.location.hostname === 'localhost' || win.location.hostname === '127.0.0.1'));
+        if (!isLocalHost) {
+          VideoArmor.triggerGlobalLockdown('CONTEXT_MENU_BLOCKED');
+        }
       }
     };
 
@@ -92,6 +96,10 @@ class VideoArmor {
       VideoArmor._globalDevToolsTimer = win.setInterval(() => {
         if (VideoArmor._isGlobalLocked) return;
         if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+        // In local development, avoid aggressive 1-second debugger pause loop
+        const isLocalHost = Boolean(win && win.location && (win.location.hostname === 'localhost' || win.location.hostname === '127.0.0.1'));
+        if (isLocalHost) return;
+
         const start = Date.now();
         try {
           (function() { debugger; })();
@@ -99,17 +107,7 @@ class VideoArmor {
         const delta = Date.now() - start;
         if (delta > 100) {
           VideoArmor.triggerGlobalLockdown('DEVTOOLS_DETECTED');
-          return;
         }
-        try {
-          if (win && typeof win.outerWidth === 'number' && typeof win.innerWidth === 'number') {
-            const widthThreshold = win.outerWidth - win.innerWidth > 160;
-            const heightThreshold = win.outerHeight - win.innerHeight > 160;
-            if (widthThreshold || heightThreshold) {
-              VideoArmor.triggerGlobalLockdown('DEVTOOLS_DETECTED');
-            }
-          }
-        } catch (_) {}
       }, 1000);
 
       if (VideoArmor._globalDevToolsTimer && typeof VideoArmor._globalDevToolsTimer.unref === 'function') {

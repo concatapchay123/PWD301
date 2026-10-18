@@ -13,10 +13,18 @@ if (-not (Test-Path ".venv")) {
 $Python = Join-Path $Root ".venv\Scripts\python.exe"
 & $Python -m pip install --upgrade pip
 & $Python -m pip install -r requirements.txt -r requirements-dev.txt
+& $Python -m pip install -e .
 
 if (-not (Test-Path ".env")) {
     Copy-Item ".env.example" ".env"
     Write-Host "Created .env from .env.example. Replace local secrets before running the app."
+}
+
+if (Get-Command npm -ErrorAction SilentlyContinue) {
+    if (Test-Path "tools/pdf-math/package.json") {
+        Write-Host "Installing tools/pdf-math Node dependencies..."
+        npm --prefix tools/pdf-math install --silent
+    }
 }
 
 & $Python scripts/repo_check.py

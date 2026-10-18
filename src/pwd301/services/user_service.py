@@ -221,10 +221,13 @@ def register_user(
         email_verified_at=None,
     )
 
-    # Assign default STUDENT role if it exists in the database
+    # Assign default STUDENT role (self-healing: auto-create if baseline roles not yet seeded)
     student_role = sess.query(Role).filter(Role.code == "STUDENT").first()
-    if student_role is not None:
-        user.roles.append(student_role)
+    if student_role is None:
+        student_role = Role(code="STUDENT", name="Student")
+        sess.add(student_role)
+        sess.flush()
+    user.roles.append(student_role)
 
     sess.add(user)
     try:

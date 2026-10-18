@@ -1,0 +1,7 @@
+{
+  "defect_id": "DEFECT-IT10-001",
+  "status": "OPEN",
+  "severity": "High",
+  "affected_file": "src/pwd301/blueprints/instructor/routes.py",
+  "root_cause": "Serialization of deleted course raises HTTP 403 because can_manage_course requires deleted_at is None"
+}

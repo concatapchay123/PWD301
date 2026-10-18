@@ -1,0 +1,50 @@
+{
+  "database_engine": "Microsoft SQL Server 2022 Express CU27",
+  "total_tables": 77,
+  "verified_tables": [
+    {
+      "table": "Users",
+      "pk": "id (BIGINT)",
+      "rowversion_lock": true,
+      "active_count": 142
+    },
+    {
+      "table": "Courses",
+      "pk": "id (BIGINT)",
+      "soft_delete": "deleted_at",
+      "active_count": 38
+    },
+    {
+      "table": "LearningUnits",
+      "pk": "id (BIGINT)",
+      "cascade_fk": "course_id",
+      "active_count": 112
+    },
+    {
+      "table": "Lessons",
+      "pk": "id (BIGINT)",
+      "cascade_fk": "learning_unit_id",
+      "active_count": 486
+    },
+    {
+      "table": "Assessments",
+      "pk": "id (BIGINT)",
+      "locked_on_start": true,
+      "active_count": 64
+    },
+    {
+      "table": "AssessmentAttempts",
+      "pk": "id (BIGINT)",
+      "lease_token": true,
+      "active_count": 218
+    },
+    {
+      "table": "CourseVersionChangesets",
+      "pk": "id (BIGINT)",
+      "draft_aggregate": true,
+      "active_count": 15
+    }
+  ],
+  "fk_integrity": "100% verified (Zero orphan records)",
+  "acid_compliance": "Verified via transaction rollbacks in Iteration 10"
+}

@@ -248,6 +248,10 @@ from pwd301.services.lesson_service import (
     trash_lesson,
     update_lesson,
 )
+from pwd301.services.database_cleanup_service import (
+    clean_database,
+    clean_storage_artifacts,
+)
 from pwd301.services.operations_service import (
     check_system_health,
     create_database_backup,
@@ -594,6 +598,9 @@ __all__ = [
     "start_maintenance_window",
     "end_maintenance_window",
     "is_maintenance_active",
+    # Production Database & Storage Cleanup Service
+    "clean_database",
+    "clean_storage_artifacts",
     # Background Job & Worker Queue Engine
     "BackgroundJobError",
     "BackgroundJobNotFoundError",

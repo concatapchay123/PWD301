@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import os
 import re
 import shutil
@@ -110,12 +111,26 @@ def render_math_svg(expression: str) -> bytes:
     return _render_batch((expression,))[0]
 
 
+logger = logging.getLogger(__name__)
+
+
 def prepare_math(values: list[str]) -> dict[str, bytes]:
-    """Render a document's formulas in one process rather than one process per cell."""
+    """Render a document's formulas in one process rather than one process per cell.
+
+    Provides a resilient fallback: if the Node.js MathJax renderer is unavailable
+    (e.g., node_modules not yet installed), returns an empty mapping so paragraphs
+    fall back cleanly to text instead of failing the entire PDF document generation.
+    """
     formulas = tuple(
         dict.fromkeys(_formula(match) for value in values for match in _MATH.finditer(value))
     )
-    return dict(zip(formulas, _render_batch(formulas), strict=True))
+    if not formulas:
+        return {}
+    try:
+        return dict(zip(formulas, _render_batch(formulas), strict=True))
+    except Exception as exc:
+        logger.warning("Offline PDF math renderer unavailable; falling back to text: %s", exc)
+        return {}
 
 
 def _drawing(

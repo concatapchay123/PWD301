@@ -1,0 +1,5 @@
+{
+  "DEFECT-IT10-001": "CONFIRMED OPEN (Trashing response serialization raises HTTP 403)",
+  "DEFECT-IT16-001": "CONFIRMED OPEN (N+1 query latency exceeds budget)",
+  "BRAND-CLEANUP": "CONFIRMED VERIFIED (0 logo images, PPTQ LMS header across all views)"
+}
