@@ -40,7 +40,7 @@ def test_copyright_protection_neutralization():
 
     # 1. Must have explicit SUPERSEDED NOTICE at the top
     assert "SUPERSEDED NOTICE" in content
-    assert "Clean Player Shell v2" in content
+    assert "YouTube Standard 16:9 Player" in content
     assert "STRICTLY SUPERSEDED" in content
 
     # 2. Historical section must be clearly tagged
@@ -83,34 +83,27 @@ def test_no_unshielded_youtube_claims_in_active_docs():
 
 
 def test_agents_md_clean_player_shell_v2_comprehensive():
-    """Verify AGENTS.md codifies Clean Player Shell v2 in both Section 4 and Section 10.8."""
+    """Verify AGENTS.md codifies YouTube Standard 16:9 Player in both Section 4 and Section 10.8."""
     agents_file = PROJECT_ROOT / "AGENTS.md"
     assert agents_file.exists()
     content = agents_file.read_text(encoding="utf-8")
 
     required_keywords_section_4 = [
-        "Clean Player Shell v2",
+        "YouTube Standard 16:9 Player",
         "Cover Poster/Backdrop Shield",
-        "concealing 100% of YouTube red play button",
-        "zero YouTube branding",
         "youtube-nocookie.com",
         "Resilient Playback Fallback",
-        "safe default (1800s, min 300s)",
+        "Pacing Engine & 5-Second Seek Unlock",
     ]
     for kw in required_keywords_section_4:
         assert kw in content, f"AGENTS.md missing Section 4 keyword: '{kw}'"
 
     required_keywords_section_10_8 = [
-        "10.8. Bất biến Bản quyền Video & YouTube Clean Player Shell v2",
+        "10.8. Bất biến Bản quyền Video & YouTube Standard 16:9 Viewport",
         "Cover Poster Shield",
-        "nút play đỏ",
-        "youtube-nocookie.com",
-        "Error 153",
-        "Hero Trailer",
-        "autoplay",
-        "mute",
-        "loop",
-        "Universal Touchpoints",
+        "Triệt tiêu Lỗi Không Thể Pause",
+        "Mở Khóa Tua 5 Giây Cuối",
+        "Kích Hoạt Realtime Chuyển Bài Tiếp Theo",
         "Resilient Playback Fallback",
         "LessonValidationError",
     ]
@@ -119,31 +112,30 @@ def test_agents_md_clean_player_shell_v2_comprehensive():
 
 
 def test_system_specification_invariant_25_alignment():
-    """Verify 04_LESSON_AND_PROGRESS.md and 06_NON_NEGOTIABLE_INVARIANTS.md reflect Clean Player Shell v2."""
+    """Verify 04_LESSON_AND_PROGRESS.md and 06_NON_NEGOTIABLE_INVARIANTS.md reflect YouTube Standard 16:9 Player."""
     inv_file = PROJECT_ROOT / "docs" / "system" / "PWD301_SYSTEM_SPECIFICATION" / "implementation" / "06_NON_NEGOTIABLE_INVARIANTS.md"
     lesson_file = PROJECT_ROOT / "docs" / "system" / "PWD301_SYSTEM_SPECIFICATION" / "business" / "04_LESSON_AND_PROGRESS.md"
 
     for f in [inv_file, lesson_file]:
         assert f.exists()
         content = f.read_text(encoding="utf-8")
-        assert "Clean Player Shell v2" in content
+        assert "YouTube Standard 16:9 Player" in content
         assert "Cover Poster" in content
         assert "youtube-nocookie.com" in content
         assert "Resilient Playback Fallback" in content
         assert "1800s" in content
-        assert "4 universal touchpoints" in content or "4 touchpoints" in content
+        assert "4 touchpoints" in content or "4 universal touchpoints" in content
 
 
 def test_current_task_alignment():
-    """Verify tasks/CURRENT.md properly tracks TASK-098 and links to authority."""
+    """Verify tasks/CURRENT.md properly tracks TASK-100 and links to authority."""
     current_file = PROJECT_ROOT / "tasks" / "CURRENT.md"
     assert current_file.exists()
     content = current_file.read_text(encoding="utf-8")
 
-    assert "TASK-098" in content
+    assert "TASK-100" in content
     assert "WORKFLOW_SUPERSESSION.md" in content
-    assert "Clean Player Shell v2" in content
-    assert "Resilient Fallback" in content
+    assert "YouTube Standard 16:9 Viewport" in content
 
 
 def test_no_archive_policy_preserved():

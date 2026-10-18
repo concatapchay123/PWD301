@@ -368,6 +368,7 @@ def delete_learning_unit(
                     lesson.updated_at = now
                     _cleanup_lesson_resources(sess, lesson, actor, now)
                 else:
+                    _cleanup_lesson_resources(sess, lesson, actor, now)
                     stage_course_operation(
                         actor,
                         course,
@@ -1532,6 +1533,8 @@ def trash_lesson(
         return lesson
 
     if should_stage(actor, course, sess) and lesson.change_request_id is None:
+        now = utc_now()
+        _cleanup_lesson_resources(sess, lesson, actor, now)
         stage_course_operation(
             actor,
             course,

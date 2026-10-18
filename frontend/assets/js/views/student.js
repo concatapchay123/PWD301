@@ -1752,7 +1752,7 @@ class StudentView {
                 <div id="course-hero-media-box" class="aspect-video w-full rounded-2xl overflow-hidden bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-2xl relative flex items-center justify-center group select-none">
                   ${ytHeroId ? `
                     <div class="relative w-full h-full overflow-hidden bg-slate-950 rounded-2xl select-none" id="hero-trailer-clean-shell">
-                      <div style="position: absolute; top: -22%; left: -5%; width: 110%; height: 144%; pointer-events: none;" class="pointer-events-none">
+                      <div style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none;" class="pointer-events-none">
                         <iframe
                           id="hero-trailer-iframe"
                           src="https://www.youtube-nocookie.com/embed/${ytHeroId}?autoplay=1&mute=1&loop=1&playlist=${ytHeroId}&controls=0&showinfo=0&rel=0&iv_load_policy=3&disablekb=1&modestbranding=1&playsinline=1&enablejsapi=1"
@@ -4436,7 +4436,7 @@ class StudentView {
 
           const isLessonRequirementsMet = () => {
             if (isCompleted) return true;
-            const dwellOk = !hasText || (dwellElapsed >= dwellRequired);
+            const dwellOk = !hasText || hasVideo || (dwellElapsed >= dwellRequired);
             const videoOk = !hasVideo || videoWatched;
             const quizOk = !hasMiniQuiz || hasPassedQuiz;
             return dwellOk && videoOk && quizOk;
@@ -4445,7 +4445,7 @@ class StudentView {
           const getMissingRequirements = () => {
             if (isCompleted) return [];
             const missing = [];
-            if (hasText && dwellElapsed < dwellRequired) {
+            if (hasText && !hasVideo && dwellElapsed < dwellRequired) {
               missing.push(`Cần học tối thiểu 60s (còn ${dwellRequired - dwellElapsed}s)`);
             }
             if (hasVideo && !videoWatched) {
@@ -5535,8 +5535,8 @@ class StudentView {
       return `
         <div class="relative group w-full rounded-xl bg-slate-950 flex flex-col select-none overflow-hidden" id="${playerId}-container" data-custom-player="true" data-player-type="youtube" data-yt-id="${ytId}" tabindex="0">
           <div class="relative w-full aspect-video overflow-hidden bg-slate-950" id="${playerId}-viewport">
-            <!-- Scaled container to crop out YouTube top header (title, share, avatar) and bottom branding (Clean Player Shell v3) -->
-            <div style="position: absolute; top: -22%; left: -5%; width: 110%; height: 144%; pointer-events: none;" class="pointer-events-none">
+            <!-- Standard 16:9 uncropped viewport for YouTube playback -->
+            <div style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none;" class="pointer-events-none">
               <div id="${playerId}-yt" class="w-full h-full"></div>
             </div>
             <!-- Click shield to handle play/pause without passing click through to YouTube iframe -->
@@ -5851,6 +5851,11 @@ class StudentView {
     };
     const transition = state => {
       if (disposed || container.isConnected === false || changingRate) return;
+      if (state === 'ended') {
+        unlocked = true;
+        options.onComplete?.(duration);
+        options.onEnded?.();
+      }
       const active = state === 'playing' && document.visibilityState !== 'hidden' && !armor?.isBlackedOut;
       if (active && !playing) {
         options.onPlaying?.();
@@ -5901,7 +5906,19 @@ class StudentView {
       if (disposed || !driver) return;
       const cur = position(), dur = duration || (youtube ? driver.getDuration?.() : video.duration) || 0;
       const elapsed = Math.max(0, (Date.now() - observedAt) / 1000);
-      if (youtube && !unlocked && cur > Math.max(frontier, observedPosition + (playing ? elapsed * rate() : 0)) + 1) {
+
+      // Final 5-second seek unlock and completion recognition
+      const inFinal5s = dur > 0 && (cur >= Math.max(0, dur - 5.0) || dur <= 5.0 || frontier >= Math.max(0, dur - 5.0));
+      if (inFinal5s && !unlocked) {
+        unlocked = true;
+        const lock = get('lock-indicator');
+        if (lock) lock.textContent = 'Đã mở khóa tua';
+        options.onProgress?.(dur, dur);
+        options.onComplete?.(dur);
+        options.onConfirmed?.({ is_video_complete: true, unlocked: true, frontier: dur, duration: dur });
+      }
+
+      if (youtube && !unlocked && !inFinal5s && cur > Math.max(frontier, observedPosition + (playing ? elapsed * rate() : 0)) + 1) {
         seek(frontier); status('Bạn chỉ có thể tua trong đoạn đã được hệ thống ghi nhận.'); return;
       }
       observedPosition = cur; observedAt = Date.now();
@@ -5936,7 +5953,9 @@ class StudentView {
       }
     };
     const seekAllowed = value => {
-      const limit = unlocked ? duration || Infinity : frontier;
+      const dur = duration || (youtube ? driver?.getDuration?.() : video?.duration) || 0;
+      const inFinal5s = dur > 0 && (dur <= 5.0 || (unlocked || frontier >= Math.max(0, dur - 5.0)));
+      const limit = (unlocked || inFinal5s || options.preview || options.isPreview) ? dur || Infinity : frontier;
       seek(Math.max(0, Math.min(value, limit)));
       if (value > limit) status('Bạn chỉ có thể tua trong đoạn đã được hệ thống ghi nhận.');
     };
@@ -6026,7 +6045,12 @@ class StudentView {
                     const poster = get('poster-shield');
                     if (poster) poster.classList.add('opacity-0', 'pointer-events-none');
                   }
-                  transition(event.data === 1 ? 'playing' : event.data === 0 ? 'ended' : 'paused');
+                  if (event.data === 0) {
+                    transition('ended');
+                    options.onEnded?.();
+                  } else {
+                    transition(event.data === 1 ? 'playing' : 'paused');
+                  }
                 }
               },
               onPlaybackRateChange: () => { if (!disposed && generation === initialization) void handleRateChange(); },
@@ -6080,10 +6104,17 @@ class StudentView {
           listen(video, 'playing', () => { status(''); get('retry')?.classList.add('hidden'); transition('playing'); });
           listen(video, 'canplay', () => { status(''); get('retry')?.classList.add('hidden'); if (!tracker) startTracker(); });
           listen(video, 'loadeddata', () => { status(''); get('retry')?.classList.add('hidden'); });
-          for (const event of ['pause', 'waiting', 'ended']) listen(video, event, () => transition(event === 'ended' ? 'ended' : 'paused'));
-          listen(video, 'error', () => failPlayback(video.error?.code === 4 ? 'Không thể tải video: định dạng hoặc bộ mã hóa không được hỗ trợ. Hãy thử lại.' : 'Không thể tải video. Kiểm tra kết nối và thử lại.'));
-          listen(video, 'seeking', () => { if (!unlocked && position() > frontier) seek(frontier); });
-          listen(video, 'loadedmetadata', () => { status(''); get('retry')?.classList.add('hidden'); if (!tracker) startTracker(); });
+          listen(video, 'error', () => failPlayback('Không thể tải video bài học. Hãy thử lại.'));
+          for (const event of ['pause', 'waiting']) listen(video, event, () => transition('paused'));
+          listen(video, 'ended', () => {
+            transition('ended');
+            options.onEnded?.();
+          });
+          listen(video, 'seeking', () => {
+            const dur = duration || video.duration || 0;
+            const inFinal5s = dur > 0 && (dur <= 5.0 || (unlocked || frontier >= Math.max(0, dur - 5.0)));
+            if (!unlocked && !inFinal5s && !options.preview && !options.isPreview && position() > frontier) seek(frontier);
+          });
           listen(video, 'ratechange', () => { void handleRateChange(); });
         }
         if (video.readyState >= 1) {
@@ -10094,12 +10125,13 @@ class StudentView {
           
           <!-- Page Header -->
           <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4 border-b border-slate-200 dark:border-slate-800">
-            <div>
-              <div class="flex items-center gap-2">
-                <span class="material-symbols-outlined text-primary text-[24px]">settings</span>
+            <div class="flex items-center gap-3">
+              <img src="/frontend/assets/img/pptq_logo_light.png" alt="PPTQ" class="h-10 w-auto object-contain dark:hidden rounded-lg shadow-2xs" />
+              <img src="/frontend/assets/img/pptq_logo_dark.png" alt="PPTQ" class="h-10 w-auto object-contain hidden dark:block rounded-lg shadow-2xs" />
+              <div>
                 <h1 class="text-xl font-bold text-slate-900 dark:text-white">Cài Đặt Tài Khoản</h1>
+                <p class="text-xs text-slate-500 mt-0.5">Quản lý thông tin định danh cá nhân, an toàn mật khẩu và tùy chọn nhận thông báo học vụ.</p>
               </div>
-              <p class="text-xs text-slate-500 mt-1">Quản lý thông tin định danh cá nhân, an toàn mật khẩu và tùy chọn nhận thông báo học vụ.</p>
             </div>
             <div class="flex items-center gap-2 text-xs font-mono text-slate-400 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
               <span class="w-2 h-2 rounded-full bg-emerald-500"></span>

@@ -155,6 +155,7 @@ function createMockPlaybackDOM() {
       const key = `${this.id || 'anon'}:${type}`;
       if (!listeners.has(key)) listeners.set(key, new Set());
       listeners.get(key).add(fn);
+      this[`on${type}`] = fn;
     }
 
     removeEventListener(type, fn) {

@@ -281,11 +281,11 @@ test('console header markup eliminates #console-course-progress-badge and update
   assert.match(studentSource, /const updateConsoleCourseProgressBadge = \(\) =>/, 'updateConsoleCourseProgressBadge must exist as safe no-op');
 });
 
-test('hero trailer clean player shell enforces Clean Player Shell v3 container scaling and clean embed params', () => {
+test('hero trailer clean player shell enforces standard 16:9 uncropped viewport and clean embed params', () => {
   const studentSource = fs.readFileSync('frontend/assets/js/views/student.js', 'utf8');
   assert.match(studentSource, /id="hero-trailer-clean-shell"/, 'Must contain #hero-trailer-clean-shell container');
-  assert.match(studentSource, /top:\s*-22%/, 'Must contain top: -22% scaling style');
-  assert.match(studentSource, /height:\s*144%/, 'Must contain height: 144% scaling style');
+  assert.match(studentSource, /inset:\s*0;\s*width:\s*100%;\s*height:\s*100%/, 'Must contain standard 16:9 uncropped style');
+  assert.doesNotMatch(studentSource, /top:\s*-22%/, 'Must eliminate top: -22% scaling style');
   assert.match(studentSource, /pointer-events:\s*none/, 'Must contain pointer-events: none on iframe wrapper');
   assert.match(studentSource, /autoplay=1/, 'Embed URL must enforce autoplay=1');
   assert.match(studentSource, /mute=1/, 'Embed URL must enforce mute=1');

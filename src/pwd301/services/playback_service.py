@@ -214,7 +214,7 @@ def _snapshot(
     def _is_complete(m: MediaProgress | None) -> bool:
         if not m or not m.duration_seconds or m.duration_seconds <= 0:
             return False
-        return m.frontier_seconds >= max(0.0, m.duration_seconds - 0.5)
+        return m.duration_seconds <= 5.0 or m.frontier_seconds >= max(0.0, m.duration_seconds - 5.0)
 
     this_complete = _is_complete(media)
     all_complete = bool(ids) and all(_is_complete(media_map.get(mid)) for mid in ids)
@@ -230,6 +230,7 @@ def _snapshot(
         "credited_seconds": credited,
         "is_video_complete": this_complete,
         "all_videos_complete": all_complete,
+        "unlocked": this_complete,
         "is_completed": bool(progress and progress.completed_at),
         "completed": bool(progress and progress.completed_at),
         "seconds_spent": progress.seconds_spent if progress else 0,
@@ -450,7 +451,15 @@ def record_playback_heartbeat(
             and contiguous <= allowed + 0.25
             and lease.last_position <= media.frontier_seconds + 0.25
         )
-        if active and ids and not valid_motion and position > media.frontier_seconds + 0.25:
+        is_in_final_5s = bool(
+            media.duration_seconds > 0
+            and (
+                media.duration_seconds <= 5.0
+                or media.frontier_seconds >= max(0.0, media.duration_seconds - 5.0)
+                or position >= max(0.0, media.duration_seconds - 5.0)
+            )
+        )
+        if active and ids and not valid_motion and position > media.frontier_seconds + 0.25 and not is_in_final_5s:
             sess.add(
                 AuditEvent(
                     action="LESSON_PROGRESS_PACE_ANOMALY",
@@ -484,6 +493,15 @@ def record_playback_heartbeat(
             )
         elif not active:
             lease.fractional_seconds = 0
+
+        # When reaching or seeking within final 5 seconds of the video, credit completion
+        if media.duration_seconds > 0 and (
+            media.duration_seconds <= 5.0
+            or media.frontier_seconds >= max(0.0, media.duration_seconds - 5.0)
+            or position >= max(0.0, media.duration_seconds - 5.0)
+        ):
+            media.frontier_seconds = media.duration_seconds
+
         ids = lesson_media_ids(lesson)
         all_media = (
             sess.query(MediaProgress)
@@ -495,7 +513,7 @@ def record_playback_heartbeat(
         def _is_complete(m: MediaProgress | None) -> bool:
             if not m or not m.duration_seconds or m.duration_seconds <= 0:
                 return False
-            return m.frontier_seconds >= max(0.0, m.duration_seconds - 0.5)
+            return m.duration_seconds <= 5.0 or m.frontier_seconds >= max(0.0, m.duration_seconds - 5.0)
 
         all_videos_complete = bool(ids) and all(_is_complete(media_map.get(mid)) for mid in ids)
 
@@ -516,13 +534,22 @@ def record_playback_heartbeat(
         )
         lease.state, lease.last_heartbeat_at, lease.updated_at = state, at, at
         # Clamp the origin after a forged seek; client must reconcile to frontier.
-        lease.last_position = min(position, media.frontier_seconds)
+        lease.last_position = (
+            position
+            if (is_in_final_5s or _is_complete(media))
+            else min(position, media.frontier_seconds)
+        )
         lease.last_rate = rate
         lease.next_sequence += 1
         media.updated_at = at
         sess.flush()
         result = _snapshot(lease, media, lesson, actor, at, sess, credited)
-        result["seek_required"] = bool(ids and position > media.frontier_seconds + 0.25)
+        result["seek_required"] = bool(
+            ids
+            and position > media.frontier_seconds + 0.25
+            and not is_in_final_5s
+            and not _is_complete(media)
+        )
         sess.add(
             PlaybackReceipt(
                 session_id=lease.id,

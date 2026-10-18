@@ -26,8 +26,310 @@ class VideoArmor {
     this._init();
   }
 
+  static _globalUser = null;
+  static _globalShieldActive = false;
+  static _isGlobalLocked = false;
+  static _globalKeyHandler = null;
+  static _globalContextMenuHandler = null;
+  static _globalDevToolsTimer = null;
+
   static mount(container, options = {}) {
     return new VideoArmor(container, options);
+  }
+
+  static isGlobalShieldInstalled() {
+    return Boolean(VideoArmor._globalShieldActive);
+  }
+
+  static installGlobalShield(user = null) {
+    VideoArmor._globalUser = user;
+    if (VideoArmor._globalShieldActive) return;
+    VideoArmor._globalShieldActive = true;
+    VideoArmor._isGlobalLocked = false;
+
+    const win = (typeof window !== 'undefined') ? window : (typeof global !== 'undefined' ? global : null);
+    const doc = (typeof document !== 'undefined') ? document : null;
+
+    // 1. Keydown handler
+    VideoArmor._globalKeyHandler = (e) => {
+      if (VideoArmor._isGlobalLocked) return;
+      const violation = VideoArmor.checkShortcutViolation(e);
+      if (violation) {
+        if (typeof e.preventDefault === 'function') e.preventDefault();
+        if (typeof e.stopPropagation === 'function') e.stopPropagation();
+        VideoArmor._clearClipboardStatic();
+        VideoArmor.triggerGlobalLockdown(violation);
+      }
+    };
+
+    if (win && win.addEventListener) {
+      win.addEventListener('keydown', VideoArmor._globalKeyHandler, true);
+    }
+
+    // 2. Contextmenu handler
+    VideoArmor._globalContextMenuHandler = (e) => {
+      if (VideoArmor._isGlobalLocked) return;
+      const target = e?.target;
+      const tag = (target && target.tagName ? target.tagName : '').toUpperCase();
+      const isEditable = target && (target.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA');
+      if (!isEditable) {
+        if (typeof e?.preventDefault === 'function') e.preventDefault();
+        if (typeof e?.stopPropagation === 'function') e.stopPropagation();
+        VideoArmor._clearClipboardStatic();
+        VideoArmor.triggerGlobalLockdown('CONTEXT_MENU_BLOCKED');
+      }
+    };
+
+    if (win && win.addEventListener) {
+      win.addEventListener('contextmenu', VideoArmor._globalContextMenuHandler, true);
+    }
+    if (doc && doc.addEventListener) {
+      doc.addEventListener('contextmenu', VideoArmor._globalContextMenuHandler, true);
+    }
+
+    // 3. Periodic DevTools check
+    if (win && win.setInterval) {
+      VideoArmor._globalDevToolsTimer = win.setInterval(() => {
+        if (VideoArmor._isGlobalLocked) return;
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+        const start = Date.now();
+        try {
+          (function() { debugger; })();
+        } catch (_) {}
+        const delta = Date.now() - start;
+        if (delta > 100) {
+          VideoArmor.triggerGlobalLockdown('DEVTOOLS_DETECTED');
+          return;
+        }
+        try {
+          if (win && typeof win.outerWidth === 'number' && typeof win.innerWidth === 'number') {
+            const widthThreshold = win.outerWidth - win.innerWidth > 160;
+            const heightThreshold = win.outerHeight - win.innerHeight > 160;
+            if (widthThreshold || heightThreshold) {
+              VideoArmor.triggerGlobalLockdown('DEVTOOLS_DETECTED');
+            }
+          }
+        } catch (_) {}
+      }, 1000);
+
+      if (VideoArmor._globalDevToolsTimer && typeof VideoArmor._globalDevToolsTimer.unref === 'function') {
+        VideoArmor._globalDevToolsTimer.unref();
+      }
+    }
+  }
+
+  static uninstallGlobalShield() {
+    const win = (typeof window !== 'undefined') ? window : (typeof global !== 'undefined' ? global : null);
+    const doc = (typeof document !== 'undefined') ? document : null;
+
+    if (win && win.removeEventListener && VideoArmor._globalKeyHandler) {
+      win.removeEventListener('keydown', VideoArmor._globalKeyHandler, true);
+    }
+    if (win && win.removeEventListener && VideoArmor._globalContextMenuHandler) {
+      win.removeEventListener('contextmenu', VideoArmor._globalContextMenuHandler, true);
+    }
+    if (doc && doc.removeEventListener && VideoArmor._globalContextMenuHandler) {
+      doc.removeEventListener('contextmenu', VideoArmor._globalContextMenuHandler, true);
+    }
+
+    if (win && win.clearInterval && VideoArmor._globalDevToolsTimer) {
+      win.clearInterval(VideoArmor._globalDevToolsTimer);
+    }
+
+    VideoArmor._globalKeyHandler = null;
+    VideoArmor._globalContextMenuHandler = null;
+    VideoArmor._globalDevToolsTimer = null;
+    VideoArmor._globalShieldActive = false;
+    VideoArmor._isGlobalLocked = false;
+    VideoArmor._globalUser = null;
+
+    if (doc) {
+      const shield = doc.getElementById('global-security-blackout-shield');
+      if (shield && shield.parentElement) {
+        shield.parentElement.removeChild(shield);
+      }
+    }
+  }
+
+  static _clearClipboardStatic() {
+    const nav = (typeof navigator !== 'undefined') ? navigator : null;
+    if (nav && nav.clipboard && typeof nav.clipboard.writeText === 'function') {
+      try {
+        nav.clipboard.writeText('');
+      } catch (_) {}
+    }
+  }
+
+  static checkShortcutViolation(event) {
+    if (!event) return null;
+    const key = event.key || '';
+    const keyCode = event.keyCode || event.which || 0;
+    const ctrlOrMeta = Boolean(event.ctrlKey || event.metaKey);
+    const shift = Boolean(event.shiftKey);
+    const alt = Boolean(event.altKey);
+
+    // 1. Screen Capture Shortcuts: PrintScreen, Win+Shift+S, Meta+Shift+S, Cmd+Shift+3/4/5
+    if (key === 'PrintScreen' || keyCode === 44) {
+      return 'SCREEN_CAPTURE_ATTEMPT';
+    }
+    if (shift && (event.metaKey || event.ctrlKey) && (key === 's' || key === 'S' || keyCode === 83)) {
+      return 'SCREEN_CAPTURE_ATTEMPT';
+    }
+    if (shift && event.metaKey && (['3', '4', '5'].includes(key) || [51, 52, 53].includes(keyCode))) {
+      return 'SCREEN_CAPTURE_ATTEMPT';
+    }
+
+    // 2. DevTools & View Source Shortcuts: F12, Ctrl+Shift+I/J/C, Ctrl+U, Cmd+Option+I/J/C/U
+    if (key === 'F12' || keyCode === 123) {
+      return 'DEVTOOLS_DETECTED';
+    }
+    if ((ctrlOrMeta && shift && (key === 'i' || key === 'I' || keyCode === 73)) ||
+        (event.metaKey && alt && (key === 'i' || key === 'I' || keyCode === 73))) {
+      return 'DEVTOOLS_DETECTED';
+    }
+    if ((ctrlOrMeta && shift && (key === 'j' || key === 'J' || keyCode === 74)) ||
+        (event.metaKey && alt && (key === 'j' || key === 'J' || keyCode === 74))) {
+      return 'DEVTOOLS_DETECTED';
+    }
+    if ((ctrlOrMeta && shift && (key === 'c' || key === 'C' || keyCode === 67)) ||
+        (event.metaKey && alt && (key === 'c' || key === 'C' || keyCode === 67))) {
+      return 'DEVTOOLS_DETECTED';
+    }
+    if ((ctrlOrMeta && (key === 'u' || key === 'U' || keyCode === 85)) ||
+        (event.metaKey && alt && (key === 'u' || key === 'U' || keyCode === 85))) {
+      return 'VIEW_SOURCE_ATTEMPT';
+    }
+
+    return null;
+  }
+
+  static async triggerGlobalLockdown(reason = 'DEVTOOLS_DETECTED') {
+    if (VideoArmor._isGlobalLocked) return;
+    VideoArmor._isGlobalLocked = true;
+
+    // Clear clipboard
+    VideoArmor._clearClipboardStatic();
+
+    // Pause all media
+    const doc = (typeof document !== 'undefined') ? document : null;
+    if (doc) {
+      try {
+        const media = doc.querySelectorAll('video, audio');
+        if (media && media.forEach) {
+          media.forEach(m => {
+            try { if (typeof m.pause === 'function') m.pause(); } catch (_) {}
+          });
+        }
+        const iframes = doc.querySelectorAll('iframe');
+        if (iframes && iframes.forEach) {
+          iframes.forEach(ifr => {
+            try {
+              ifr.contentWindow?.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
+            } catch (_) {}
+          });
+        }
+      } catch (_) {}
+    }
+
+    // Reason Text
+    let reasonText = 'PHÁT HIỆN HÀNH VI CAN THIỆP MÃ NGUỒN';
+    if (reason === 'DEVTOOLS_DETECTED') {
+      reasonText = 'PHÁT HIỆN CÔNG CỤ DEVTOOLS / MÃ NGUỒN';
+    } else if (reason === 'VIEW_SOURCE_ATTEMPT') {
+      reasonText = 'PHÁT HIỆN THAO TÁC XEM MÃ NGUỒN HỆ THỐNG';
+    } else if (reason === 'SCREEN_CAPTURE_ATTEMPT') {
+      reasonText = 'PHÁT HIỆN THAO TÁC CHỤP / QUAY MÀN HÌNH';
+    } else if (reason === 'CONTEXT_MENU_BLOCKED') {
+      reasonText = 'PHÁT HIỆN THAO TÁC CHUỘT PHẢI MÃ NGUỒN';
+    }
+
+    // Render Fullscreen Blackout Shield
+    if (doc && doc.body) {
+      let shield = doc.getElementById('global-security-blackout-shield');
+      if (!shield) {
+        shield = doc.createElement('div');
+        shield.id = 'global-security-blackout-shield';
+        shield.className = 'fixed inset-0 z-[999999] bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4 text-center select-none animate-fade-in';
+        doc.body.appendChild(shield);
+      }
+
+      const userText = VideoArmor._globalUser
+        ? `${VideoArmor._globalUser.student_code || VideoArmor._globalUser.id || ''} • ${VideoArmor._globalUser.email || ''}`
+        : '';
+
+      shield.innerHTML = `
+        <div class="max-w-md w-full p-8 rounded-2xl bg-slate-900 border border-rose-500/40 shadow-2xl space-y-4 text-white">
+          <div class="w-16 h-16 mx-auto rounded-full bg-rose-500/10 text-rose-500 flex items-center justify-center">
+            <span class="material-symbols-outlined text-[36px]">shield</span>
+          </div>
+          <h2 class="text-lg font-extrabold text-white tracking-wide">
+            🛡️ CẢNH BÁO AN NINH HỆ THỐNG
+          </h2>
+          <div class="text-xs font-bold text-rose-400 bg-rose-950/40 py-1.5 px-3 rounded-lg border border-rose-900/60 font-mono">
+            ${reasonText}
+          </div>
+          <p class="text-xs text-slate-300 leading-relaxed">
+            Hệ thống phát hiện hành động can thiệp mã nguồn hoặc mở công cụ phát triển trái phép.
+            Để đảm bảo an toàn bản quyền và mã nguồn, phiên làm việc đã bị thu hồi ngay lập tức.
+          </p>
+          ${userText ? `
+            <div class="p-2 rounded bg-black/40 border border-rose-500/20 text-[11px] font-mono text-rose-300 truncate">
+              ${userText}
+            </div>
+          ` : ''}
+          <div class="pt-2">
+            <button
+              type="button"
+              id="btn-security-lockdown-relogin"
+              class="w-full py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-md cursor-pointer"
+            >
+              Đăng nhập lại
+            </button>
+          </div>
+        </div>
+      `;
+
+      const reLogin = () => {
+        VideoArmor._isGlobalLocked = false;
+        if (shield && shield.parentElement) {
+          shield.parentElement.removeChild(shield);
+        }
+        if (typeof window !== 'undefined' && window.location) {
+          window.location.hash = '#/auth/login?security_lockdown=1';
+        }
+      };
+
+      const reloginBtn = shield.querySelector('#btn-security-lockdown-relogin');
+      if (reloginBtn && reloginBtn.addEventListener) {
+        reloginBtn.addEventListener('click', reLogin);
+      }
+      setTimeout(reLogin, 3500);
+    }
+
+    // Revoke Session on Server and Client
+    try {
+      const win = (typeof window !== 'undefined') ? window : (typeof global !== 'undefined' ? global : null);
+      if (win && win.ApiClient && typeof win.ApiClient.logout === 'function') {
+        await win.ApiClient.logout().catch(() => {});
+      }
+    } catch (_) {}
+
+    // Clear local storage and set security alert
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.clear();
+        sessionStorage.setItem('pwd301_security_alert', 'Cảnh báo an ninh: Phiên làm việc đã bị thu hồi do phát hiện hành vi vi phạm chính sách bảo mật hệ thống.');
+      }
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('pwd301_token');
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('token');
+      }
+    } catch (_) {}
+
+    if (typeof window !== 'undefined' && window.app && typeof window.app.triggerGlobalSecurityLockdown === 'function') {
+      window.app.triggerGlobalSecurityLockdown(reason);
+    }
   }
 
   _init() {
@@ -389,6 +691,10 @@ class VideoArmor {
       student: this.student,
       timestamp: new Date().toISOString()
     });
+
+    if (window.app && typeof window.app.triggerGlobalSecurityLockdown === 'function') {
+      window.app.triggerGlobalSecurityLockdown(reason);
+    }
   }
 
   restore() {

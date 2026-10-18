@@ -329,14 +329,19 @@ test('Next button renders disabled/gray without lock icon when incomplete and tr
   assert.match(enabledBtn, /shadow-md/, 'Complete Next button must have shadow-md');
 });
 
-test('Clean Player Shell v3 enforces deep crop scaling (-22% top, -5% left, 110% width, 144% height) and z-[15] poster shield', () => {
+test('YouTube Standard 16:9 uncropped viewport and z-[15] poster shield', () => {
   const studentSource = fs.readFileSync('frontend/assets/js/views/student.js', 'utf8');
 
-  // Verify Clean Player Shell v3 scaling in _getEmbedVideoHtml
+  // Verify standard 16:9 uncropped viewport in _getEmbedVideoHtml (inset: 0, 100% width/height, zero crop)
   assert.match(
     studentSource,
-    /top:\s*-22%;\s*left:\s*-5%;\s*width:\s*110%;\s*height:\s*144%;\s*pointer-events:\s*none;?/,
-    '_getEmbedVideoHtml must enforce Clean Player Shell v3 deep crop (-22% top, -5% left, 110% width, 144% height)'
+    /position:\s*absolute;\s*inset:\s*0;\s*width:\s*100%;\s*height:\s*100%;\s*pointer-events:\s*none;?/,
+    '_getEmbedVideoHtml must enforce standard 16:9 uncropped viewport (inset: 0, width: 100%, height: 100%)'
+  );
+  assert.doesNotMatch(
+    studentSource,
+    /top:\s*-22%/,
+    '_getEmbedVideoHtml must permanently eliminate -22% top crop'
   );
 
   // Verify Poster Shield styling: z-[15], bg-slate-950, inset-0

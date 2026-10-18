@@ -1939,6 +1939,7 @@ def list_course_files(
     course = require_course_manager(actor, course_id, session=sess)
 
     query = sess.query(FileAsset).filter(FileAsset.course_id == course.id)
+    query = query.filter(FileAsset.deleted_at.is_(None))
     if status:
         query = query.filter(FileAsset.status == status)
     else:

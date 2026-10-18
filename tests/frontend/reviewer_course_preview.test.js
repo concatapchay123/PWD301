@@ -181,13 +181,13 @@ test('native PDF preview never embeds HTML or a failed authorization response', 
   }
 });
 
-test('reviewer clean YouTube player shell enforces v3 crop geometry (-22% top, -5% left, 110% width, 144% height)', () => {
+test('reviewer clean YouTube player shell enforces standard 16:9 uncropped viewport', () => {
   const h = harness();
   const shellHtml = h.view._getCleanYouTubeShellHtml('test_yt_id', 'test-player');
-  assert.match(shellHtml, /top:\s*-22%/, 'Must have top: -22% scaling');
-  assert.match(shellHtml, /left:\s*-5%/, 'Must have left: -5% scaling');
-  assert.match(shellHtml, /width:\s*110%/, 'Must have width: 110% scaling');
-  assert.match(shellHtml, /height:\s*144%/, 'Must have height: 144% scaling');
+  assert.match(shellHtml, /inset:\s*0/, 'Must have inset: 0 uncropped viewport');
+  assert.match(shellHtml, /width:\s*100%/, 'Must have width: 100%');
+  assert.match(shellHtml, /height:\s*100%/, 'Must have height: 100%');
+  assert.doesNotMatch(shellHtml, /top:\s*-22%/, 'Must not have top: -22% scaling');
   assert.match(shellHtml, /pointer-events:\s*none/, 'Iframe wrapper must have pointer-events: none');
   assert.match(shellHtml, /id="test-player-shield"/, 'Must contain click shield');
   assert.match(shellHtml, /id="test-player-poster-shield"/, 'Must contain poster backdrop shield');
@@ -230,17 +230,18 @@ test('instructor openVideoModal renders Clean Player Shell v3 with custom contro
   window.InstructorView.openVideoModal('youtube', 'https://www.youtube.com/watch?v=abcdefghijk', 'Video Demo');
   assert.ok(modalAppended, 'Modal must be appended to body');
   assert.match(modalAppended.innerHTML, /id="instructor-preview-shell"/, 'Must have instructor-preview-shell');
-  assert.match(modalAppended.innerHTML, /top:\s*-22%/, 'Must have top: -22% scaling');
-  assert.match(modalAppended.innerHTML, /height:\s*144%/, 'Must have height: 144% scaling');
+  assert.match(modalAppended.innerHTML, /inset:\s*0/, 'Must have inset: 0 uncropped viewport');
+  assert.doesNotMatch(modalAppended.innerHTML, /top:\s*-22%/, 'Must not have top: -22% scaling');
   assert.match(modalAppended.innerHTML, /id="instructor-preview-controls"/, 'Must contain custom controls');
   assert.match(modalAppended.innerHTML, /id="instructor-preview-play-btn"/, 'Must have custom play button');
   assert.match(modalAppended.innerHTML, /id="instructor-preview-mute-btn"/, 'Must have custom mute button');
 });
 
-test('student course hero trailer adheres to Ambient Hero Trailer Zero-Button Invariant inside Clean Player Shell v3', () => {
+test('student course hero trailer adheres to Ambient Hero Trailer Zero-Button Invariant inside Standard 16:9 Viewport', () => {
   const studentSource = fs.readFileSync(path.resolve(__dirname, '../../frontend/assets/js/views/student.js'), 'utf8');
   assert.match(studentSource, /id="hero-trailer-clean-shell"/, 'Must contain #hero-trailer-clean-shell container');
-  assert.match(studentSource, /top:\s*-22%;\s*left:\s*-5%;\s*width:\s*110%;\s*height:\s*144%/, 'Hero trailer iframe must use Clean Player Shell v3');
+  assert.match(studentSource, /inset:\s*0;\s*width:\s*100%;\s*height:\s*100%/, 'Hero trailer iframe must use standard 16:9 uncropped viewport');
+  assert.doesNotMatch(studentSource, /top:\s*-22%/, 'Hero trailer iframe must not use -22% top crop');
   assert.match(studentSource, /autoplay=1&mute=1&loop=1&playlist=\$\{ytHeroId\}/, 'Hero trailer must autoplay muted in infinite loop');
   assert.doesNotMatch(studentSource, /id="btn-trailer-toggle-mute"/, 'Zero-Button: Mute toggle button must be eliminated');
   assert.doesNotMatch(studentSource, /id="btn-hero-video-expand"/, 'Zero-Button: Expand button must be eliminated');

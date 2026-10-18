@@ -29,6 +29,11 @@ from reportlab.platypus import (
 
 from pwd301.services.pdf_math_service import math_paragraph, prepare_math
 
+# PPTQ Branding assets
+_BASE_REPO_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+_LOGO_LIGHT_PATH = os.path.join(_BASE_REPO_DIR, "frontend", "assets", "img", "pptq_logo_light.png")
+_LOGO_WATERMARK_PATH = os.path.join(_BASE_REPO_DIR, "frontend", "assets", "img", "pptq_logo_watermark.png")
+
 # Cache registered font names
 _FONT_NORMAL = "Helvetica"
 _FONT_BOLD = "Helvetica-Bold"
@@ -357,6 +362,24 @@ def _page_number(canvas: Any, doc: Any) -> None:
     w, h = doc.pagesize
     canvas.setFillColor(colors.HexColor("#FDFEFE"))
     canvas.rect(0, 0, w, h, fill=1, stroke=0)
+
+    # Subtle PPTQ watermark in center of page
+    if os.path.exists(_LOGO_WATERMARK_PATH):
+        try:
+            wm_w = 340
+            wm_h = wm_w * (572 / 1024)
+            canvas.drawImage(
+                _LOGO_WATERMARK_PATH,
+                (w - wm_w) / 2,
+                (h - wm_h) / 2,
+                width=wm_w,
+                height=wm_h,
+                mask="auto",
+                preserveAspectRatio=True,
+            )
+        except Exception:
+            pass
+
     for color, rise in [("#D9EAFB", 35), ("#77A9D6", 23), ("#174783", 14)]:
         canvas.setFillColor(colors.HexColor(color))
         path = canvas.beginPath()
@@ -494,7 +517,12 @@ def build_attempt_result_pdf(result_data: dict[str, Any]) -> bytes:
 
     # 1. Top Organization & Document Header
     org_line = Paragraph("HỆ THỐNG QUẢN LÝ ĐÀO TẠO & KHẢO THÍ PWD301 LMS", style_header_org)
-    brand = Table([[_MetricIcon("cap"), org_line]], colWidths=[34, doc.width - 34])
+    if os.path.exists(_LOGO_LIGHT_PATH):
+        from reportlab.platypus import Image as RLImage
+        logo_img = RLImage(_LOGO_LIGHT_PATH, width=54, height=30)
+        brand = Table([[logo_img, org_line]], colWidths=[58, doc.width - 58])
+    else:
+        brand = Table([[_MetricIcon("cap"), org_line]], colWidths=[34, doc.width - 34])
     brand.setStyle(
         TableStyle(
             [
@@ -931,7 +959,13 @@ def build_assessment_gradebook_pdf(gradebook_data: dict[str, Any]) -> bytes:
         alignment=1,
     )
 
-    story = [_AcademicMark(doc.width, 48), Spacer(1, 6)]
+    if os.path.exists(_LOGO_LIGHT_PATH):
+        from reportlab.platypus import Image as RLImage
+        logo_img = RLImage(_LOGO_LIGHT_PATH, width=72, height=40)
+        logo_img.hAlign = "CENTER"
+        story = [logo_img, Spacer(1, 4)]
+    else:
+        story = [_AcademicMark(doc.width, 48), Spacer(1, 6)]
 
     # 1. Organization Header
     org_title = Paragraph(
@@ -1172,7 +1206,7 @@ def build_assessment_gradebook_pdf(gradebook_data: dict[str, Any]) -> bytes:
         if is_passed:
             status_cell = Paragraph("ĐẠT", style_td_pass)
         else:
-            status_cell = Paragraph("HỎNG", style_td_fail)
+            status_cell = Paragraph("KHÔNG ĐẠT", style_td_fail)
         if att.get("score_status") not in (None, "RELEASED"):
             score_str = "-"
             status_cell = Paragraph("CHƯA CÔNG BỐ", style_td_center)

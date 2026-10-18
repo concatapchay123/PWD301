@@ -650,7 +650,7 @@ def test_multi_video_lesson_requires_all_videos_100_percent(playback_setup):
 
 
 def test_single_video_90_percent_does_not_complete(playback_setup):
-    """Task R3: Single video at 90% or 95% does not complete; must reach 100% within 0.5s tolerance."""
+    """Task R3/R4: Single video at 90% does not complete; reaching final 5s (>= 95s of 100s) completes video."""
     from pwd301.services.lesson_service import get_lesson_progress
     from pwd301.services.playback_service import start_playback_session
 
@@ -673,14 +673,14 @@ def test_single_video_90_percent_does_not_complete(playback_setup):
     assert progress.completed_at is None
     assert float(progress.max_view_fraction) <= 0.99
 
-    # Play to 95 seconds (95% of 100s duration)
+    # Play to 95 seconds (95% of 100s duration) - 5-second scrub unlock rule credits completion
     res = send(actor, lesson, start, 11, t + timedelta(seconds=95), 95)
-    assert res["is_video_complete"] is False
-    assert res["all_videos_complete"] is False
-    assert res["is_completed"] is False
+    assert res["is_video_complete"] is True
+    assert res["all_videos_complete"] is True
+    assert res["is_completed"] is True
     progress = get_lesson_progress(actor, lesson.id)
-    assert progress.completed_at is None
-    assert float(progress.max_view_fraction) <= 0.99
+    assert progress.completed_at is not None
+    assert float(progress.max_view_fraction) >= 1.0
 
     # Play to 100 seconds (100% of 100s duration)
     res = send(actor, lesson, start, 12, t + timedelta(seconds=100), 100)

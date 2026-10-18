@@ -119,9 +119,10 @@ test('Challenge 2.1: YouTube HTML shell structural invariants and pointer-events
   // 3. Iframe host scaling & pointer-events isolation
   assert.match(html, /pointer-events-none/, 'Wrapper must have pointer-events-none class');
   assert.match(html, /pointer-events:\s*none;?/, 'Wrapper must have pointer-events: none inline style');
-  assert.match(html, /top:\s*-22%/, 'Wrapper must be shifted top by -22% for Clean Player Shell v3 deep crop');
-  assert.match(html, /height:\s*144%/, 'Wrapper must have height 144% for Clean Player Shell v3 deep crop');
-  assert.match(html, /width:\s*110%/, 'Wrapper must have width 110% for Clean Player Shell v3 deep crop');
+  assert.match(html, /inset:\s*0/, 'Wrapper must have standard inset: 0 for 16:9 uncropped viewport');
+  assert.match(html, /width:\s*100%/, 'Wrapper must have width 100%');
+  assert.match(html, /height:\s*100%/, 'Wrapper must have height 100%');
+  assert.doesNotMatch(html, /top:\s*-22%/, 'Wrapper must eliminate -22% top crop');
 
   // 4. Transparent Click Shield Overlay
   assert.match(html, /id="yt-test-player-shield"/, 'Transparent click shield overlay must exist');
@@ -402,8 +403,8 @@ test('Challenge 2.5: Course Hero Trailer embeds Clean Player Shell v3 with autop
 
   // 1. Initial Hero Box Autoplay Muted & Loop inside Clean Player Shell v3
   assert.match(studentSource, /id="hero-trailer-clean-shell"/, 'Must contain #hero-trailer-clean-shell in initial render');
-  assert.match(studentSource, /top:\s*-22%/, 'Hero trailer must have top: -22% scaling');
-  assert.match(studentSource, /height:\s*144%/, 'Hero trailer must have height: 144% scaling');
+  assert.match(studentSource, /inset:\s*0;\s*width:\s*100%;\s*height:\s*100%/, 'Hero trailer must have standard 16:9 uncropped viewport style');
+  assert.doesNotMatch(studentSource, /top:\s*-22%/, 'Hero trailer must eliminate -22% top crop');
   assert.match(studentSource, /https:\/\/www\.youtube-nocookie\.com\/embed\/\$\{ytHeroId\}\?autoplay=1&mute=1&loop=1/, 'Hero trailer embed URL must enforce autoplay, mute, and loop');
 
   // 2. Zero-Button Ambient Hero Trailer Invariant
@@ -419,8 +420,8 @@ test('Challenge 2.6: Teacher Reviewer Course Preview renders Clean Player Shell 
 
   // 1. Helper _getCleanYouTubeShellHtml
   assert.match(adminSource, /_getCleanYouTubeShellHtml\(id,/, 'AdminView must contain _getCleanYouTubeShellHtml');
-  assert.match(adminSource, /top:\s*-22%/, 'Reviewer shell must crop top by -22%');
-  assert.match(adminSource, /height:\s*144%/, 'Reviewer shell must have 144% height');
+  assert.match(adminSource, /inset:\s*0;\s*width:\s*100%;\s*height:\s*100%/, 'Reviewer shell must use standard 16:9 uncropped style');
+  assert.doesNotMatch(adminSource, /top:\s*-22%/, 'Reviewer shell must not crop top by -22%');
   assert.match(adminSource, /id="\$\{playerId\}-poster-shield"/, 'Reviewer shell must contain poster-shield');
   assert.match(adminSource, /id="\$\{playerId\}-shield"/, 'Reviewer shell must contain click-shield');
   assert.match(adminSource, /id="\$\{playerId\}-big-play"/, 'Reviewer shell must contain big-play');

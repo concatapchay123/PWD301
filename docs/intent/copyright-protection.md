@@ -1,11 +1,11 @@
 # Copyright protection and deployment intent — approved 2026-10-09
 
-> **SUPERSEDED NOTICE (2026-10-17)**:
-> Historical statements below asserting that *"Official YouTube embedding keeps branding and navigation visible... No obscuring shields or watermark overlays cover the iframe"* are STRICTLY SUPERSEDED by the platform invariant **Clean Player Shell v2** codified in `AGENTS.md` (Mục 10.8) and `docs/system/PWD301_SYSTEM_SPECIFICATION/implementation/06_NON_NEGOTIABLE_INVARIANTS.md` (Invariant 25).
-> PWD301 strictly enforces Clean Player Shell v2 across all YouTube playback touchpoints (Student Lesson Player, Course Hero Trailer autoplay muted loop, Trailer Lightbox Modal, and Reviewer/Instructor Preview Modals) using container scaling (-14% top, 128% height), transparent click shield (`pointer-events: none` on iframe), Cover Poster Shield eliminating 100% of YouTube red button and thumbnail before playback, Error 153 fix (`youtube-nocookie.com`, no `origin`), and resilient duration fallback.
+> **SUPERSEDED NOTICE (2026-10-18)**:
+> Historical statements below asserting that *"Official YouTube embedding keeps branding and navigation visible... No obscuring shields or watermark overlays cover the iframe"* are STRICTLY SUPERSEDED by the platform invariant **YouTube Standard 16:9 Player** codified in `AGENTS.md` (Mục 10.8) and `docs/system/PWD301_SYSTEM_SPECIFICATION/implementation/06_NON_NEGOTIABLE_INVARIANTS.md` (Invariant 25).
+> PWD301 strictly enforces YouTube Standard 16:9 Player across all YouTube playback touchpoints (Student Lesson Player, Course Hero Trailer autoplay muted loop, Trailer Lightbox Modal, and Reviewer/Instructor Preview Modals) using standard 16:9 full responsive viewport (100% width, 100% height, zero crop), Cover Poster Shield eliminating 100% of YouTube red button and thumbnail before playback, Error 153 fix (`youtube-nocookie.com`, no `origin`), 5-second seek unlock, and resilient duration fallback.
 
 ## Approved outcome (Historical / Superseded)
-Historical outcome: PWD301 reuses its YouTube/custom-player backend and frontend. [SUPERSEDED by Clean Player Shell v2 in AGENTS.md §10.8: Official YouTube embedding now uses container scaling, click shields, Cover Poster Shield, and custom controls; all external YouTube branding and navigation are eliminated.] Unlisted links can be shared; no promise of DRM or complete prevention of copying is made.
+Historical outcome: PWD301 reuses its YouTube/custom-player backend and frontend. [SUPERSEDED by YouTube Standard 16:9 Player in AGENTS.md §10.8: Official YouTube embedding now uses standard 16:9 uncropped viewport, Cover Poster Shield, and custom controls; all external YouTube branding and navigation are eliminated.] Unlisted links can be shared; no promise of DRM or complete prevention of copying is made.
 
 ## Internal media
 Internal encrypted HLS retains continuous forensic watermark and DOM/CSS blackout defense. Raw lesson video downloads are denied to learners across every download entrypoint. Blackout stops playback and heartbeat; client tamper checks are deterrence, not proof of misconduct.

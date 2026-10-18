@@ -48,8 +48,8 @@ class InstructorView {
           ${isYt ? `
             <div class="relative w-full h-full overflow-hidden bg-slate-950 select-none flex flex-col" id="instructor-preview-shell" data-custom-player="true" data-player-type="youtube" tabindex="0">
               <div class="relative w-full flex-1 aspect-video overflow-hidden bg-slate-950" id="instructor-preview-viewport">
-                <!-- Scaled container to crop out YouTube top header (title, share, avatar) and bottom branding (Clean Player Shell v3) -->
-                <div style="position: absolute; top: -22%; left: -5%; width: 110%; height: 144%; pointer-events: none;" class="pointer-events-none">
+                <!-- Standard 16:9 uncropped viewport for YouTube playback -->
+                <div style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none;" class="pointer-events-none">
                   <iframe
                     id="instructor-preview-iframe"
                     src="${cleanSrc}"
@@ -195,6 +195,237 @@ class InstructorView {
       }
     };
     window.addEventListener('keydown', onKey);
+  }
+
+  static openCourseDocumentTreeModal(course = {}, currentUnits = []) {
+    const existing = document.getElementById('pwd301-course-docs-modal');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'pwd301-course-docs-modal';
+    modal.className = 'fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn select-none';
+
+    const units = Array.isArray(currentUnits) && currentUnits.length > 0
+      ? currentUnits
+      : (course.learning_units || course.units || []);
+
+    // 1. General course resources (if any)
+    const generalCourseResources = (course.resources || []).filter(r => !r.is_deleted && !r.deleted_at && r.status !== 'TRASH');
+
+    // 2. Units with lessons and documents
+    let totalDocsCount = generalCourseResources.length;
+    const unitsWithDocs = [];
+    const visibleUnits = units.filter(u => !u.pending_delete && !u.is_staged_delete && u.status !== 'TRASH');
+
+    visibleUnits.forEach((u, uIdx) => {
+      const uId = u.learning_unit_id || u.id;
+      const visibleLessons = (u.lessons || []).filter(l => !l.pending_delete && !l.is_staged_delete && l.status !== 'TRASH');
+      const lessonsWithDocs = [];
+
+      visibleLessons.forEach((les, lIdx) => {
+        const lesId = les.lesson_id || les.id;
+        let lDocs = [];
+        if (Array.isArray(les.blocks)) {
+          les.blocks.filter(b => b.type === 'document').forEach(b => {
+            if (Array.isArray(b.files)) {
+              b.files.forEach(f => lDocs.push(f));
+            }
+          });
+        }
+        if (Array.isArray(les.resources)) {
+          les.resources.filter(r => !r.is_deleted && !r.deleted_at && r.status !== 'TRASH' && !r.is_cover_asset).forEach(r => {
+            if (!lDocs.some(existing => (existing.asset_id && existing.asset_id === r.asset_id) || existing.filename === r.filename)) {
+              lDocs.push(r);
+            }
+          });
+        }
+
+        if (lDocs.length > 0) {
+          totalDocsCount += lDocs.length;
+          lessonsWithDocs.push({
+            lesId,
+            uId,
+            title: les.title || `Bài ${lIdx + 1}`,
+            displayCode: les._displayCode || `${uIdx + 1}.${lIdx + 1}`,
+            docs: lDocs
+          });
+        }
+      });
+
+      if (lessonsWithDocs.length > 0) {
+        unitsWithDocs.push({
+          uId,
+          uIdx,
+          title: u.title || `Chương ${uIdx + 1}`,
+          lessons: lessonsWithDocs,
+          totalDocs: lessonsWithDocs.reduce((acc, item) => acc + item.docs.length, 0)
+        });
+      }
+    });
+
+    const getFileIconBadge = (filename) => {
+      const ext = (filename || '').split('.').pop().toLowerCase();
+      let colorClass = 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
+      if (ext === 'pdf') colorClass = 'bg-rose-50 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400';
+      else if (['doc', 'docx'].includes(ext)) colorClass = 'bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400';
+      else if (['xls', 'xlsx'].includes(ext)) colorClass = 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400';
+      else if (['ppt', 'pptx'].includes(ext)) colorClass = 'bg-amber-50 text-amber-600 dark:bg-amber-950/60 dark:text-amber-400';
+      else if (['dwg', 'dxf', 'obj', 'fbx', 'stl', 'blend', 'step', 'stp', 'gltf', 'glb'].includes(ext)) colorClass = 'bg-purple-50 text-purple-600 dark:bg-purple-950/60 dark:text-purple-400';
+      return { ext: ext.toUpperCase() || 'FILE', colorClass };
+    };
+
+    const formatBytes = (bytes) => {
+      if (!bytes || bytes <= 0) return '';
+      if (bytes < 1024) return `${bytes} B`;
+      if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    };
+
+    const courseTitle = course.title || 'Khóa học';
+
+    modal.innerHTML = `
+      <div class="w-full max-w-3xl bg-white dark:bg-[#18181b] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#202020]">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span class="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center material-symbols-outlined text-[20px] shrink-0">folder_open</span>
+            <div class="min-w-0">
+              <h2 class="text-sm font-bold text-[#222120] dark:text-[#EDEDEB] truncate" title="${UI.escapeHtml(courseTitle)}">
+                Cây tài liệu: ${UI.escapeHtml(courseTitle)}
+              </h2>
+              <p class="text-[11px] text-[#8F8E8A] dark:text-[#6D6C68]">Sơ đồ cây tài liệu toàn bộ khóa học</p>
+            </div>
+            <span class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 shrink-0 font-mono">
+              ${totalDocsCount} tệp
+            </span>
+          </div>
+          <button type="button" class="btn-close-modal p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer" title="Đóng (Esc)">
+            <span class="material-symbols-outlined text-[20px]">close</span>
+          </button>
+        </div>
+
+        <div class="p-5 overflow-y-auto space-y-4 flex-1">
+          ${totalDocsCount === 0 ? `
+            <div class="text-center py-12 px-4 bg-[#FAF9F5] dark:bg-[#202020] rounded-xl border border-dashed border-[#E8E6DF] dark:border-[#2E2D2B]">
+              <span class="material-symbols-outlined text-4xl text-[#8F8E8A] dark:text-[#6D6C68] mb-2 inline-block">folder_off</span>
+              <p class="text-sm font-bold text-[#222120] dark:text-[#EDEDEB]">Chưa có tài liệu đính kèm nào</p>
+              <p class="text-xs text-[#8F8E8A] dark:text-[#6D6C68] mt-1 max-w-sm mx-auto">
+                Khóa học hiện chưa có tài liệu nào được đính kèm. Giảng viên có thể tải lên tài liệu học tập (PDF, Word, Excel, CAD... ≤ 50 MB) tại mỗi bài giảng.
+              </p>
+            </div>
+          ` : `
+            ${generalCourseResources.length > 0 ? `
+              <div class="rounded-xl border border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/30 dark:bg-indigo-950/20 p-3 space-y-2">
+                <div class="flex items-center justify-between gap-2">
+                  <div class="flex items-center gap-1.5 min-w-0">
+                    <span class="material-symbols-outlined text-[17px] text-indigo-600 dark:text-indigo-400">school</span>
+                    <span class="text-xs font-bold text-indigo-900 dark:text-indigo-200 truncate">Tài liệu chung khóa học</span>
+                  </div>
+                  <span class="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300">
+                    ${generalCourseResources.length} tệp
+                  </span>
+                </div>
+                <div class="space-y-1.5 pt-1">
+                  ${generalCourseResources.map(f => {
+                    const fname = f.filename || f.title || 'Tài liệu';
+                    const fSize = f.file_size_bytes ? formatBytes(f.file_size_bytes) : '';
+                    const downloadUrl = f.file_url || (f.asset_id ? `/api/files/${f.asset_id}/download` : '#');
+                    const badge = getFileIconBadge(fname);
+                    return `
+                      <div class="p-2 rounded-lg bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-between gap-2 text-xs">
+                        <div class="flex items-center gap-2 min-w-0">
+                          <span class="px-1.5 py-0.5 rounded font-mono font-bold text-[9px] ${badge.colorClass}">${badge.ext}</span>
+                          <span class="font-medium text-[#222120] dark:text-[#EDEDEB] truncate" title="${UI.escapeHtml(fname)}">${UI.escapeHtml(fname)}</span>
+                          ${fSize ? `<span class="text-[10px] text-[#8F8E8A] font-mono">(${fSize})</span>` : ''}
+                        </div>
+                        <a href="${downloadUrl}" target="_blank" class="p-1 rounded text-primary hover:bg-primary/10 transition-colors" title="Tải về">
+                          <span class="material-symbols-outlined text-[15px]">download</span>
+                        </a>
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+              </div>
+            ` : ''}
+
+            ${unitsWithDocs.map(unit => `
+              <div class="rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#18181b] overflow-hidden shadow-2xs">
+                <div class="p-3 bg-[#FAF9F5] dark:bg-[#202020] border-b border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-between gap-2">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <span class="material-symbols-outlined text-[18px] text-emerald-600 dark:text-emerald-400">folder</span>
+                    <span class="font-bold text-xs text-[#222120] dark:text-[#EDEDEB] truncate" title="${UI.escapeHtml(unit.title)}">
+                      Chương ${unit.uIdx + 1}: ${UI.escapeHtml(unit.title)}
+                    </span>
+                  </div>
+                  <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                    ${unit.totalDocs} tệp
+                  </span>
+                </div>
+
+                <div class="p-3 space-y-2.5">
+                  ${unit.lessons.map(les => `
+                    <div class="rounded-lg bg-[#FAF9F5] dark:bg-[#202020]/60 border border-[#E8E6DF]/80 dark:border-[#2E2D2B]/80 p-2.5 space-y-2">
+                      <div class="flex items-center justify-between gap-2">
+                        <div class="flex items-center gap-1.5 min-w-0">
+                          <span class="material-symbols-outlined text-[15px] text-slate-400">description</span>
+                          <span class="text-xs font-semibold text-[#222120] dark:text-[#EDEDEB] truncate" title="${UI.escapeHtml(les.title)}">
+                            ${les.displayCode} ${UI.escapeHtml(les.title)}
+                          </span>
+                        </div>
+                        <span class="text-[10px] font-mono text-slate-500">${les.docs.length} tệp</span>
+                      </div>
+
+                      <div class="pl-2 space-y-1.5 border-l-2 border-emerald-400/40">
+                        ${les.docs.map(f => {
+                          const fname = f.filename || f.title || 'Tài liệu';
+                          const fSize = f.file_size_bytes ? formatBytes(f.file_size_bytes) : '';
+                          const downloadUrl = f.file_url || (f.asset_id ? `/api/files/${f.asset_id}/download` : (f.resource_id ? `/api/files/${f.resource_id}/download` : '#'));
+                          const badge = getFileIconBadge(fname);
+                          return `
+                            <div class="p-1.5 rounded-md bg-white dark:bg-[#1E1E1E] border border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-between gap-2 text-xs">
+                              <div class="flex items-center gap-1.5 min-w-0">
+                                <span class="px-1 py-0.2 rounded font-mono font-bold text-[8px] ${badge.colorClass}">${badge.ext}</span>
+                                <span class="text-[11px] font-medium text-[#222120] dark:text-[#EDEDEB] truncate" title="${UI.escapeHtml(fname)}">${UI.escapeHtml(fname)}</span>
+                                ${fSize ? `<span class="text-[9px] text-[#8F8E8A] font-mono">(${fSize})</span>` : ''}
+                              </div>
+                              <a href="${downloadUrl}" target="_blank" class="p-1 rounded text-primary hover:bg-primary/10 transition-colors shrink-0" title="Tải xuống / Xem">
+                                <span class="material-symbols-outlined text-[14px]">download</span>
+                              </a>
+                            </div>
+                          `;
+                        }).join('')}
+                      </div>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            `).join('')}
+          `}
+        </div>
+
+        <div class="p-4 border-t border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#202020] flex justify-end">
+          <button type="button" class="btn-close-modal px-4 py-2 rounded-xl bg-[#F4F1EA] hover:bg-[#ECE8DF] dark:bg-[#262524] dark:hover:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] text-xs font-bold transition-colors cursor-pointer border border-[#E8E6DF] dark:border-[#2E2D2B]">
+            Đóng
+          </button>
+        </div>
+      </div>
+    `;
+
+    const close = () => {
+      modal.remove();
+    };
+    modal.querySelectorAll('.btn-close-modal').forEach(btn => btn.onclick = close);
+    modal.onclick = (e) => {
+      if (e.target === modal) close();
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        close();
+        window.removeEventListener('keydown', onKey);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    document.body.appendChild(modal);
+    return modal;
   }
 
   // =========================================================================
@@ -1249,10 +1480,16 @@ class InstructorView {
   static async initSinglePageCurriculumStudio(container, course, changesetStatus, initialLessonId = null, initialUnitId = null, assessments = null) {
     const cId = course.course_id || course.id;
     const treeContainer = container.querySelector('#tree-units-container');
+    const docsContainer = container.querySelector('#tree-documents-container');
     const editorContainer = container.querySelector('#curriculum-editor-pane');
     const statsBadge = container.querySelector('#tree-stats-badge');
     const btnTreeAddUnit = container.querySelector('#btn-tree-add-unit');
     const btnTreeAddLesson = container.querySelector('#btn-tree-add-lesson');
+    const tabBtnOutline = container.querySelector('#tab-btn-curriculum-outline');
+    const tabBtnDocs = container.querySelector('#tab-btn-curriculum-documents');
+    const badgeTotalDocs = container.querySelector('#badge-total-course-docs');
+    const containerAddUnit = container.querySelector('#container-btn-tree-add-unit');
+    const sidebarTitle = container.querySelector('#curriculum-sidebar-title');
 
     if (!treeContainer || !editorContainer) return;
 
@@ -1329,6 +1566,224 @@ class InstructorView {
       });
       if (statsBadge) {
         statsBadge.textContent = `${visibleUnits.length} Chương • ${totalL} Bài giảng`;
+      }
+      if (typeof renderCourseDocumentTree === 'function') {
+        renderCourseDocumentTree();
+      }
+    };
+
+    // Render Course Document Tree (M5 - Same as student view)
+    const renderCourseDocumentTree = () => {
+      if (!docsContainer) return;
+
+      const visibleUnits = currentUnits.filter(unit => !unit.pending_delete && !unit.is_staged_delete);
+      let totalDocsCount = 0;
+
+      // 1. General course resources (if any)
+      const generalCourseResources = (course.resources || []).filter(r => !r.is_deleted && !r.deleted_at && r.status !== 'TRASH');
+      totalDocsCount += generalCourseResources.length;
+
+      // 2. Units with lessons and documents
+      const unitsWithDocs = [];
+      visibleUnits.forEach((u, uIdx) => {
+        const uId = u.learning_unit_id || u.id;
+        const visibleLessons = (u.lessons || []).filter(l => !l.pending_delete && !l.is_staged_delete);
+        const lessonsWithDocs = [];
+
+        visibleLessons.forEach((les, lIdx) => {
+          const lesId = les.lesson_id || les.id;
+          let lDocs = [];
+          if (String(lesId) === String(activeLessonId) && Array.isArray(activeBlocks)) {
+            activeBlocks.filter(b => b.type === 'document').forEach(b => {
+              if (Array.isArray(b.files)) {
+                b.files.forEach(f => lDocs.push(f));
+              }
+            });
+          }
+          if (lDocs.length === 0 && Array.isArray(les.resources)) {
+            lDocs = les.resources.filter(r => !r.is_deleted && !r.deleted_at && r.status !== 'TRASH');
+          }
+
+          if (lDocs.length > 0) {
+            totalDocsCount += lDocs.length;
+            lessonsWithDocs.push({
+              lesId,
+              uId,
+              title: les.title || `Bài ${lIdx + 1}`,
+              displayCode: `${uIdx + 1}.${lIdx + 1}`,
+              docs: lDocs
+            });
+          }
+        });
+
+        if (lessonsWithDocs.length > 0) {
+          unitsWithDocs.push({
+            uId,
+            uIdx,
+            title: u.title || `Chương ${uIdx + 1}`,
+            lessons: lessonsWithDocs,
+            totalDocs: lessonsWithDocs.reduce((acc, item) => acc + item.docs.length, 0)
+          });
+        }
+      });
+
+      if (badgeTotalDocs) {
+        badgeTotalDocs.textContent = String(totalDocsCount);
+      }
+
+      if (totalDocsCount === 0) {
+        docsContainer.innerHTML = `
+          <div class="text-center py-8 px-4 bg-[#FAF9F5] dark:bg-[#18181b] rounded-xl border border-dashed border-[#E8E6DF] dark:border-[#2E2D2B]">
+            <span class="material-symbols-outlined text-3xl text-[#8F8E8A] dark:text-[#6D6C68] mb-1">folder_off</span>
+            <p class="text-xs font-bold text-[#222120] dark:text-[#EDEDEB]">Chưa có tài liệu đính kèm nào</p>
+            <p class="text-[11px] text-[#8F8E8A] dark:text-[#6D6C68] mt-1">
+              Thầy/Cô có thể tải lên tài liệu (PDF, Word, Excel, CAD...) khi soạn thảo bài giảng.
+            </p>
+          </div>
+        `;
+        return;
+      }
+
+      const getFileIconBadge = (filename) => {
+        const ext = (filename || '').split('.').pop().toLowerCase();
+        let colorClass = 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
+        if (ext === 'pdf') colorClass = 'bg-rose-50 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400';
+        else if (['doc', 'docx'].includes(ext)) colorClass = 'bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400';
+        else if (['xls', 'xlsx'].includes(ext)) colorClass = 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400';
+        else if (['ppt', 'pptx'].includes(ext)) colorClass = 'bg-amber-50 text-amber-600 dark:bg-amber-950/60 dark:text-amber-400';
+        else if (['dwg', 'dxf', 'obj', 'fbx', 'stl', 'blend'].includes(ext)) colorClass = 'bg-purple-50 text-purple-600 dark:bg-purple-950/60 dark:text-purple-400';
+        return { ext: ext.toUpperCase() || 'FILE', colorClass };
+      };
+
+      let html = '';
+
+      if (generalCourseResources.length > 0) {
+        html += `
+          <div class="rounded-xl border border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/30 dark:bg-indigo-950/20 p-3 space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-1.5 min-w-0">
+                <span class="material-symbols-outlined text-[17px] text-indigo-600 dark:text-indigo-400">school</span>
+                <span class="text-xs font-bold text-indigo-900 dark:text-indigo-200 truncate">Tài liệu chung khóa học</span>
+              </div>
+              <span class="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300">
+                ${generalCourseResources.length} tệp
+              </span>
+            </div>
+            <div class="space-y-1.5 pt-1">
+              ${generalCourseResources.map(f => {
+                const fname = f.filename || f.title || 'Tài liệu';
+                const fSize = f.file_size_bytes ? `${Math.round(f.file_size_bytes / 1024)} KB` : '';
+                const downloadUrl = f.file_url || (f.asset_id ? `/api/files/${f.asset_id}/download` : '#');
+                const badge = getFileIconBadge(fname);
+                return `
+                  <div class="p-2 rounded-lg bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-between gap-2 text-xs">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <span class="px-1.5 py-0.5 rounded font-mono font-bold text-[9px] ${badge.colorClass}">${badge.ext}</span>
+                      <span class="font-medium text-[#222120] dark:text-[#EDEDEB] truncate" title="${UI.escapeHtml(fname)}">${UI.escapeHtml(fname)}</span>
+                      ${fSize ? `<span class="text-[10px] text-[#8F8E8A] font-mono">(${fSize})</span>` : ''}
+                    </div>
+                    <a href="${downloadUrl}" target="_blank" class="p-1 rounded text-primary hover:bg-primary/10 transition-colors" title="Tải về">
+                      <span class="material-symbols-outlined text-[15px]">download</span>
+                    </a>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      unitsWithDocs.forEach(unit => {
+        html += `
+          <div class="rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#18181b] overflow-hidden shadow-2xs">
+            <div class="p-2.5 bg-[#FAF9F5] dark:bg-[#202020] border-b border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-between gap-2">
+              <div class="flex items-center gap-1.5 min-w-0">
+                <span class="material-symbols-outlined text-[17px] text-emerald-600 dark:text-emerald-400">folder</span>
+                <span class="font-bold text-xs text-[#222120] dark:text-[#EDEDEB] truncate" title="${UI.escapeHtml(unit.title)}">
+                  Chương ${unit.uIdx + 1}: ${UI.escapeHtml(unit.title)}
+                </span>
+              </div>
+              <span class="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                ${unit.totalDocs} tệp
+              </span>
+            </div>
+
+            <div class="p-2 space-y-2">
+              ${unit.lessons.map(les => `
+                <div class="rounded-lg bg-[#FAF9F5] dark:bg-[#202020]/60 border border-[#E8E6DF]/80 dark:border-[#2E2D2B]/80 p-2 space-y-1.5">
+                  <div
+                    class="flex items-center justify-between gap-1.5 cursor-pointer hover:text-primary transition-colors group/les-title"
+                    onclick="window._instructorSelectDocLesson && window._instructorSelectDocLesson('${les.lesId}', '${les.uId}')"
+                    title="Bấm để mở bài giảng này trong trình soạn thảo"
+                  >
+                    <div class="flex items-center gap-1.5 min-w-0">
+                      <span class="material-symbols-outlined text-[15px] text-slate-400 group-hover/les-title:text-primary">description</span>
+                      <span class="text-xs font-semibold text-[#222120] dark:text-[#EDEDEB] truncate">
+                        ${les.displayCode} ${UI.escapeHtml(les.title)}
+                      </span>
+                    </div>
+                    <span class="text-[10px] text-primary underline font-medium opacity-0 group-hover/les-title:opacity-100 transition-opacity">Sửa bài</span>
+                  </div>
+
+                  <div class="pl-2 space-y-1 border-l-2 border-emerald-400/40">
+                    ${les.docs.map(f => {
+                      const fname = f.filename || f.title || 'Tài liệu';
+                      const fSize = f.file_size_bytes ? `${Math.round(f.file_size_bytes / 1024)} KB` : '';
+                      const downloadUrl = f.file_url || (f.asset_id ? `/api/files/${f.asset_id}/download` : (f.resource_id ? `/api/files/${f.resource_id}/download` : '#'));
+                      const badge = getFileIconBadge(fname);
+                      return `
+                        <div class="p-1.5 rounded-md bg-white dark:bg-[#1E1E1E] border border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-between gap-2 text-xs">
+                          <div class="flex items-center gap-1.5 min-w-0">
+                            <span class="px-1 py-0.2 rounded font-mono font-bold text-[8px] ${badge.colorClass}">${badge.ext}</span>
+                            <span class="text-[11px] font-medium text-[#222120] dark:text-[#EDEDEB] truncate" title="${UI.escapeHtml(fname)}">${UI.escapeHtml(fname)}</span>
+                            ${fSize ? `<span class="text-[9px] text-[#8F8E8A] font-mono">(${fSize})</span>` : ''}
+                          </div>
+                          <a href="${downloadUrl}" target="_blank" class="p-1 rounded text-primary hover:bg-primary/10 transition-colors shrink-0" title="Tải xuống / Xem">
+                            <span class="material-symbols-outlined text-[14px]">download</span>
+                          </a>
+                        </div>
+                      `;
+                    }).join('')}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      });
+
+      docsContainer.innerHTML = html;
+    };
+
+    const switchCurriculumSidebarTab = (tab) => {
+      const isOutline = tab === 'outline';
+      if (tabBtnOutline) {
+        tabBtnOutline.className = isOutline
+          ? 'flex-1 py-1.5 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 bg-white dark:bg-[#2A2928] text-[#222120] dark:text-[#EDEDEB] shadow-2xs border border-[#E8E6DF]/80 dark:border-[#3E3D3A] cursor-pointer'
+          : 'flex-1 py-1.5 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB] cursor-pointer';
+      }
+      if (tabBtnDocs) {
+        tabBtnDocs.className = !isOutline
+          ? 'flex-1 py-1.5 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 bg-white dark:bg-[#2A2928] text-[#222120] dark:text-[#EDEDEB] shadow-2xs border border-[#E8E6DF]/80 dark:border-[#3E3D3A] cursor-pointer'
+          : 'flex-1 py-1.5 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB] cursor-pointer';
+      }
+      if (treeContainer) treeContainer.classList.toggle('hidden', !isOutline);
+      if (docsContainer) docsContainer.classList.toggle('hidden', isOutline);
+      if (containerAddUnit) containerAddUnit.classList.toggle('hidden', !isOutline);
+      if (sidebarTitle) sidebarTitle.textContent = isOutline ? 'Cấu trúc bài giảng' : 'Tài liệu toàn khóa học';
+
+      if (!isOutline) {
+        renderCourseDocumentTree();
+      }
+    };
+
+    if (tabBtnOutline) tabBtnOutline.onclick = () => switchCurriculumSidebarTab('outline');
+    if (tabBtnDocs) tabBtnDocs.onclick = () => switchCurriculumSidebarTab('documents');
+
+    window._instructorSelectDocLesson = (lessonId, unitId) => {
+      switchCurriculumSidebarTab('outline');
+      if (typeof selectLesson === 'function') {
+        selectLesson(lessonId, unitId);
       }
     };
 
@@ -3026,6 +3481,14 @@ class InstructorView {
         badgeText = 'Đã sửa';
       }
 
+      // Collect current documents from activeBlocks
+      const currentLessonDocs = [];
+      (activeBlocks || []).filter(b => b.type === 'document').forEach(b => {
+        if (Array.isArray(b.files)) {
+          b.files.forEach(f => currentLessonDocs.push(f));
+        }
+      });
+
       editorContainer.innerHTML = `
         <div class="space-y-5" id="curriculum-active-editor-root">
           <!-- Top Action Bar -->
@@ -3046,6 +3509,15 @@ class InstructorView {
 
             <!-- Action Buttons -->
             <div class="flex items-center gap-2.5 shrink-0">
+              <button
+                type="button"
+                id="btn-open-course-docs-modal"
+                class="px-4 py-2 rounded-xl bg-[#F4F1EA] hover:bg-[#ECE8DF] dark:bg-[#262524] dark:hover:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] text-xs font-bold border border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Xem cây tài liệu toàn bộ khóa học"
+              >
+                <span class="material-symbols-outlined text-[16px] text-emerald-600 dark:text-emerald-400">folder_open</span>
+                <span>Tài liệu khóa học</span>
+              </button>
               <button
                 type="button"
                 id="btn-preview-lesson"
@@ -3116,6 +3588,73 @@ class InstructorView {
                 ${isLocked ? 'disabled' : ''}
               >${UI.escapeHtml(activeLessonMeta.summary || '')}</textarea>
             </div>
+          </div>
+
+          <!-- Lesson Attached Documents Panel (M5) -->
+          <div class="bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl p-4 sm:p-5 shadow-xs space-y-3.5" id="lesson-attached-docs-panel">
+            <div class="flex items-center justify-between pb-2 border-b border-[#E8E6DF] dark:border-[#2E2D2B]">
+              <div class="flex items-center gap-2">
+                <span class="w-7 h-7 rounded-lg bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                  <span class="material-symbols-outlined text-[18px]">folder_zip</span>
+                </span>
+                <div>
+                  <h3 class="text-xs font-bold uppercase tracking-wider text-[#222120] dark:text-[#EDEDEB]">Tài liệu đính kèm bài giảng này</h3>
+                  <p class="text-[11px] text-[#8F8E8A] dark:text-[#6D6C68]">Tài liệu học tập sinh viên có thể tải về (PDF, Word, Excel, CAD... ≤ 50 MB)</p>
+                </div>
+              </div>
+              <span id="lesson-docs-count-badge" class="px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300">
+                ${currentLessonDocs.length} tệp
+              </span>
+            </div>
+
+            <!-- List of files in this lesson -->
+            <div id="lesson-docs-list-container" class="space-y-2">
+              ${currentLessonDocs.length === 0 ? `
+                <div class="p-3 text-center text-xs text-[#8F8E8A] dark:text-[#6D6C68] italic bg-[#FAF9F5] dark:bg-[#1E1E1E] rounded-xl border border-dashed border-[#E8E6DF] dark:border-[#2E2D2B]">
+                  Bài giảng này chưa có tài liệu đính kèm. Thầy/Cô có thể tải lên tệp tài liệu ở bên dưới.
+                </div>
+              ` : currentLessonDocs.map((f, fIdx) => {
+                const fname = f.filename || f.title || 'Tài liệu';
+                const fSize = f.file_size_bytes ? `${Math.round(f.file_size_bytes / 1024)} KB` : '';
+                const downloadUrl = f.file_url || (f.asset_id ? `/api/files/${f.asset_id}/download` : (f.resource_id ? `/api/files/${f.resource_id}/download` : '#'));
+                const ext = (fname.split('.').pop() || 'FILE').toUpperCase();
+                return `
+                  <div class="p-2.5 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#1E1E1E] flex items-center justify-between gap-3 text-xs">
+                    <div class="flex items-center gap-2.5 min-w-0">
+                      <span class="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 font-mono font-bold text-[10px] flex items-center justify-center shrink-0">
+                        ${ext}
+                      </span>
+                      <div class="min-w-0">
+                        <p class="font-bold text-[#222120] dark:text-[#EDEDEB] truncate" title="${UI.escapeHtml(fname)}">${UI.escapeHtml(fname)}</p>
+                        ${fSize ? `<p class="text-[10px] text-[#8F8E8A] font-mono">${fSize}</p>` : ''}
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-1 shrink-0">
+                      <a href="${downloadUrl}" target="_blank" class="p-1.5 rounded-lg text-primary hover:bg-primary/10 transition-colors" title="Tải xuống / Xem trước">
+                        <span class="material-symbols-outlined text-[16px]">download</span>
+                      </a>
+                      ${!isLocked ? `
+                        <button type="button" class="btn-panel-delete-doc p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer" data-doc-idx="${fIdx}" data-resource-id="${f.resource_id || ''}" title="Xóa tài liệu">
+                          <span class="material-symbols-outlined text-[16px]">delete</span>
+                        </button>
+                      ` : ''}
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+
+            <!-- Upload new document action -->
+            ${!isLocked ? `
+              <div class="pt-1 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <label class="cursor-pointer inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] hover:border-primary bg-[#FAF9F5] dark:bg-[#18181b] text-xs font-bold text-[#222120] dark:text-[#EDEDEB] transition-colors shadow-2xs">
+                  <span class="material-symbols-outlined text-[16px] text-primary">upload_file</span>
+                  <span>Tải tệp tài liệu lên (PDF, Word, Excel, CAD...)</span>
+                  <input type="file" id="input-upload-lesson-panel-doc" class="sr-only" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.dwg,.dxf,.obj,.fbx,.stl,.blend,.step,.stp,.gltf,.glb" />
+                </label>
+                <span class="text-[11px] text-[#8F8E8A] dark:text-[#6D6C68]">Dung lượng tối đa 50 MB • Không hỗ trợ file .zip/.rar</span>
+              </div>
+            ` : ''}
           </div>
 
           <!-- Vertical Blocks List -->
@@ -3402,6 +3941,100 @@ class InstructorView {
           if (typeof triggerAutoSave === 'function') triggerAutoSave(true);
         };
       }
+
+      // Listeners for lesson-attached-docs-panel
+      const uploadPanelDocInput = editorContainer.querySelector('#input-upload-lesson-panel-doc');
+      if (uploadPanelDocInput) {
+        uploadPanelDocInput.onchange = async (e) => {
+          const file = e.target.files && e.target.files[0];
+          if (!file) return;
+
+          // Check forbidden archive formats (.zip, .rar, .7z...)
+          const fname = (file.name || '').toLowerCase();
+          if (/\.(zip|rar|7z|tar|gz|bz2|xz|iso)$/i.test(fname)) {
+            UI.showToast('Hệ thống không hỗ trợ tệp nén (.zip, .rar, .7z...). Vui lòng tải trực tiếp tài liệu học tập (PDF, Word, Excel, CAD, 3D...)', 'warning');
+            uploadPanelDocInput.value = '';
+            return;
+          }
+
+          // Check strict 50MB limit
+          if (file.size > 50 * 1024 * 1024) {
+            UI.showToast('Dung lượng tệp vượt quá giới hạn cho phép (tối đa 50 MB).', 'warning');
+            uploadPanelDocInput.value = '';
+            return;
+          }
+
+          try {
+            updateAutosaveBadge('saving');
+            const res = await ApiClient.uploadCourseFile(cId, file, file.name, 'RESOURCE');
+            const uploadedFile = {
+              resource_id: res.asset_id || res.id,
+              asset_id: res.asset_id || res.id,
+              title: file.name,
+              filename: file.name,
+              file_url: res.file_url || (res.asset_id ? `/api/files/${res.asset_id}/download` : ''),
+              file_size_bytes: file.size
+            };
+
+            scrapeBlocksFromDom();
+            let docBlock = activeBlocks.find(b => b.type === 'document');
+            if (!docBlock) {
+              docBlock = {
+                id: 'blk_' + Math.random().toString(36).slice(2, 9),
+                type: 'document',
+                title: 'Tài liệu đính kèm',
+                files: []
+              };
+              activeBlocks.push(docBlock);
+            }
+            if (!Array.isArray(docBlock.files)) docBlock.files = [];
+            docBlock.files.push(uploadedFile);
+
+            isEditorDirty = true;
+            renderEditor();
+            if (typeof triggerAutoSave === 'function') await triggerAutoSave(true);
+            if (typeof renderCourseDocumentTree === 'function') renderCourseDocumentTree();
+            UI.showToast(`Đã thêm tài liệu "${file.name}" vào bài giảng.`, 'success');
+          } catch (err) {
+            updateAutosaveBadge('error', err.message);
+            UI.showToast(err.message || 'Lỗi tải tệp tài liệu lên.', 'error');
+          } finally {
+            uploadPanelDocInput.value = '';
+          }
+        };
+      }
+
+      editorContainer.querySelectorAll('.btn-panel-delete-doc').forEach(btn => {
+        btn.onclick = async () => {
+          const conf = await UI.confirm('Xóa tài liệu', 'Xác nhận xóa tệp tài liệu này khỏi bài học?', 'Xóa');
+          if (!conf) return;
+          const docIdx = parseInt(btn.dataset.docIdx, 10);
+          const resId = btn.dataset.resourceId;
+
+          scrapeBlocksFromDom();
+          let removed = false;
+          let fileCounter = 0;
+          for (const b of activeBlocks) {
+            if (b.type === 'document' && Array.isArray(b.files)) {
+              for (let i = 0; i < b.files.length; i++) {
+                if (fileCounter === docIdx || (resId && String(b.files[i].resource_id || b.files[i].asset_id) === String(resId))) {
+                  b.files.splice(i, 1);
+                  removed = true;
+                  break;
+                }
+                fileCounter++;
+              }
+              if (removed) break;
+            }
+          }
+
+          isEditorDirty = true;
+          renderEditor();
+          if (typeof triggerAutoSave === 'function') await triggerAutoSave(true);
+          if (typeof renderCourseDocumentTree === 'function') renderCourseDocumentTree();
+          UI.showToast('Đã xóa tài liệu khỏi bài giảng.', 'success');
+        };
+      });
       if (addQuizBtn) {
         addQuizBtn.onclick = () => {
           scrapeBlocksFromDom();
@@ -3930,6 +4563,14 @@ class InstructorView {
           };
         });
       });
+
+      // Course Document Tree Modal Button
+      const courseDocsBtn = editorContainer.querySelector('#btn-open-course-docs-modal');
+      if (courseDocsBtn) {
+        courseDocsBtn.onclick = () => {
+          InstructorView.openCourseDocumentTreeModal(course, currentUnits);
+        };
+      }
 
       // Preview Lesson Button
       const prevBtn = editorContainer.querySelector('#btn-preview-lesson');
@@ -4493,11 +5134,31 @@ class InstructorView {
                   class="hidden lg:block absolute -right-1.5 top-0 bottom-0 w-3 cursor-col-resize select-none z-20 hover:bg-primary/20 transition-colors"
                   title="Kéo viền phải để tùy chỉnh độ rộng Cấu trúc bài giảng"
                 ></div>
-                <div class="bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl p-5 shadow-xs space-y-4">
-                  <div class="flex items-center justify-between pb-3 border-b border-[#E8E6DF] dark:border-[#2E2D2B]">
+                <div class="bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl p-4 sm:p-5 shadow-xs space-y-4">
+                  <!-- Segmented Control Tabs: Cấu trúc bài giảng vs Tài liệu toàn khóa -->
+                  <div class="flex items-center gap-1 p-1 bg-[#FAF9F5] dark:bg-[#1E1E1E] rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B]">
+                    <button
+                      type="button"
+                      id="tab-btn-curriculum-outline"
+                      class="flex-1 py-1.5 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 bg-white dark:bg-[#2A2928] text-[#222120] dark:text-[#EDEDEB] shadow-2xs border border-[#E8E6DF]/80 dark:border-[#3E3D3A] cursor-pointer"
+                    >
+                      <span class="material-symbols-outlined text-[16px] text-primary">account_tree</span>
+                      <span>Bài giảng</span>
+                    </button>
+                    <button
+                      type="button"
+                      id="tab-btn-curriculum-documents"
+                      class="flex-1 py-1.5 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB] cursor-pointer"
+                    >
+                      <span class="material-symbols-outlined text-[16px] text-blue-500">folder_open</span>
+                      <span>Tài liệu</span>
+                      <span id="badge-total-course-docs" class="ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300">0</span>
+                    </button>
+                  </div>
+
+                  <div class="flex items-center justify-between pb-2 border-b border-[#E8E6DF] dark:border-[#2E2D2B]">
                     <div class="flex items-center gap-2">
-                      <span class="material-symbols-outlined text-[18px] text-primary">account_tree</span>
-                      <span class="text-xs font-bold uppercase tracking-wider text-[#222120] dark:text-[#EDEDEB]">Cấu trúc bài giảng</span>
+                      <span class="text-xs font-bold uppercase tracking-wider text-[#222120] dark:text-[#EDEDEB]" id="curriculum-sidebar-title">Cấu trúc bài giảng</span>
                     </div>
                     <span class="text-[11px] font-semibold text-[#8F8E8A] dark:text-[#6D6C68]" id="tree-stats-badge">
                       ${learningUnits.length} Chương
@@ -4505,7 +5166,7 @@ class InstructorView {
                   </div>
 
                   <!-- Add Chapter Button (Only Thêm Chương per user request) -->
-                  <div class="flex items-center">
+                  <div class="flex items-center" id="container-btn-tree-add-unit">
                     <button
                       type="button"
                       id="btn-tree-add-unit"
@@ -4518,8 +5179,13 @@ class InstructorView {
                     </button>
                   </div>
 
-                  <!-- Tree Content Container -->
+                  <!-- Tree Content Container (Bài giảng) -->
                   <div id="tree-units-container" class="space-y-3.5 max-h-[720px] overflow-y-auto pr-1">
+                    <!-- Populated dynamically -->
+                  </div>
+
+                  <!-- Documents Tree Container (Tài liệu toàn khóa - giống cây thư mục học sinh) -->
+                  <div id="tree-documents-container" class="hidden space-y-3 max-h-[720px] overflow-y-auto pr-1">
                     <!-- Populated dynamically -->
                   </div>
                 </div>
@@ -6203,7 +6869,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
       if (ytMatch) {
         playerContainer.innerHTML = `
           <div class="relative w-full h-full overflow-hidden bg-slate-950 select-none">
-            <div style="position: absolute; top: -22%; left: -5%; width: 110%; height: 144%; pointer-events: none;" class="pointer-events-none">
+            <div style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none;" class="pointer-events-none">
               <iframe
                 id="unified-trailer-iframe"
                 src="https://www.youtube-nocookie.com/embed/${ytMatch[1]}?autoplay=1&controls=0&rel=0&iv_load_policy=3&disablekb=1&modestbranding=1&playsinline=1&enablejsapi=1"

@@ -179,37 +179,31 @@ class TestDocumentationInvariantsAdversarial:
         assert not violations, f"Legacy 100MB references found in active docs: {violations}"
 
     def test_clean_player_shell_v2_specifications_in_agents_md(self) -> None:
-        """AGENTS.md must thoroughly codify Clean Player Shell v2 invariants."""
+        """AGENTS.md must thoroughly codify YouTube Standard 16:9 Player invariants."""
         agents_content = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
 
         required_keywords = [
-            "Clean Player Shell v2",
-            "-14% top",
-            "128% height",
-            "pointer-events: none",
+            "YouTube Standard 16:9 Player",
             "Cover Poster",
             "youtube-nocookie.com",
-            "Error 153",
-            "autoplay",
-            "mute",
-            "loop",
             "renderReviewerCoursePreview",
             "openVideoModal",
-            "mountTrailerPreview",
             "Resilient Playback Fallback",
             "1800.0s",
-            "zero YouTube branding",
+            "zero crop",
+            "Pacing Engine & 5-Second Seek Unlock",
+            "Realtime Lesson Completion Gate",
         ]
         missing = [kw for kw in required_keywords if kw.lower() not in agents_content.lower()]
-        assert not missing, f"AGENTS.md is missing required Clean Player Shell v2 keywords: {missing}"
+        assert not missing, f"AGENTS.md is missing required YouTube Standard 16:9 Player keywords: {missing}"
 
     def test_system_specification_06_non_negotiable_invariants(self) -> None:
-        """06_NON_NEGOTIABLE_INVARIANTS.md Invariant 25 must be updated to Clean Player Shell v2."""
+        """06_NON_NEGOTIABLE_INVARIANTS.md Invariant 25 must be updated to YouTube Standard 16:9 Player."""
         invariants_content = (
             ROOT / "docs" / "system" / "PWD301_SYSTEM_SPECIFICATION" / "implementation" / "06_NON_NEGOTIABLE_INVARIANTS.md"
         ).read_text(encoding="utf-8")
 
-        assert "Clean Player Shell v2" in invariants_content
+        assert "YouTube Standard 16:9 Player" in invariants_content
         assert "Cover Poster/Backdrop Shield" in invariants_content
         assert "youtube-nocookie.com" in invariants_content
         assert "Resilient Playback Fallback" in invariants_content
@@ -217,12 +211,12 @@ class TestDocumentationInvariantsAdversarial:
         assert "Error 153" in invariants_content
 
     def test_system_specification_04_lesson_and_progress(self) -> None:
-        """04_LESSON_AND_PROGRESS.md must specify Clean Player Shell v2 and resilient duration fallback."""
+        """04_LESSON_AND_PROGRESS.md must specify YouTube Standard 16:9 Player and resilient duration fallback."""
         lesson_spec = (
             ROOT / "docs" / "system" / "PWD301_SYSTEM_SPECIFICATION" / "business" / "04_LESSON_AND_PROGRESS.md"
         ).read_text(encoding="utf-8")
 
-        assert "Clean Player Shell v2" in lesson_spec
+        assert "YouTube Standard 16:9 Player" in lesson_spec
         assert "Cover Poster/Backdrop Shield" in lesson_spec
         assert "youtube-nocookie.com" in lesson_spec
         assert "Resilient Playback Fallback" in lesson_spec
@@ -231,12 +225,12 @@ class TestDocumentationInvariantsAdversarial:
         """docs/intent/copyright-protection.md must contain explicit SUPERSEDED NOTICE."""
         doc = (ROOT / "docs" / "intent" / "copyright-protection.md").read_text(encoding="utf-8")
         assert "SUPERSEDED NOTICE" in doc
-        assert "Clean Player Shell v2" in doc
+        assert "YouTube Standard 16:9 Player" in doc
         assert "AGENTS.md" in doc
 
     def test_tasks_current_tracks_task_098_with_supersession_pointer(self) -> None:
-        """tasks/CURRENT.md must track TASK-098 and preserve WORKFLOW_SUPERSESSION.md link."""
+        """tasks/CURRENT.md must track TASK-100 and preserve WORKFLOW_SUPERSESSION.md link."""
         current_task = (ROOT / "tasks" / "CURRENT.md").read_text(encoding="utf-8")
-        assert "TASK-098" in current_task
-        assert "Clean Player Shell v2" in current_task
+        assert "TASK-100" in current_task
+        assert "YouTube Standard 16:9 Viewport" in current_task
         assert "WORKFLOW_SUPERSESSION.md" in current_task

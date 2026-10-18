@@ -52,6 +52,9 @@ class AppRouter {
   }
 
   async init() {
+    // 0. Setup global anti-tamper security shield across all pages
+    this.initGlobalSecurityShield();
+
     // 1. Initial auth state check
     await this.refreshCurrentUser();
 
@@ -84,6 +87,193 @@ class AppRouter {
 
     // 6. Initial route resolution
     await this.handleRoute();
+  }
+
+  initGlobalSecurityShield() {
+    if (this._securityShieldInitialized) return;
+    this._securityShieldInitialized = true;
+    this.isSecurityLocked = false;
+
+    // 1. Hotkeys Prevention (DevTools, View Source, Screenshot)
+    window.addEventListener('keydown', (e) => {
+      if (this.isSecurityLocked) return;
+      const key = (e.key || '').toUpperCase();
+      const code = e.keyCode || e.which;
+      const isCtrlOrMeta = e.ctrlKey || e.metaKey;
+      const isShift = e.shiftKey;
+      const isAlt = e.altKey;
+
+      // F12
+      if (key === 'F12' || code === 123) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.triggerGlobalSecurityLockdown('DEVTOOLS_DETECTED');
+        return false;
+      }
+
+      // Ctrl+Shift+I / J / C (DevTools Inspector, Console)
+      if (isCtrlOrMeta && isShift && (key === 'I' || key === 'J' || key === 'C' || code === 73 || code === 74 || code === 67)) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.triggerGlobalSecurityLockdown('DEVTOOLS_DETECTED');
+        return false;
+      }
+
+      // Ctrl+U (View Source)
+      if (isCtrlOrMeta && (key === 'U' || code === 85)) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.triggerGlobalSecurityLockdown('VIEW_SOURCE_ATTEMPT');
+        return false;
+      }
+
+      // PrintScreen / Win+Shift+S / Snipping Tool
+      if (key === 'PRINTSCREEN' || code === 44 || (isShift && (isCtrlOrMeta || isAlt) && key === 'S')) {
+        e.preventDefault();
+        e.stopPropagation();
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText('');
+          }
+        } catch (_) {}
+        this.triggerGlobalSecurityLockdown('SCREEN_CAPTURE_ATTEMPT');
+        return false;
+      }
+    }, true);
+
+    // 2. Context Menu (Right Click) Prevention outside of text inputs
+    window.addEventListener('contextmenu', (e) => {
+      const tag = (e.target && e.target.tagName ? e.target.tagName : '').toUpperCase();
+      const isEditable = e.target && (e.target.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA');
+      if (!isEditable) {
+        e.preventDefault();
+        this.triggerGlobalSecurityLockdown('CONTEXT_MENU_BLOCKED');
+        return false;
+      }
+    }, true);
+
+    // 3. Periodic DevTools Detection (debugger delta & window dimensions)
+    const checkTiming = () => {
+      if (this.isSecurityLocked) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      const start = Date.now();
+      try {
+        (function() { debugger; })();
+      } catch (_) {}
+      const delta = Date.now() - start;
+      if (delta > 100) {
+        this.triggerGlobalSecurityLockdown('DEVTOOLS_DETECTED');
+        return;
+      }
+
+      try {
+        if (typeof window.outerWidth === 'number' && typeof window.innerWidth === 'number') {
+          const widthThreshold = window.outerWidth - window.innerWidth > 160;
+          const heightThreshold = window.outerHeight - window.innerHeight > 160;
+          if (widthThreshold || heightThreshold) {
+            this.triggerGlobalSecurityLockdown('DEVTOOLS_DETECTED');
+          }
+        }
+      } catch (_) {}
+    };
+
+    this._securityTimer = setInterval(checkTiming, 1000);
+    if (this._securityTimer && typeof this._securityTimer.unref === 'function') {
+      this._securityTimer.unref();
+    }
+  }
+
+  async triggerGlobalSecurityLockdown(reason = 'DEVTOOLS_DETECTED') {
+    if (this.isSecurityLocked) return;
+    this.isSecurityLocked = true;
+
+    // Pause all media
+    try {
+      document.querySelectorAll('video, audio').forEach(m => {
+        try { m.pause(); } catch (_) {}
+      });
+    } catch (_) {}
+
+    // Clear clipboard
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText('');
+      }
+    } catch (_) {}
+
+    // Reason Text
+    let reasonText = 'PHÁT HIỆN HÀNH VI CAN THIỆP MÃ NGUỒN';
+    if (reason === 'DEVTOOLS_DETECTED') {
+      reasonText = 'PHÁT HIỆN CÔNG CỤ DEVTOOLS / MÃ NGUỒN';
+    } else if (reason === 'VIEW_SOURCE_ATTEMPT') {
+      reasonText = 'PHÁT HIỆN THAO TÁC XEM MÃ NGUỒN HỆ THỐNG';
+    } else if (reason === 'SCREEN_CAPTURE_ATTEMPT') {
+      reasonText = 'PHÁT HIỆN THAO TÁC CHỤP / QUAY MÀN HÌNH';
+    } else if (reason === 'CONTEXT_MENU_BLOCKED') {
+      reasonText = 'PHÁT HIỆN THAO TÁC CHUỘT PHẢI MÃ NGUỒN';
+    }
+
+    // Render Fullscreen Blackout Shield
+    let shield = document.getElementById('global-security-blackout-shield');
+    if (!shield) {
+      shield = document.createElement('div');
+      shield.id = 'global-security-blackout-shield';
+      shield.className = 'fixed inset-0 z-[999999] bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4 text-center select-none animate-fade-in';
+      document.body.appendChild(shield);
+    }
+
+    shield.innerHTML = `
+      <div class="max-w-md w-full p-8 rounded-2xl bg-slate-900 border border-rose-500/40 shadow-2xl space-y-4 text-white">
+        <div class="w-16 h-16 mx-auto rounded-full bg-rose-500/10 text-rose-500 flex items-center justify-center">
+          <span class="material-symbols-outlined text-[36px]">shield</span>
+        </div>
+        <h2 class="text-lg font-extrabold text-white tracking-wide">
+          🛡️ CẢNH BÁO AN NINH HỆ THỐNG
+        </h2>
+        <div class="text-xs font-bold text-rose-400 bg-rose-950/40 py-1.5 px-3 rounded-lg border border-rose-900/60 font-mono">
+          ${reasonText}
+        </div>
+        <p class="text-xs text-slate-300 leading-relaxed">
+          Hệ thống phát hiện hành động can thiệp mã nguồn hoặc mở công cụ phát triển trái phép.
+          Để đảm bảo an toàn bản quyền và mã nguồn, phiên làm việc đã bị thu hồi ngay lập tức.
+        </p>
+        <div class="pt-2">
+          <button
+            type="button"
+            id="btn-security-lockdown-relogin"
+            class="w-full py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-md cursor-pointer"
+          >
+            Đăng nhập lại
+          </button>
+        </div>
+      </div>
+    `;
+
+    // Revoke Session on Server and Client
+    try {
+      if (window.ApiClient && typeof ApiClient.logout === 'function') {
+        await ApiClient.logout().catch(() => {});
+      }
+    } catch (_) {}
+
+    // Clear local states
+    try {
+      sessionStorage.clear();
+      sessionStorage.setItem('pwd301_security_alert', 'Cảnh báo an ninh: Phiên làm việc đã bị thu hồi do phát hiện hành vi vi phạm chính sách bảo mật hệ thống.');
+      localStorage.removeItem('pwd301_token');
+      localStorage.removeItem('access_token');
+    } catch (_) {}
+
+    const reLogin = () => {
+      this.isSecurityLocked = false;
+      if (shield && shield.parentElement) {
+        shield.parentElement.removeChild(shield);
+      }
+      window.location.hash = '#/auth/login?security_lockdown=1';
+    };
+
+    shield.querySelector('#btn-security-lockdown-relogin')?.addEventListener('click', reLogin);
+    setTimeout(reLogin, 3500);
   }
 
   closeMobileDrawer() {
@@ -324,6 +514,11 @@ class AppRouter {
       return;
     }
 
+    // Install or update global VideoArmor security shield for authenticated sessions
+    if (typeof VideoArmor !== 'undefined' && typeof VideoArmor.installGlobalShield === 'function') {
+      VideoArmor.installGlobalShield(this.currentUser);
+    }
+
     // Role Permission Guard with Automatic Multi-Role Perspective Switching
     const userRoles = (this.currentUser && (this.currentUser.role_codes || [this.currentUser.primary_role || 'STUDENT'])) || ['STUDENT'];
     const hasAdminRole = userRoles.includes('ADMIN');
@@ -470,6 +665,9 @@ class AppRouter {
   }
 
   renderAuth() {
+    if (typeof VideoArmor !== 'undefined' && typeof VideoArmor.uninstallGlobalShield === 'function') {
+      VideoArmor.uninstallGlobalShield();
+    }
     if (window.history && window.history.replaceState) {
       window.history.replaceState(null, '', '#/auth');
     } else {
@@ -1078,6 +1276,9 @@ class AppRouter {
           this.currentUser = null;
           this.currentRole = null;
           this.toggleShell(false);
+          if (typeof VideoArmor !== 'undefined' && typeof VideoArmor.uninstallGlobalShield === 'function') {
+            VideoArmor.uninstallGlobalShield();
+          }
           if (window.UI && typeof window.UI.closeAllModals === 'function') {
             window.UI.closeAllModals();
           }

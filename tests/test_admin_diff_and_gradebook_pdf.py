@@ -96,6 +96,13 @@ def test_build_assessment_gradebook_pdf_generates_valid_pdf():
     assert len(pdf_bytes) > 1000
     assert pdf_bytes.startswith(b"%PDF")
 
+    import io
+    import pypdf
+    reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+    full_text = "".join(page.extract_text() for page in reader.pages)
+    assert "KHÔNG ĐẠT" in full_text
+    assert "HỎNG" not in full_text
+
 
 def test_build_change_request_diff_summary_course_metadata():
     """Verify build_change_request_diff_summary categorizes changed vs unchanged fields."""

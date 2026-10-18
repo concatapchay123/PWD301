@@ -92,16 +92,40 @@ class AuthView {
       <div class="min-h-full w-full flex flex-col justify-center items-center px-4 py-8 sm:py-14 bg-[#FAF9F5] dark:bg-[#191919] font-sans selection:bg-[#ECE8DF] selection:text-[#222120] dark:selection:bg-[#37352F] dark:selection:text-[#EDEDEB]">
         
         <!-- Brand Header -->
-        <div class="mb-6 text-center select-none">
-          <div class="w-11 h-11 mx-auto mb-2.5 rounded-xl bg-[#222120] dark:bg-[#EDEDEB] text-[#FAF9F5] dark:text-[#191919] flex items-center justify-center shadow-subtle">
-            <span class="material-symbols-outlined text-[22px]">school</span>
+        <div class="mb-6 text-center select-none flex flex-col items-center">
+          <div class="mb-3 flex justify-center">
+            <img src="/frontend/assets/img/pptq_logo_light.png" alt="PPTQ Logo" class="h-16 w-auto object-contain dark:hidden rounded-xl shadow-xs" />
+            <img src="/frontend/assets/img/pptq_logo_dark.png" alt="PPTQ Logo" class="h-16 w-auto object-contain hidden dark:block rounded-xl shadow-xs" />
           </div>
-          <h1 class="text-xl sm:text-2xl font-bold text-[#222120] dark:text-[#EDEDEB] tracking-tight">PWD301 LMS</h1>
-          <p class="text-xs text-[#8F8E8A] mt-0.5">Học tập và làm bài kiểm tra</p>
+          <h1 class="text-xl sm:text-2xl font-bold text-[#222120] dark:text-[#EDEDEB] tracking-tight">PPTQ LMS</h1>
+          <p class="text-xs text-[#8F8E8A] mt-0.5">People • Passion • Team • Quality</p>
         </div>
 
         <div class="w-full max-w-sm">
           
+          <!-- Security Alert Banner (if locked down) -->
+          ${(() => {
+            let secAlert = null;
+            try {
+              if (typeof sessionStorage !== 'undefined') {
+                secAlert = sessionStorage.getItem('pwd301_security_alert');
+              }
+              if (!secAlert && typeof window !== 'undefined' && window.location && window.location.hash.includes('security_lockdown=1')) {
+                secAlert = 'Cảnh báo an ninh: Phiên làm việc đã bị thu hồi do phát hiện hành vi vi phạm chính sách bảo mật hệ thống.';
+              }
+            } catch (_) {}
+            if (!secAlert) return '';
+            return `
+              <div id="auth-security-alert-banner" class="mb-4 p-4 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-900/60 text-rose-800 dark:text-rose-300 text-xs font-medium flex items-start gap-3 animate-fade-in shadow-xs" role="alert">
+                <span class="material-symbols-outlined text-[20px] text-rose-600 dark:text-rose-400 shrink-0">shield</span>
+                <div class="space-y-1">
+                  <div class="font-bold text-rose-900 dark:text-rose-200">🛡️ CẢNH BÁO AN NINH HỆ THỐNG</div>
+                  <div class="leading-relaxed text-[11.5px] text-rose-700 dark:text-rose-300">${typeof UI !== 'undefined' && UI.escapeHtml ? UI.escapeHtml(secAlert) : secAlert}</div>
+                </div>
+              </div>
+            `;
+          })()}
+
           <!-- Mode Switcher Tabs -->
           <div class="flex p-1 bg-[#ECE8DF] dark:bg-[#252525] rounded-xl mb-4 text-xs font-semibold select-none">
             <button type="button" id="tab-nav-login" class="flex-1 py-1.5 text-center rounded-lg transition-all bg-[#FFFFFF] dark:bg-[#1E1E1E] text-[#222120] dark:text-[#EDEDEB] shadow-xs cursor-pointer">
@@ -524,6 +548,11 @@ class AuthView {
   }
 
   static attachEvents() {
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.removeItem('pwd301_security_alert');
+      }
+    } catch (_) {}
     const anchor = document.getElementById('auth-demo-anchor');
     if (anchor && typeof fetch === 'function') {
       fetch('/auth/runtime-config', { credentials: 'same-origin', cache: 'no-store' })
@@ -927,4 +956,9 @@ class AuthView {
   }
 }
 
-window.AuthView = AuthView;
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { AuthView };
+}
+if (typeof window !== 'undefined') {
+  window.AuthView = AuthView;
+}

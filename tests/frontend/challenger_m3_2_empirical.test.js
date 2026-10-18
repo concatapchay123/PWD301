@@ -285,8 +285,9 @@ test('CHALLENGE 2: Hero Trailer Shell Cropping Geometry & Zero-Button Ambient In
   assert.match(studentSource, /id="hero-trailer-clean-shell"/, 'Hero trailer container must exist');
   assert.match(studentSource, /class="[^"]*overflow-hidden[^"]*"[^>]*id="hero-trailer-clean-shell"/, 'Hero trailer container must be overflow-hidden');
 
-  // Iframe wrapper style: top: -22%, left: -5%, width: 110%, height: 144%, pointer-events: none
-  assert.match(studentSource, /style="position:\s*absolute;\s*top:\s*-22%;\s*left:\s*-5%;\s*width:\s*110%;\s*height:\s*144%;\s*pointer-events:\s*none;"/, 'Hero trailer must have exact -22% top, 144% height scaling style');
+  // Iframe wrapper style: standard 16:9 uncropped viewport (inset: 0, 100% width/height)
+  assert.match(studentSource, /style="position:\s*absolute;\s*inset:\s*0;\s*width:\s*100%;\s*height:\s*100%;\s*pointer-events:\s*none;"/, 'Hero trailer must have standard 16:9 uncropped viewport style');
+  assert.doesNotMatch(studentSource, /top:\s*-22%/, 'Hero trailer must eliminate -22% top crop');
 
   // Iframe must have pointer-events-none class and border-0
   assert.match(studentSource, /id="hero-trailer-iframe"[^>]*class="[^"]*pointer-events-none/, 'Hero trailer iframe must have pointer-events-none class');
@@ -369,8 +370,10 @@ test('CHALLENGE 4: Trailer Lightbox Clean Player Shell & Controller Disposal', a
   // Assert contentHtml is Clean Player Shell v3
   assert.match(contentHtml, /id="trailer-lightbox-player-container"/, 'Lightbox body must contain custom player container');
   assert.match(contentHtml, /id="trailer-lightbox-player-viewport"/, 'Lightbox body must contain viewport');
-  assert.match(contentHtml, /top:\s*-22%/, 'Lightbox body must have -22% top crop');
-  assert.match(contentHtml, /height:\s*144%/, 'Lightbox body must have 144% height');
+  assert.match(contentHtml, /inset:\s*0/, 'Lightbox body must have uncropped inset: 0');
+  assert.match(contentHtml, /width:\s*100%/, 'Lightbox body must have width 100%');
+  assert.match(contentHtml, /height:\s*100%/, 'Lightbox body must have height 100%');
+  assert.doesNotMatch(contentHtml, /top:\s*-22%/, 'Lightbox body must not have -22% top crop');
   assert.match(contentHtml, /id="trailer-lightbox-player-shield"/, 'Lightbox body must have click shield');
   assert.match(contentHtml, /id="trailer-lightbox-player-poster-shield"/, 'Lightbox body must have poster shield');
 
@@ -403,9 +406,10 @@ test('CHALLENGE 5: Reviewer Course Preview Clean Player Shell Invariants (admin.
   assert.match(html, /data-player-type="youtube"/);
   assert.match(html, /data-yt-id="abc12345678"/);
 
-  // Must have 16:9 viewport with -22% top and 144% height (Clean Player Shell v3)
+  // Must have 16:9 viewport with standard uncropped viewport (inset: 0, 100% width/height)
   assert.match(html, /id="rev-player-viewport"/);
-  assert.match(html, /top:\s*-22%;\s*left:\s*-5%;\s*width:\s*110%;\s*height:\s*144%;\s*pointer-events:\s*none;/);
+  assert.match(html, /inset:\s*0;\s*width:\s*100%;\s*height:\s*100%;\s*pointer-events:\s*none;/);
+  assert.doesNotMatch(html, /top:\s*-22%/);
 
   // Must have iframe using youtube-nocookie.com
   assert.match(html, /src="https:\/\/www\.youtube-nocookie\.com\/embed\/abc12345678\?enablejsapi=1/);
@@ -464,7 +468,8 @@ test('CHALLENGE 6: Instructor Video Modals Clean Player Shell Invariants (instru
 
   // openVideoModal (lines 48-62)
   assert.match(instructorSource, /id="instructor-preview-shell"/, 'openVideoModal must use #instructor-preview-shell');
-  assert.match(instructorSource, /top:\s*-22%;\s*left:\s*-5%;\s*width:\s*110%;\s*height:\s*144%;\s*pointer-events:\s*none;/, 'openVideoModal must use -22% top, 144% height scaling');
+  assert.match(instructorSource, /inset:\s*0;\s*width:\s*100%;\s*height:\s*100%;\s*pointer-events:\s*none;/, 'openVideoModal must use standard 16:9 uncropped viewport');
+  assert.doesNotMatch(instructorSource, /top:\s*-22%/, 'openVideoModal must not use -22% top crop');
   assert.match(instructorSource, /id="instructor-preview-shield"/, 'openVideoModal must have click shield');
   assert.match(instructorSource, /id="instructor-preview-controls"/, 'openVideoModal must have custom controls');
   assert.match(instructorSource, /iframe\.contentWindow\?\.postMessage/, 'openVideoModal shield click must toggle play/pause via postMessage');

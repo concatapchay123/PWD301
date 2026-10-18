@@ -63,7 +63,7 @@ function fakePlayerDOM(type = 'youtube') {
       removeAttribute(name) { delete attrs[name]; },
       querySelector: () => null,
       getBoundingClientRect: () => ({ left: 0, top: 0, width: 500, height: 10 }),
-      addEventListener(name, fn) { events.set(`${id}:${name}`, fn); },
+      addEventListener(name, fn) { events.set(`${id}:${name}`, fn); this[`on${name}`] = fn; },
       removeEventListener(name) { events.delete(`${id}:${name}`); }
     };
     elements.set(id, el);
