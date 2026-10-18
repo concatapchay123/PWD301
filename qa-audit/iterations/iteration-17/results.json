@@ -1,0 +1,95 @@
+{
+  "iteration": "17",
+  "title": "Cross-Module Integration, Cascade Deletions & Notification RBAC",
+  "timestamp": "2026-10-18T07:42:01Z",
+  "test_run_id": "FF8CA8",
+  "test_cases": [
+    {
+      "id": "TC-IT17-001",
+      "name": "Cascade Attachment Deletion: Trashing Lesson Purges FileAsset from Document Hub",
+      "status": "PASS",
+      "evidence": [
+        "IT17_TC01_Cascade_Attachment_Deletion.png"
+      ],
+      "notes": [
+        "Created Course ID: 676440a5-93c3-444b-b9d8-ee8b62b6c2b8",
+        "Created Lesson ID: cde6c3c8-4be4-4e8f-9577-22910df78a59",
+        "Attachment upload result: ok=True, status=201",
+        "Active Course Files BEFORE lesson deletion: 1 file(s)",
+        "Lesson deletion status: ok=True, status=200",
+        "Active Course Files AFTER lesson deletion: 0 file(s)",
+        "Verified: Trashing lesson purged attached FileAsset from Course Document list immediately."
+      ]
+    },
+    {
+      "id": "TC-IT17-002",
+      "name": "Cascade LearningUnit Deletion & Curriculum Consistency",
+      "status": "PASS",
+      "evidence": [
+        "IT17_TC02_Cascade_Learning_Unit_Deletion.png"
+      ],
+      "notes": [
+        "Created LearningUnit ID: 8b10f556-40ad-41b4-bd1a-bb4547f8e7cc",
+        "Delete LearningUnit HTTP Status: ok=True, status=200",
+        "Verified: LearningUnit soft-deleted cleanly without SQL Server foreign key violation."
+      ]
+    },
+    {
+      "id": "TC-IT17-003",
+      "name": "Course Document Tree Hierarchy Verification",
+      "status": "PASS",
+      "evidence": [
+        "IT17_TC03_Document_Tree_Hierarchy.png"
+      ],
+      "notes": [
+        "Document Tree items count: 0",
+        "Verified: Standard document hub contract met with items count = 0."
+      ]
+    },
+    {
+      "id": "TC-IT17-004",
+      "name": "Two-Tier Broadcast Notification RBAC Enforcement (Primary vs System Monitoring vs Sub-Admin)",
+      "status": "PASS",
+      "evidence": [
+        "IT17_TC04_Two_Tier_Broadcast_RBAC.png"
+      ],
+      "notes": [
+        "Test 1 - Primary Admin broadcast (MAINTENANCE): ok=True, status=200",
+        "Test 2 - Monitoring Admin broadcast (MAINTENANCE): ok=False, status=403",
+        "Monitoring Admin correctly rejected with message: 'Admin giám sát hệ thống chỉ được phép phát thông báo liên quan đến hệ thống.'",
+        "Test 3 - Monitoring Admin broadcast (SYSTEM): ok=True, status=200",
+        "Test 4 - Course Admin broadcast (SYSTEM): ok=False, status=403",
+        "Course Review Admin correctly rejected with message: 'Bạn không có quyền phát thông báo toàn hệ thống.'",
+        "Verified: Two-Tier Broadcast Notification RBAC strictly enforced across all 4 privilege boundaries."
+      ]
+    },
+    {
+      "id": "TC-IT17-005",
+      "name": "Event-Driven Notification Delivery into Student Inbox Feed",
+      "status": "PASS",
+      "evidence": [
+        "IT17_TC05_Notification_Delivery.png"
+      ],
+      "notes": [
+        "Broadcast dispatch status: ok=True, status=200",
+        "Student received total notifications: 20",
+        "Delivered successfully. Found Notification ID: 1004ff72-aaff-4106-beb6-a7a01e212363, is_read=False"
+      ]
+    },
+    {
+      "id": "TC-IT17-006",
+      "name": "Notification Read State & Unread Counter Synchronization",
+      "status": "PASS",
+      "evidence": [
+        "IT17_TC06_Notification_Read_Sync.png"
+      ],
+      "notes": [
+        "Unread count BEFORE marking read: 22",
+        "Mark read status: ok=True, status=200",
+        "Unread count AFTER marking read: 21",
+        "Updated notification read flag: True",
+        "Verified: Unread count decremented and read flag persisted accurately."
+      ]
+    }
+  ]
+}

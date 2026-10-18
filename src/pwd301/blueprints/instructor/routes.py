@@ -1930,7 +1930,20 @@ def update_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
         )
 
         has_resource_diff = False
-        if existing_draft:
+        if "resources" in payload and isinstance(payload["resources"], list):
+            live_resource_ids = {r.file_asset_id for r in lesson.resources}
+            from pwd301.services.file_service import _resolve_file_asset
+
+            payload_asset_ids = set()
+            for r in payload["resources"]:
+                if isinstance(r, dict):
+                    aid = r.get("asset_id") or r.get("file_asset_id") or r.get("resource_id") or r.get("id")
+                    if aid:
+                        asset = _resolve_file_asset(aid, session=db.session)
+                        if asset:
+                            payload_asset_ids.add(asset.id)
+            has_resource_diff = (live_resource_ids != payload_asset_ids)
+        elif existing_draft:
             live_resource_ids = {r.file_asset_id for r in lesson.resources}
             draft_resource_ids = {r.file_asset_id for r in existing_draft.resources}
             has_resource_diff = (live_resource_ids != draft_resource_ids)
@@ -2023,6 +2036,8 @@ def update_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
         from pwd301.services.lesson_service import _copy_lesson_resources
 
         _copy_lesson_resources(lesson.id, staged.id, session=db.session)
+        if "resources" in payload:
+            update_lesson(actor, staged.id, {"resources": payload["resources"]}, session=db.session)
         db.session.commit()
         serialized = _serialize_lesson(staged)
         return jsonify(

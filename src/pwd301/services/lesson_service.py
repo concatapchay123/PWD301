@@ -1246,6 +1246,62 @@ def update_lesson(
                 )
         lesson.required_for_periods_starting_at = req_for_periods
 
+    if "resources" in data:
+        from pwd301.models.file_import import FileAsset, LessonResource
+        from pwd301.services.file_service import _resolve_file_asset
+
+        resources_input = data["resources"]
+        if isinstance(resources_input, list):
+            input_asset_ids: set[int] = set()
+            validated_resources: list[tuple[FileAsset, str, bool]] = []
+            for r in resources_input:
+                if not isinstance(r, dict):
+                    continue
+                aid = r.get("asset_id") or r.get("file_asset_id") or r.get("resource_id") or r.get("id")
+                if not aid:
+                    continue
+                asset = _resolve_file_asset(aid, session=sess)
+                if asset is not None and asset.course_id == course.id and asset.deleted_at is None:
+                    input_asset_ids.add(asset.id)
+                    lbl = r.get("label") or r.get("filename") or r.get("title") or asset.display_name or "Tài liệu"
+                    req = bool(r.get("is_required", False))
+                    validated_resources.append((asset, str(lbl), req))
+
+            existing_resources = (
+                sess.query(LessonResource)
+                .filter(LessonResource.lesson_id == lesson.id)
+                .all()
+            )
+            for er in existing_resources:
+                if er.file_asset_id not in input_asset_ids:
+                    sess.delete(er)
+            sess.flush()
+
+            for idx, (asset, lbl, req) in enumerate(validated_resources, start=1):
+                lr = (
+                    sess.query(LessonResource)
+                    .filter(
+                        LessonResource.lesson_id == lesson.id,
+                        LessonResource.file_asset_id == asset.id,
+                    )
+                    .first()
+                )
+                if lr is None:
+                    lr = LessonResource(
+                        lesson_id=lesson.id,
+                        file_asset_id=asset.id,
+                        position=idx,
+                        label=lbl,
+                        is_required=req,
+                        created_at=utc_now(),
+                    )
+                    sess.add(lr)
+                else:
+                    lr.position = idx
+                    lr.label = lbl
+                    lr.is_required = req
+            sess.flush()
+
     lesson.updated_at = utc_now()
     sess.flush()
 

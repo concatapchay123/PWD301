@@ -1,0 +1,74 @@
+{
+  "iteration": 3,
+  "timestamp": "2026-10-18T05:42:44Z",
+  "test_cases": [
+    {
+      "id": "TC-IT03-001",
+      "name": "Student Restricted from Instructor Studio",
+      "status": "PASS",
+      "evidence": [
+        "IT03_TC01_student_blocked_from_instructor.png"
+      ],
+      "notes": [
+        "Student safely redirected to role home: http://localhost:5000/#/student/dashboard"
+      ]
+    },
+    {
+      "id": "TC-IT03-002",
+      "name": "Student Restricted from Admin Governance",
+      "status": "PASS",
+      "evidence": [
+        "IT03_TC02_student_blocked_from_admin.png"
+      ],
+      "notes": [
+        "Student safely redirected to role home: http://localhost:5000/#/student/dashboard"
+      ]
+    },
+    {
+      "id": "TC-IT03-003",
+      "name": "Strict Lifetime Enrollment Invariant (Leave Course Locked)",
+      "status": "PASS",
+      "evidence": [
+        "IT03_TC03_lifetime_enrollment_locked.png"
+      ],
+      "notes": [
+        "Leave course response: {'ok': False, 'status': 403, 'code': 'FORBIDDEN', 'message': 'Chức năng rời khóa học đã bị vô hiệu hóa. Khóa học được ghi danh sẽ gắn liền với tài khoản học viên trọn đời.', 'raw': 'Chức năng rời khóa học đã bị vô hiệu hóa. Khóa học được ghi danh sẽ gắn liền với tài khoản học viên trọn đời.'}",
+        "Confirmed: POST /student/courses/<id>/leave returned HTTP 403 Forbidden."
+      ]
+    },
+    {
+      "id": "TC-IT03-004",
+      "name": "Backend RBAC API Barrier for Student",
+      "status": "PASS",
+      "evidence": [
+        "IT03_TC04_api_rbac_barrier.png"
+      ],
+      "notes": [
+        "/admin/users -> allowed: False, status: 403",
+        "/api/admin/system/health -> allowed: False, status: 404"
+      ]
+    },
+    {
+      "id": "TC-IT03-005",
+      "name": "Instructor Restricted from Admin Governance",
+      "status": "PASS",
+      "evidence": [
+        "IT03_TC05_instructor_blocked_from_admin.png"
+      ],
+      "notes": [
+        "Instructor safely redirected back to http://localhost:5000/#/instructor/dashboard"
+      ]
+    },
+    {
+      "id": "TC-IT03-006",
+      "name": "Primary Admin Multi-Tab Governance Access",
+      "status": "PASS",
+      "evidence": [
+        "IT03_TC06_primary_admin_operations.png"
+      ],
+      "notes": [
+        "Primary Admin successfully accessed #/admin/operations."
+      ]
+    }
+  ]
+}

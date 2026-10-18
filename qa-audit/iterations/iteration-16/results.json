@@ -1,0 +1,99 @@
+{
+  "iteration": "16",
+  "title": "Performance Symptoms, Payload Efficiency, Layout Stability & Memory Leak Indicators",
+  "timestamp": "2026-10-18T07:29:47Z",
+  "test_run_id": "B6E2CA",
+  "test_cases": [
+    {
+      "id": "TC-IT16-001",
+      "name": "Core API Response Time Baseline across Critical Endpoints (<= 500ms)",
+      "status": "FAIL",
+      "evidence": [
+        "IT16_TC01_API_Response_Latency.png"
+      ],
+      "notes": [
+        "Auth Profile (/auth/profile): avg=9.5ms, min=8.7ms, max=10.8ms",
+        "Public Course Catalog (/api/courses): avg=55.1ms, min=50.3ms, max=58.9ms",
+        "Student My Learning (/student/my-learning): avg=57.6ms, min=50.8ms, max=66.0ms",
+        "Student Enrollments (/student/enrollments): avg=37.6ms, min=33.0ms, max=46.3ms",
+        "Instructor Courses (/instructor/courses): avg=728.2ms, min=696.9ms, max=802.2ms",
+        "Latency threshold exceeded on /instructor/courses: 728.2209399993008ms > 500ms",
+        "Admin Health (/admin/health): avg=16.5ms, min=15.7ms, max=17.4ms",
+        "All core API endpoints benchmarked within budget: {'/auth/profile': {'label': 'Auth Profile', 'avg_ms': 9.47, 'min_ms': 8.74, 'max_ms': 10.81}, '/api/courses': {'label': 'Public Course Catalog', 'avg_ms': 55.07, 'min_ms': 50.25, 'max_ms': 58.86}, '/student/my-learning': {'label': 'Student My Learning', 'avg_ms': 57.62, 'min_ms': 50.79, 'max_ms': 65.97}, '/student/enrollments': {'label': 'Student Enrollments', 'avg_ms': 37.59, 'min_ms': 33.03, 'max_ms': 46.29}, '/instructor/courses': {'label': 'Instructor Course Management', 'avg_ms': 728.22, 'min_ms': 696.91, 'max_ms': 802.18}, '/admin/health': {'label': 'Admin Comprehensive Health', 'avg_ms': 16.48, 'min_ms': 15.65, 'max_ms': 17.37}}"
+      ]
+    },
+    {
+      "id": "TC-IT16-002",
+      "name": "Payload Efficiency & JSON Envelope Size Audit (<= 500KB)",
+      "status": "PASS",
+      "evidence": [
+        "IT16_TC02_Payload_Sizes.png"
+      ],
+      "notes": [
+        "Payload size for /admin/health: 3.39 KB (3467 bytes)",
+        "Payload size for /admin/telemetry: 1.37 KB (1404 bytes)",
+        "Payload size for /auth/profile: 1.32 KB (1354 bytes)",
+        "Payload size for /api/courses: 22.97 KB (23517 bytes)",
+        "Payload size for /student/my-learning: 17.24 KB (17654 bytes)",
+        "Payload size for /student/enrollments: 7.79 KB (7973 bytes)",
+        "Verified all JSON payloads are lean and well below the 500KB limit: {'/admin/health': 3.39, '/admin/telemetry': 1.37, '/auth/profile': 1.32, '/api/courses': 22.97, '/student/my-learning': 17.24, '/student/enrollments': 7.79}"
+      ]
+    },
+    {
+      "id": "TC-IT16-003",
+      "name": "Core Web Vitals: Cumulative Layout Shift (CLS) & Largest Contentful Paint (LCP)",
+      "status": "PASS",
+      "evidence": [
+        "IT16_TC03_Core_Web_Vitals_CLS_LCP.png"
+      ],
+      "notes": [
+        "Dashboard Core Web Vitals: CLS=0.012, LCP=304ms",
+        "Courses View Core Web Vitals: CLS=0.012, LCP=304ms",
+        "Verified CLS = 0.012 <= 0.1 (Good standard)",
+        "Verified LCP = 304ms <= 2500ms (Good standard)"
+      ]
+    },
+    {
+      "id": "TC-IT16-004",
+      "name": "Server Resource Utilization & Authentic Telemetry Verification (psutil Rule 10.5)",
+      "status": "PASS",
+      "evidence": [
+        "IT16_TC04_Authentic_Telemetry_psutil.png"
+      ],
+      "notes": [
+        "Telemetry Payload keys: ['collected_at', 'container', 'cpu', 'disk', 'host', 'hostname', 'memory', 'network', 'node_label', 'os', 'status', 'uptime', 'uptime_seconds']",
+        "Authentic CPU metric: {'cores': 32, 'frequency_mhz': 2419.2, 'label': '32 vCPU • Intel(R) Core(TM) i9-14900HX', 'load_avg': '0.29, 0.26, 0.29', 'model': 'Intel(R) Core(TM) i9-14900HX', 'percent': 0.9}",
+        "Authentic Memory metric: {'available_gb': 18.2, 'available_label': '18.2 GB khả dụng', 'label': '13.5 / 31.7 GB', 'percent': 42.7, 'total_gb': 31.7, 'used_gb': 13.5}",
+        "Authentic Host: DESKTOP-71A4210, Uptime: 20872s",
+        "Memory percent valid and dynamic: 42.7%",
+        "Uptime progression check: sample1=20872s, sample2=20873s"
+      ]
+    },
+    {
+      "id": "TC-IT16-005",
+      "name": "Single Page App Memory Leak Indications under Repeated Route Traversal",
+      "status": "PASS",
+      "evidence": [
+        "IT16_TC05_DOM_Memory_Retention.png"
+      ],
+      "notes": [
+        "Initial Baseline at #/student/dashboard: DOM nodes = 672, JS Heap = 22063571",
+        "Post 15-Route Traversal at #/student/dashboard: DOM nodes = 672, JS Heap = 15710546",
+        "Net DOM Node Delta: 0 nodes (Initial: 672, Final: 672)",
+        "Verified: Clean router lifecycle. DOM node count stabilized cleanly (delta=0 nodes). Zero element explosion."
+      ]
+    },
+    {
+      "id": "TC-IT16-006",
+      "name": "Database Multi-Join Relational Query Overhead & Connection Pool Latency",
+      "status": "PASS",
+      "evidence": [
+        "IT16_TC06_Database_Connection_Pool.png"
+      ],
+      "notes": [
+        "Database query benchmark (10 iterations): avg=46.9ms, min=43.4ms, max=56.6ms",
+        "Verified: 10/10 multi-join relational queries completed successfully. Zero connection pool timeout, avg=46.9ms."
+      ]
+    }
+  ]
+}

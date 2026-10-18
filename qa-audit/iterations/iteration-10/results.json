@@ -1,0 +1,100 @@
+{
+  "iteration": 10,
+  "timestamp": "2026-10-18T06:38:40Z",
+  "test_cases": [
+    {
+      "id": "TC-IT10-001",
+      "name": "Cascade Attachment Deletion & Document Hub Invariant",
+      "status": "PASS",
+      "evidence": [
+        "IT10_TC01_cascade_attachment_deletion.png"
+      ],
+      "notes": [
+        "Pre-delete DB state: {'lesson_found': True, 'lesson_status': 'DRAFT', 'fa_status': 'ACTIVE', 'lr_found': True}",
+        "Lesson soft-delete returned HTTP 200.",
+        "Post-delete DB state: {'lesson_status': 'TRASH', 'lesson_deleted_at': '2026-10-18T06:38:52.347000', 'lesson_position': 10200059, 'lr_found': False, 'fa_status': 'TRASH', 'fa_deleted_at': '2026-10-18T06:38:52.347000'}",
+        "Verified: Trashed FileAsset is completely removed from Student Document Hub (fail-closed)."
+      ]
+    },
+    {
+      "id": "TC-IT10-002",
+      "name": "Contiguous Lesson Position Re-Compaction",
+      "status": "PASS",
+      "evidence": [
+        "IT10_TC02_lesson_position_recompaction.png"
+      ],
+      "notes": [
+        "Positions before deleting middle lesson: {'039f5707-e297-4873-9ec3-94681eacdbf4': 1, 'd0389dff-d28e-4299-954f-f8f4337e3223': 2, 'c4250723-a077-4a77-973c-e8288c6f8989': 3}",
+        "Deleted middle lesson L2 successfully.",
+        "Positions after re-compaction: {'l1_pos': 1, 'l2_pos': 10200061, 'l2_status': 'TRASH', 'l3_pos': 2, 'active_positions': [1, 2]}",
+        "L2 position moved to TRASH_POSITION_BASE (>= 1,000,000) preventing unique collisions.",
+        "Verified: Active lesson positions cleanly re-compacted to contiguous sequence [1, 2]."
+      ]
+    },
+    {
+      "id": "TC-IT10-003",
+      "name": "Multi-Table Transaction Atomicity & Rollback",
+      "status": "PASS",
+      "evidence": [
+        "IT10_TC03_transaction_atomicity_rollback.png"
+      ],
+      "notes": [
+        "DB state before rollback probe: {'active_count': 62, 'all_count': 89}",
+        "Oversized title (>200 chars) rejected with HTTP 400 VALIDATION_ERROR.",
+        "Reorder with mismatched IDs rejected with status 409: Lesson identifier 'bc3f8bc0-0fa6-4f67-a2db-203c7253c2f6' is not an active lesson in this course.",
+        "DB state after rollback probe: {'active_count': 62, 'all_count': 89}",
+        "Verified: Complete transaction rollback with 0 row leakage in SQL Server."
+      ]
+    },
+    {
+      "id": "TC-IT10-004",
+      "name": "Foreign Key Referential Integrity & Non-Destructive Soft-Delete",
+      "status": "FAIL",
+      "evidence": [
+        "IT10_TC04_foreign_key_soft_delete.png"
+      ],
+      "notes": [
+        "Submit response: ok=True",
+        "Admin Approve response: ok=True",
+        "Admin Publish response: ok=True",
+        "Student enrollment response: ok=True",
+        "Pre-trash enrollment check: {'course_found': True, 'enrollment_count': 1}",
+        "Trash while student ACTIVE: ok=False, error=Không thể chuyển khóa học vào thùng rác vì đang có 1 học viên đang theo học.",
+        "Verified: Active Student Protection guard blocked trashing course with active students.",
+        "Course trash response with completed student: ok=False",
+        "DEFECT DISCOVERED (DEFECT-IT10-001): POST /instructor/courses/<id>/trash returned HTTP 403 because _serialize_course -> list_learning_units -> require_course_manager denies non-admins when course.deleted_at is populated: {'ok': False, 'status': 403, 'error': 'You do not have permission to manage this course.', 'code': 'FORBIDDEN', 'data': {'data': None, 'error': {'code': 'FORBIDDEN', 'correlation_id': '8e18c9f133224a76861a890901508b0a', 'field_errors': {}, 'message': 'You do not have permission to manage this course.'}, 'success': False}}",
+        "Post-trash FK verification: {'course_status': 'TRASH', 'course_deleted_at': '2026-10-18T06:39:13.474000', 'enrollment_count_after_trash': 1, 'hard_delete_blocked': True}",
+        "Verified: Historical enrollment record preserved in SQL Server.",
+        "Verified: Database-level Foreign Key constraint strictly blocks destructive hard delete."
+      ]
+    },
+    {
+      "id": "TC-IT10-005",
+      "name": "Append-Only Immutable Audit Trail",
+      "status": "PASS",
+      "evidence": [
+        "IT10_TC05_immutable_audit_trail.png"
+      ],
+      "notes": [
+        "Audit table schema & records check: {'has_updated_at': False, 'has_deleted_at': False, 'event_count': 5, 'actions': ['COURSE_TRASHED', 'COURSE_PUBLISHED', 'COURSE_APPROVED', 'COURSE_SUBMITTED_FOR_REVIEW', 'COMPLETION_RULE_UPDATED'], 'all_valid_json': True}",
+        "Verified: audit_events table strictly enforces append-only semantics (no updated_at, no deleted_at).",
+        "Verified: Audit records captured with actions: ['COURSE_TRASHED', 'COURSE_PUBLISHED', 'COURSE_APPROVED', 'COURSE_SUBMITTED_FOR_REVIEW', 'COMPLETION_RULE_UPDATED']"
+      ]
+    },
+    {
+      "id": "TC-IT10-006",
+      "name": "Learning Unit Soft-Delete & Child Cascading",
+      "status": "PASS",
+      "evidence": [
+        "IT10_TC06_chapter_cascade_soft_delete.png"
+      ],
+      "notes": [
+        "Units before delete: {'u1_pos': 1, 'u2_pos': 2}",
+        "Delete Chapter 1 response: ok=True",
+        "Units after delete: {'u1_deleted_at': '2026-10-18T06:39:24.636000', 'u1_lessons_all_trashed': True, 'u1_lesson_count': 4, 'u2_new_pos': 1}",
+        "Verified: All child lessons of Chapter 1 transitioned to TRASH with timestamps.",
+        "Verified: Chapter 2 cleanly re-compacted from position 2 to position 1."
+      ]
+    }
+  ]
+}

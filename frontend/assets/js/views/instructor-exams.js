@@ -32,7 +32,17 @@
 
   InstructorView.normalizeExamBloom = function (value) {
     const normalized = String(value || 'UNDERSTAND').trim().toUpperCase();
-    const aliases = { 'NHẬN BIẾT': 'REMEMBER', 'THÔNG HIỂU': 'UNDERSTAND', 'VẬN DỤNG': 'APPLY' };
+    const aliases = {
+      'NHẬN BIẾT': 'REMEMBER',
+      'THÔNG HIỂU': 'UNDERSTAND',
+      'VẬN DỤNG': 'APPLY',
+      'EASY': 'REMEMBER',
+      'DỄ': 'REMEMBER',
+      'MEDIUM': 'UNDERSTAND',
+      'TRUNG BÌNH': 'UNDERSTAND',
+      'HARD': 'APPLY',
+      'KHÓ': 'APPLY'
+    };
     const bloom = aliases[normalized] || normalized;
     if (!['REMEMBER', 'UNDERSTAND', 'APPLY'].includes(bloom)) {
       throw new Error(`Mức độ Bloom không được hỗ trợ: ${normalized}`);
@@ -4525,6 +4535,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         const scoringPolicy = document.getElementById('cfg-scoring-policy')?.value || 'HIGHEST';
         const answerVisibilityPolicy = document.getElementById('cfg-answer-visibility-policy')?.value || 'IMMEDIATE';
         const allowStudentViewResults = document.getElementById('cfg-allow-student-view-results') ? document.getElementById('cfg-allow-student-view-results').checked : (currentDraft.config?.allow_student_view_results !== false);
+        const policy = InstructorView.readExamPolicy(document);
         window.ExamStore.saveDraft({ config: {
           duration,
           open_at: openAtIso,

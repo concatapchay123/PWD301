@@ -1,0 +1,77 @@
+{
+  "iteration": 6,
+  "timestamp": "2026-10-18T05:55:21Z",
+  "test_cases": [
+    {
+      "id": "TC-IT06-001",
+      "name": "Idempotent Navigation on Manage Route (Zero Side-Effects)",
+      "status": "PASS",
+      "evidence": [
+        "IT06_TC01_idempotent_navigation.png"
+      ],
+      "notes": [
+        "Settled URL after visiting manage route without id: http://localhost:5000/#/instructor/courses",
+        "Idempotent navigation confirmed: Safely redirected to course list with zero side-effects."
+      ]
+    },
+    {
+      "id": "TC-IT06-002",
+      "name": "UI Course Creation via Instructor Studio Modal",
+      "status": "PASS",
+      "evidence": [
+        "IT06_TC02_ui_course_creation.png"
+      ],
+      "notes": [
+        "Studio URL after course creation: http://localhost:5000/#/instructor/courses/manage?id=1b75d76e-a1be-4877-bcb5-8884ed4fb198",
+        "Successfully extracted created course ID: 1b75d76e-a1be-4877-bcb5-8884ed4fb198"
+      ]
+    },
+    {
+      "id": "TC-IT06-003",
+      "name": "Studio Header Render & Status Badge Verification",
+      "status": "PASS",
+      "evidence": [
+        "IT06_TC03_studio_header_render.png"
+      ],
+      "notes": [
+        "Course title present in studio: True",
+        "Course code present in studio: True"
+      ]
+    },
+    {
+      "id": "TC-IT06-004",
+      "name": "Learning Unit (Chapter) Creation in Studio",
+      "status": "PASS",
+      "evidence": [
+        "IT06_TC04_chapter_creation.png"
+      ],
+      "notes": [
+        "Create chapter API result: {'ok': True, 'r': {'change_request_id': None, 'course_id': '1b75d76e-a1be-4877-bcb5-8884ed4fb198', 'data': {'change_request_id': None, 'course_id': '1b75d76e-a1be-4877-bcb5-8884ed4fb198', 'is_draft': False, 'is_staged': False, 'learning_unit_id': '26307fb9-496b-43ba-8438-d6d623b281f3', 'lesson_count': 0, 'lessons': [], 'message': 'Đã lưu thay đổi.', 'pending_approval': False, 'position': 1, 'request_id': None, 'review_version': None, 'title': 'Chương 1: Nguyên lý Kiểm thử Hiệu năng Hệ thống'}, 'error': None, 'is_draft': False, 'is_staged': False, 'learning_unit_id': '26307fb9-496b-43ba-8438-d6d623b281f3', 'lesson_count': 0, 'lessons': [], 'message': 'Đã lưu thay đổi.', 'pending_approval': False, 'position': 1, 'request_id': None, 'review_version': None, 'success': True, 'title': 'Chương 1: Nguyên lý Kiểm thử Hiệu năng Hệ thống'}}",
+        "Chapter present in studio DOM: True"
+      ]
+    },
+    {
+      "id": "TC-IT06-005",
+      "name": "Browser Refresh Resilience & Read-After-Write Consistency",
+      "status": "PASS",
+      "evidence": [
+        "IT06_TC05_refresh_resilience.png"
+      ],
+      "notes": [
+        "After reload: course code present=True, chapter present=True"
+      ]
+    },
+    {
+      "id": "TC-IT06-006",
+      "name": "Duplicate Course Code Uniqueness Enforcement (409 Conflict)",
+      "status": "PASS",
+      "evidence": [
+        "IT06_TC06_duplicate_code_conflict.png"
+      ],
+      "notes": [
+        "Duplicate creation result: {'ok': False, 'status': 409, 'code': 'CONFLICT', 'message': 'Dữ liệu bị trùng lặp hoặc xung đột trạng thái.'}",
+        "Confirmed: Duplicate course code rejected with HTTP 409 Conflict."
+      ]
+    }
+  ]
+}

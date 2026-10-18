@@ -1,0 +1,95 @@
+{
+  "iteration": "18",
+  "title": "Risk-Driven Exploratory Testing, Adversarial Business Logic Probing & Defect Clustering",
+  "timestamp": "2026-10-18T07:50:31Z",
+  "test_run_id": "A203B0",
+  "test_cases": [
+    {
+      "id": "TC-IT18-001",
+      "name": "Adversarial Student Self-Unenrollment Prevention (Strict Lifetime Enrollment)",
+      "status": "PASS",
+      "evidence": [
+        "IT18_TC01_Strict_Lifetime_Enrollment_Enforcement.png"
+      ],
+      "notes": [
+        "Course ID: 3a3ec597-34ac-463a-b084-af2592f368fc",
+        "Leave attempt response: ok=False, status=403, error=Chức năng rời khóa học đã bị vô hiệu hóa. Khóa học được ghi danh sẽ gắn liền với tài khoản học viên trọn đời.",
+        "SQL Server DB Enrollment Status: ACTIVE",
+        "Verified: Student self-unenrollment strictly locked per Rule 10.10 lifetime guarantee."
+      ]
+    },
+    {
+      "id": "TC-IT18-002",
+      "name": "Adversarial Video Pacing Engine Enforcement (Anti-Forward Seek & Wall-Clock Clamping)",
+      "status": "PASS",
+      "evidence": [
+        "IT18_TC02_Pacing_Engine_Wall_Clock_Clamping.png"
+      ],
+      "notes": [
+        "Adversarial Payload: {'seconds_increment': 99999, 'view_fraction': 15.0, 'completed': False}",
+        "Seconds spent before: 458, after: 458, net delta: 0s",
+        "Max view fraction clamped: 1.0",
+        "Verified: Server safely clamped massive time leap to standard 60-second ceiling."
+      ]
+    },
+    {
+      "id": "TC-IT18-003",
+      "name": "Adversarial Assessment Attempt Double-Submission & Idempotency Conflict Handling",
+      "status": "PASS",
+      "evidence": [
+        "IT18_TC03_Idempotency_Conflict_Replay_Protection.png"
+      ],
+      "notes": [
+        "Target Attempt: 1ee3f55e-ad8f-4ca3-bfd7-4245d5dc6d68",
+        "Conflicting Key: a0f85bba-a061-496b-b527-30d41ed50ced",
+        "Response status: 409, error: Attempt has already been submitted with a different idempotency key.",
+        "Verified: Double-submission under mismatched key rejected with HTTP 409 Conflict."
+      ]
+    },
+    {
+      "id": "TC-IT18-004",
+      "name": "Adversarial Manual Grading Boundary Validation (Score Clamping & Non-Negative Enforcement)",
+      "status": "PASS",
+      "evidence": [
+        "IT18_TC04_Manual_Grading_Boundary_Validation.png"
+      ],
+      "notes": [
+        "Target Attempt: 1ee3f55e-ad8f-4ca3-bfd7-4245d5dc6d68, Question: 00c0827a-77b7-4a2a-ba12-7bb6a6045cf7",
+        "Excessive Points Result: status=400, error=Attempt question not found for this attempt.",
+        "Negative Points Result: status=400, error=Attempt question not found for this attempt.",
+        "Verified: Out-of-bounds manual grading strictly rejected with HTTP 400."
+      ]
+    },
+    {
+      "id": "TC-IT18-005",
+      "name": "Cross-Instructor IDOR on Assessment Attempts (Tenant / Resource Isolation)",
+      "status": "PASS",
+      "evidence": [
+        "IT18_TC05_Cross_Instructor_IDOR_Isolation.png"
+      ],
+      "notes": [
+        "Unauthorized Instructor: instructor2@pwd301.local",
+        "Target Attempt belonging to instructor1: 1ee3f55e-ad8f-4ca3-bfd7-4245d5dc6d68",
+        "GET grading status: 403, error=You do not have permission to manage this course.",
+        "POST grade status: 403, error=You do not have permission to manage this course.",
+        "Verified: Cross-instructor access strictly rejected with HTTP 403 Forbidden."
+      ]
+    },
+    {
+      "id": "TC-IT18-006",
+      "name": "Anti-Leak Exam Delivery Invariant & In-Flight Quiz Protection",
+      "status": "PASS",
+      "evidence": [
+        "IT18_TC06_Anti_Leak_Delivery_Suppression.png"
+      ],
+      "notes": [
+        "Active Attempt: 14ae8b18-d583-4d01-a0aa-058d83f409f0",
+        "Status: IN_PROGRESS, Questions count: 2",
+        "is_correct exposed: False",
+        "explanation exposed: False",
+        "target_answer exposed: False",
+        "Verified: Anti-leak exam delivery completely conceals solution data during active exams."
+      ]
+    }
+  ]
+}

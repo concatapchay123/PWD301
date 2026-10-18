@@ -1,0 +1,87 @@
+{
+  "iteration": 8,
+  "timestamp": "2026-10-18T06:10:32Z",
+  "test_cases": [
+    {
+      "id": "TC-IT08-001",
+      "name": "Pre-Flight Publish Readiness Validation (Fail-Closed Rejection)",
+      "status": "PASS",
+      "evidence": [
+        "IT08_TC01_preflight_rejection.png"
+      ],
+      "notes": [
+        "Created bare course FLOW_359186 (ID: 50962764-07b6-4b59-8ce4-31174c6d53ca) in DRAFT status.",
+        "Publish checklist verified: is_ready=False, missing=4 criteria.",
+        "Incomplete submission rejected fail-closed (HTTP 400): Khóa học chưa đủ điều kiện xuất bản: Chưa có ảnh bìa khóa học. Vui lòng tải lên ..."
+      ]
+    },
+    {
+      "id": "TC-IT08-002",
+      "name": "Complete Course Submission & Studio Lock",
+      "status": "PASS",
+      "evidence": [
+        "IT08_TC02_course_submitted_locked.png"
+      ],
+      "notes": [
+        "16:9 Cover image uploaded: Asset ID 9104247d-8656-4e45-b1f6-74c98cdb663a",
+        "Course metadata updated: ok=True",
+        "Completion rules configured: ok=True",
+        "Created Learning Unit: ID c9494f66-2657-433f-b2c6-50e42b3a8494",
+        "Created Lesson: ok=True",
+        "Pre-flight checklist confirmed is_ready=True with all 5 criteria satisfied.",
+        "Course successfully submitted: status transitioned to SUBMITTED_FOR_REVIEW"
+      ]
+    },
+    {
+      "id": "TC-IT08-003",
+      "name": "Admin Governance Queue & Course Inspection Dossier",
+      "status": "PASS",
+      "evidence": [
+        "IT08_TC03_admin_review_queue.png"
+      ],
+      "notes": [
+        "Course FLOW_359186 detected in Admin review queue DOM.",
+        "Inspection dossier retrieved: Title='Kiểm Thử Vòng Đời & Staging Draft FLOW_359186', Lessons=1, Status=SUBMITTED_FOR_REVIEW"
+      ]
+    },
+    {
+      "id": "TC-IT08-004",
+      "name": "Admin Course Approval & Publication Transition",
+      "status": "PASS",
+      "evidence": [
+        "IT08_TC04_course_published_catalog.png"
+      ],
+      "notes": [
+        "Admin approved course: status transitioned to APPROVED",
+        "Course published: status transitioned to PUBLISHED",
+        "Published course FLOW_359186 successfully rendered in Student Catalog."
+      ]
+    },
+    {
+      "id": "TC-IT08-005",
+      "name": "Unified Staging Draft Invariant (Post-Publication Isolation)",
+      "status": "PASS",
+      "evidence": [
+        "IT08_TC05_staging_draft_isolation.png"
+      ],
+      "notes": [
+        "Chapter 2 added while PUBLISHED. Response: is_draft=True, change_request_id=130007",
+        "Student view checked: 1 units visible. Chương 2 present: False (Must be False)."
+      ]
+    },
+    {
+      "id": "TC-IT08-006",
+      "name": "Atomic All-or-Nothing Changeset Diff Modal & Admin Approval",
+      "status": "PASS",
+      "evidence": [
+        "IT08_TC06_changeset_diff_approved.png"
+      ],
+      "notes": [
+        "Submitted changeset for review: ok=True",
+        "Changeset diff retrieved successfully: ReqID=130007, ReviewVersion=023019dd1799a99670cddb1530815d2c964975c98b6f228202191f31881ec924, CourseCode=FLOW_359186",
+        "Admin approved changeset atomically: status=APPROVED",
+        "Student curriculum after approval: 2 units. Chương 2 present: True (Must be True)."
+      ]
+    }
+  ]
+}

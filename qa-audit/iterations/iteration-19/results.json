@@ -1,0 +1,91 @@
+{
+  "iteration": "19",
+  "title": "Comprehensive Regression Suite: Defect Re-verification & Platform Invariants",
+  "timestamp": "2026-10-18T07:54:31Z",
+  "test_run_id": "B33F13",
+  "test_cases": [
+    {
+      "id": "TC-IT19-001",
+      "name": "Re-verify DEFECT-IT10-001: Course Trashing Serialization HTTP 403",
+      "status": "DEFECT_CONFIRMED",
+      "evidence": [
+        "IT19_TC01_Defect_Course_Trash_403.png"
+      ],
+      "notes": [
+        "Course ID: 72db281a-1cbc-43cf-a14e-190e266526d6",
+        "Trash Response: ok=False, status=403, error=You do not have permission to manage this course.",
+        "Root Cause: _serialize_course() validates can_manage_course() which requires course.deleted_at is None.",
+        "Triage: Defect successfully re-verified as OPEN. Documented in Defect Registry."
+      ]
+    },
+    {
+      "id": "TC-IT19-002",
+      "name": "Re-verify DEFECT-IT16-001: N+1 Query Serialization Latency on /instructor/courses",
+      "status": "DEFECT_CONFIRMED",
+      "evidence": [
+        "IT19_TC02_Defect_Course_List_Latency.png"
+      ],
+      "notes": [
+        "Measured Latencies (5 runs): ['687.0ms', '689.2ms', '657.1ms', '646.9ms', '635.8ms']",
+        "Average Latency: 663.2ms (Budget ceiling: 500.0ms)",
+        "Root Cause: _serialize_course(summary=True) lazy-loads lessons, enrollments, owner, and effective_course per row.",
+        "Triage: Defect successfully re-verified as OPEN. Documented in Defect Registry."
+      ]
+    },
+    {
+      "id": "TC-IT19-003",
+      "name": "Anti-Tamper Security Lockdown Regression (Rule 10.8 DevTools Trap)",
+      "status": "PASS",
+      "evidence": [
+        "IT19_TC03_Anti_Tamper_Blackout_Shield.png"
+      ],
+      "notes": [
+        "Dispatched F12 keyboard event to trigger anti-tamper trap.",
+        "Anti-tamper listeners confirmed armed across authenticated views.",
+        "Verified: Rule 10.8 anti-tamper security invariant maintained."
+      ]
+    },
+    {
+      "id": "TC-IT19-004",
+      "name": "File Security Regression: 50MB Non-Archive Policy (Rule 10.3)",
+      "status": "PASS",
+      "evidence": [
+        "IT19_TC04_Archive_Attachment_Policy.png"
+      ],
+      "notes": [
+        "Target Course: 3a3ec597-34ac-463a-b084-af2592f368fc, Lesson: 9c473766-5980-412e-8ca4-9eff862f8882",
+        "Upload Response: status=400, message={'code': 'VALIDATION_ERROR', 'correlation_id': '14ddd6d23e8c454b8c90d8483f34fc26', 'field_errors': {}, 'message': 'Hệ thống không hỗ trợ tệp nén (.zip, .rar, .7z...). Vui lòng tải trực tiếp tài liệu học tập (PDF, Word, Excel, CAD, 3D...)'}",
+        "Verified: Rule 10.3 non-archive policy strictly maintained without regression."
+      ]
+    },
+    {
+      "id": "TC-IT19-005",
+      "name": "Exam Concurrency Regression: Single Active Editing Lease Takeover & Stale Write Fencing",
+      "status": "PASS",
+      "evidence": [
+        "IT19_TC05_Lease_Takeover_Fencing.png"
+      ],
+      "notes": [
+        "Attempt ID: 14ae8b18-d583-4d01-a0aa-058d83f409f0",
+        "Takeover Result: ok=True, status=200",
+        "DB Lease Epoch: 5",
+        "Stale Write Response: status=409, error=Editing lease was lost or taken over by another window.",
+        "Verified: Algorithm 07 single active editing lease takeover & fencing maintained without regression."
+      ]
+    },
+    {
+      "id": "TC-IT19-006",
+      "name": "Two-Tier Broadcast Notification RBAC Governance Regression",
+      "status": "PASS",
+      "evidence": [
+        "IT19_TC06_Broadcast_RBAC_Matrix.png"
+      ],
+      "notes": [
+        "Role: ADMIN_SYSTEM_MONITORING (admin.monitor@pwd301.local)",
+        "Broadcast Category Tested: MAINTENANCE",
+        "Response: status=403, error=Admin giám sát hệ thống chỉ được phép phát thông báo liên quan đến hệ thống.",
+        "Verified: Two-Tier Broadcast RBAC boundary maintained without regression."
+      ]
+    }
+  ]
+}

@@ -2416,17 +2416,27 @@ class StudentView {
       }
 
       // Helper to detect non-learning or cover assets (Rule: pure learning resources only)
-      const isCoverAsset = (r) => {
-        if (!r) return true;
+      const isStudyDocument = (r) => {
+        if (!r) return false;
         const fn = String(r.filename || r.name || r.label || '').toLowerCase();
-        return (
+        if (!fn) return false;
+        const nonDocExts = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico'];
+        if (nonDocExts.some(ext => fn.endsWith(ext))) return false;
+        if (
           fn.includes('_cover') ||
           fn.includes('cover_image') ||
           r.asset_type === 'COURSE_IMAGE' ||
           r.asset_type === 'QUESTION_IMAGE' ||
-          r.asset_type === 'IMPORT_SOURCE'
-        );
+          r.asset_type === 'IMPORT_SOURCE' ||
+          r.is_orphaned ||
+          r.is_deleted ||
+          r.status === 'TRASH' ||
+          r.deleted_at ||
+          r.is_trashed
+        ) return false;
+        return true;
       };
+      const isCoverAsset = (r) => !isStudyDocument(r);
 
       // Collect all attached resource IDs across all lessons to isolate course-level general files
       const attachedAssetIds = new Set();
@@ -2715,26 +2725,6 @@ class StudentView {
               id="cisco-console-canvas"
               class="flex-1 overflow-y-auto relative bg-slate-50 dark:bg-slate-950 p-4 sm:p-8 custom-scrollbar"
             >
-              <!-- Floating Left [<] Navigation Chevron -->
-              <button
-                type="button"
-                id="floating-prev-btn"
-                class="fixed sm:absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 z-30 w-10 h-10 rounded-full bg-white dark:bg-slate-900 shadow-md border border-slate-200 dark:border-slate-800 flex items-center justify-center text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-slate-800 hover:scale-105 transition-all cursor-pointer"
-                title="Quay lại"
-              >
-                <span class="material-symbols-outlined text-[22px]">chevron_left</span>
-              </button>
-
-              <!-- Floating Right [>] Navigation Chevron -->
-              <button
-                type="button"
-                id="floating-next-btn"
-                class="fixed sm:absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 z-30 w-10 h-10 rounded-full bg-white dark:bg-slate-900 shadow-md border border-slate-200 dark:border-slate-800 flex items-center justify-center text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-slate-800 hover:scale-105 transition-all cursor-pointer"
-                title="Tiếp theo"
-              >
-                <span class="material-symbols-outlined text-[22px]">chevron_right</span>
-              </button>
-
               <!-- Dynamic Inner Content Canvas -->
               <div id="cisco-inner-content" class="max-w-3xl mx-auto space-y-6">
                 <!-- Injected via renderActiveContent() -->
@@ -3676,48 +3666,9 @@ class StudentView {
         updateAIContextBadge();
       };
 
-      // Floating [<] and [>] Nav Controller
-      const prevBtn = document.getElementById('floating-prev-btn');
-      const nextBtn = document.getElementById('floating-next-btn');
-
+      // Floating [<] and [>] Nav Controller (Removed in favor of standardized bottom action bar)
       const updateFloatingNav = () => {
-        if (!activeItem || flatNavList.length === 0) {
-          if (prevBtn) prevBtn.classList.add('hidden');
-          if (nextBtn) nextBtn.classList.add('hidden');
-          return;
-        }
-
-        const curIdx = flatNavList.findIndex(i => i.type === activeItem.type && String(i.id) === String(activeItem.id));
-        const prevItem = curIdx > 0 ? flatNavList[curIdx - 1] : null;
-        const nextItem = curIdx < flatNavList.length - 1 ? flatNavList[curIdx + 1] : null;
-
-        if (prevBtn) {
-          prevBtn.classList.toggle('hidden', !prevItem);
-          if (prevItem) {
-            prevBtn.title = `Quay lại: ${prevItem.title}`;
-            prevBtn.onclick = () => window._ciscoSelectItem(prevItem.type, prevItem.id);
-          }
-        }
-
-        if (nextBtn) {
-          const isCurrentLessonIncomplete = activeItem && activeItem.type === 'lesson' && !activeItem.isCompleted;
-          const isNextItemLocked = !nextItem || (nextItem && !nextItem.isUnlocked);
-          const shouldDisableNext = isCurrentLessonIncomplete || isNextItemLocked;
-
-          nextBtn.classList.toggle('hidden', !nextItem || shouldDisableNext);
-          nextBtn.disabled = shouldDisableNext;
-          if (shouldDisableNext) {
-            nextBtn.classList.add('cursor-not-allowed', 'opacity-40');
-            nextBtn.title = 'Chưa đủ điều kiện chuyển bài';
-            nextBtn.onclick = () => {
-              UI.showToast('Bạn cần hoàn thành bài học hiện tại trước khi chuyển sang bài tiếp theo.', 'warning');
-            };
-          } else if (nextItem) {
-            nextBtn.classList.remove('cursor-not-allowed', 'opacity-40');
-            nextBtn.title = `Tiếp theo: ${nextItem.title}`;
-            nextBtn.onclick = () => window._ciscoSelectItem(nextItem.type, nextItem.id);
-          }
-        }
+        // Floating chevrons eliminated per design specification
       };
 
       // Render Active Content in Main Pane
@@ -4166,7 +4117,7 @@ class StudentView {
           // Lesson-specific resources
           const currentLessonId = String(activeItem.id);
           const lessonResources = (Array.isArray(lesson.resources) ? lesson.resources : [])
-            .filter(r => !r.lesson_id || String(r.lesson_id) === currentLessonId);
+            .filter(r => !isCoverAsset(r) && (!r.lesson_id || String(r.lesson_id) === currentLessonId));
 
           contentContainer.innerHTML = `
             <div class="space-y-6 animate-fade-in" id="cisco-lesson-content-body" data-lesson-id="${UI.escapeHtml(currentLessonId)}">
@@ -4307,12 +4258,12 @@ class StudentView {
                   <div class="space-y-2">
                     ${lessonResources.map(r => `
                       <a
-                        href="/student/files/${encodeURIComponent(r.asset_id || r.id)}/download"
-                        download
+                        href="/student/files/${encodeURIComponent(r.asset_id || r.file_asset?.public_id || r.id || r.resource_id)}/download"
+                        data-download-asset="${UI.escapeHtml(r.asset_id || r.file_asset?.public_id || r.id || r.resource_id || '')}"
                         class="flex items-center justify-between p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:border-emerald-500/60 hover:bg-emerald-50/20 dark:hover:bg-emerald-950/20 transition-all cursor-pointer group text-inherit no-underline select-none"
-                        title="Nhấp để tải về ${UI.escapeHtml(r.filename || r.name)}"
+                        title="Nhấp để tải về ${UI.escapeHtml(r.filename || r.name || r.label || 'Tài liệu')}"
                       >
-                        <span class="text-xs font-semibold text-slate-800 dark:text-slate-200 group-hover:text-emerald-600 truncate">${UI.escapeHtml(r.filename || r.name)}</span>
+                        <span class="text-xs font-semibold text-slate-800 dark:text-slate-200 group-hover:text-emerald-600 truncate">${UI.escapeHtml(r.filename || r.name || r.label || 'Tài liệu')}</span>
                         <span class="c-btn c-btn-secondary c-btn-sm inline-flex items-center gap-1 text-emerald-600 shrink-0 pointer-events-none">
                           <span class="material-symbols-outlined text-[16px]">download</span> Tải về
                         </span>
@@ -4498,18 +4449,29 @@ class StudentView {
           };
 
           const checkAndUnlockLesson = async () => {
-            renderBottomNav();
             if (isCompleted) return true;
-            if (!isLessonRequirementsMet()) return false;
-            if (isPreview) return true;
+            if (!isLessonRequirementsMet()) {
+              renderBottomNextButton();
+              return false;
+            }
+            if (isPreview) {
+              setLessonCompleted();
+              return true;
+            }
             try {
               const result = await ApiClient.recordLessonProgress(trackedLessonId, 0, 1.0, true);
-              if (!result?.is_completed && !result?.progress?.is_completed) return false;
-              setLessonCompleted();
-              UI.showToast('Bạn đã hoàn thành bài học. Có thể chuyển sang bài tiếp theo.', 'success');
-              return true;
+              if (result?.is_completed || result?.progress?.is_completed || isLessonRequirementsMet()) {
+                setLessonCompleted();
+                UI.showToast('Bạn đã hoàn thành bài học. Đã mở khóa bài tiếp theo.', 'success');
+                return true;
+              }
+              return false;
             } catch (error) {
               console.warn('Could not confirm lesson completion:', error);
+              if (isLessonRequirementsMet()) {
+                setLessonCompleted();
+                return true;
+              }
               return false;
             }
           };
@@ -4534,7 +4496,7 @@ class StudentView {
                 box.firstElementChild.onclick = () => window._ciscoSelectItem(nextItem.type, nextItem.id);
               } else {
                 box.innerHTML = `
-                  <button type="button" id="cisco-next-btn" disabled title="Chưa đủ điều kiện chuyển bài" class="px-5 py-2.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-300/80 dark:border-slate-700 cursor-not-allowed select-none">
+                  <button type="button" id="cisco-next-btn" title="Chưa đủ điều kiện chuyển bài" class="px-5 py-2.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-300/80 dark:border-slate-700 cursor-not-allowed select-none">
                     <span>Tiếp theo</span>
                     <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
                   </button>
@@ -4579,24 +4541,32 @@ class StudentView {
                 `;
                 bottomPrevBox.firstElementChild.onclick = () => window._ciscoSelectItem(prevItem.type, prevItem.id);
               } else {
-                bottomPrevBox.innerHTML = '';
+                bottomPrevBox.innerHTML = `
+                  <button type="button" disabled title="Đây là bài học đầu tiên" class="px-4 py-2.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-300/80 dark:border-slate-700 cursor-not-allowed select-none opacity-50">
+                    <span class="material-symbols-outlined text-[16px]">arrow_back</span>
+                    <span>Quay lại</span>
+                  </button>
+                `;
               }
             }
             renderBottomNextButton();
-            updateFloatingNav();
           };
 
           renderBottomNav();
 
-          // Enforce 60s Minimum Dwell Timer (Sequential Completion Gate)
-          if (!isCompleted) {
+          // Enforce 60s Minimum Dwell Timer (Sequential Completion Gate for text lessons)
+          if (!isCompleted && hasText && !hasVideo) {
             if (activeDwellTimer) {
               clearInterval(activeDwellTimer);
               activeDwellTimer = null;
             }
             activeDwellTimer = setInterval(() => {
               dwellElapsed++;
-              checkAndUnlockLesson();
+              if (dwellElapsed >= dwellRequired) {
+                clearInterval(activeDwellTimer);
+                activeDwellTimer = null;
+                checkAndUnlockLesson();
+              }
             }, 1000);
           }
 

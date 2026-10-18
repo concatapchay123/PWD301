@@ -1,0 +1,77 @@
+{
+  "iteration": 4,
+  "timestamp": "2026-10-18T05:48:59Z",
+  "test_cases": [
+    {
+      "id": "TC-IT04-001",
+      "name": "Topbar Brand Identity & PPTQ Logo Render",
+      "status": "PASS",
+      "evidence": [
+        "IT04_TC01_topbar_brand_identity.png"
+      ],
+      "notes": [
+        "Logo visible: True, User name: 'Lê Hoàng Long', Role badge: 'HỌC VIÊN', Initials: 'LH'"
+      ]
+    },
+    {
+      "id": "TC-IT04-002",
+      "name": "Dynamic Role Navigation Items Render",
+      "status": "PASS",
+      "evidence": [
+        "IT04_TC02_dynamic_nav_items.png"
+      ],
+      "notes": [
+        "Rendered Navigation Links (6): [('home\\nTrang chủ', '#/student/dashboard'), ('explore\\nKhám phá Khóa học', '#/student/catalog'), ('school\\nKhóa học của tôi', '#/student/courses'), ('quiz\\nBài kiểm tra', '#/student/assessments'), ('badge\\nĐăng ký Giảng viên', '#/student/become-instructor'), ('settings\\nCài đặt', '#/student/settings')]"
+      ]
+    },
+    {
+      "id": "TC-IT04-003",
+      "name": "Mobile Drawer Open/Close Interaction",
+      "status": "PASS",
+      "evidence": [
+        "IT04_TC03_mobile_drawer_opened.png"
+      ],
+      "notes": [
+        "Mobile menu button visible on 375x667: True",
+        "Drawer opened: visible=True, backdrop=True, aria-expanded=true",
+        "Drawer closed after close button click: True"
+      ]
+    },
+    {
+      "id": "TC-IT04-004",
+      "name": "Focus Exam Mode Shell Guard & Anti-Leak Header",
+      "status": "PASS",
+      "evidence": [
+        "IT04_TC04_focus_exam_mode_guard.png"
+      ],
+      "notes": [
+        "Focus Mode Evaluation: {'bodyHasFocusClass': True, 'floatingAiHidden': True, 'obsoleteBadgeExists': False}"
+      ]
+    },
+    {
+      "id": "TC-IT04-005",
+      "name": "Unknown Route Graceful Fallback (404 Handling)",
+      "status": "PASS",
+      "evidence": [
+        "IT04_TC05_unknown_route_fallback.png"
+      ],
+      "notes": [
+        "URL after navigating to unknown route: http://localhost:5000/#/student/dashboard",
+        "Graceful fallback confirmed: Router redirected unknown route safely to student dashboard."
+      ]
+    },
+    {
+      "id": "TC-IT04-006",
+      "name": "Clean Browser History Stack Navigation Integrity",
+      "status": "PASS",
+      "evidence": [
+        "IT04_TC06_browser_history_stack.png"
+      ],
+      "notes": [
+        "First go_back() reached: http://localhost:5000/#/student/catalog",
+        "Second go_back() reached: http://localhost:5000/#/student/dashboard",
+        "Browser history stack verified: Back transitions cleanly across distinct views."
+      ]
+    }
+  ]
+}

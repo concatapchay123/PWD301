@@ -15,7 +15,11 @@ from typing import Any, cast
 from defusedxml import ElementTree
 from reportlab.pdfbase import pdfmetrics
 from reportlab.platypus import Flowable, Paragraph
-from svglib.svglib import svg2rlg
+
+try:
+    from svglib.svglib import svg2rlg
+except ImportError:
+    svg2rlg = None
 
 _MATH = re.compile(r"(?<!\\)(?:\$\$(.*?)\$\$|\$(.*?)\$|\\\((.*?)\\\)|\\\[(.*?)\\\])", re.DOTALL)
 _FORBIDDEN = re.compile(
@@ -133,6 +137,8 @@ def _drawing(
         if element.tag.rsplit("}", 1)[-1] in {"text", "tspan"}:
             element.set("font-family", font_name)
     # svglib documents file-like input, although its published annotation omits it.
+    if svg2rlg is None:
+        raise RuntimeError("svglib is not installed or available.")
     drawing = svg2rlg(cast(Any, io.BytesIO(ElementTree.tostring(root))), resolve_entities=False)
     if drawing is None or width <= 0 or height <= 0 or max(width, height) > 20000:
         raise ValueError("Invalid formula dimensions.")
@@ -223,28 +229,31 @@ def math_paragraph(value: str, style: Any, rendered: dict[str, bytes] | None = N
     from html import escape
 
     matches = list(_MATH.finditer(value))
-    if not matches:
+    if not matches or svg2rlg is None:
         return Paragraph(escape(value).replace("\n", "<br/>"), style)
-    tokens = []
+    try:
+        tokens = []
 
-    def plain(text: str) -> None:
-        for word in re.findall(r"\n|[^\S\n]+|[^\s]+", text):
-            width = pdfmetrics.stringWidth(word, style.fontName, style.fontSize)
-            tokens.append(
-                (
-                    "newline" if word == "\n" else "text",
-                    word,
-                    width,
-                    style.fontSize,
-                    style.fontSize * 0.2,
+        def plain(text: str) -> None:
+            for word in re.findall(r"\n|[^\S\n]+|[^\s]+", text):
+                width = pdfmetrics.stringWidth(word, style.fontName, style.fontSize)
+                tokens.append(
+                    (
+                        "newline" if word == "\n" else "text",
+                        word,
+                        width,
+                        style.fontSize,
+                        style.fontSize * 0.2,
+                    )
                 )
-            )
 
-    position = 0
-    for match in matches:
-        plain(value[position : match.start()])
-        drawing, descent = _drawing(_formula(match), style.fontSize, style.fontName, rendered)
-        tokens.append(("math", drawing, drawing.width, drawing.height, descent))
-        position = match.end()
-    plain(value[position:])
-    return _MathParagraph(tokens, style)
+        position = 0
+        for match in matches:
+            plain(value[position : match.start()])
+            drawing, descent = _drawing(_formula(match), style.fontSize, style.fontName, rendered)
+            tokens.append(("math", drawing, drawing.width, drawing.height, descent))
+            position = match.end()
+        plain(value[position:])
+        return _MathParagraph(tokens, style)
+    except Exception:
+        return Paragraph(escape(value).replace("\n", "<br/>"), style)
