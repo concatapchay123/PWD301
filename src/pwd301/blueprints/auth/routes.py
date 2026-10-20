@@ -18,8 +18,11 @@ from flask import (
     url_for,
 )
 from flask_login import current_user, login_required, login_user, logout_user
+import hmac
 
 from pwd301.blueprints.auth import auth_bp
+from pwd301.extensions import db
+from pwd301.models.identity import AuthSession
 from pwd301.models.types import utc_now
 from pwd301.services.email_service import enqueue_email
 from pwd301.services.exceptions import InvalidPasswordError, ServiceError
@@ -30,6 +33,7 @@ from pwd301.services.rate_limit_service import (
 )
 from pwd301.services.session_auth_service import (
     create_auth_session,
+    hash_session_key,
     revoke_auth_session,
 )
 from pwd301.services.user_service import (
@@ -82,6 +86,58 @@ def _is_json_request() -> bool:
     return True
 
 
+@auth_bp.route("/session", methods=["GET"])
+def session_info():
+    """Dedicated session inspection and telemetry endpoint (DEFECT-AUTH-02)."""
+    from flask_wtf.csrf import generate_csrf
+
+    token = generate_csrf()
+    if current_user.is_authenticated:
+        user_info = {
+            "id": str(getattr(current_user, "public_id", current_user.id)),
+            "email": current_user.email,
+            "display_name": getattr(current_user, "display_name", ""),
+            "full_name": getattr(current_user, "full_name", None)
+            or getattr(current_user, "display_name", "")
+            or "",
+            "primary_role": getattr(current_user, "primary_role", "STUDENT"),
+            "active_role": session.get("active_role")
+            or getattr(current_user, "primary_role", "STUDENT"),
+            "role_codes": sorted(getattr(current_user, "role_codes", ["STUDENT"])),
+            "admin_sub_role": getattr(current_user, "admin_sub_role", None),
+            "admin_sub_role_label": getattr(current_user, "admin_sub_role_label", ""),
+            "is_primary_admin": getattr(current_user, "is_primary_admin", False),
+            "avatar_url": getattr(current_user, "avatar_url", None),
+        }
+        resp = make_response(
+            jsonify({
+                "success": True,
+                "status": "authenticated",
+                "is_authenticated": True,
+                "csrf_token": token,
+                "user": user_info,
+                "data": user_info,
+            }),
+            200,
+        )
+        resp.set_cookie("csrf_token", token, samesite="Lax")
+        return resp
+
+    resp = make_response(
+        jsonify({
+            "success": True,
+            "status": "unauthenticated",
+            "is_authenticated": False,
+            "csrf_token": token,
+            "user": None,
+            "data": None,
+        }),
+        200,
+    )
+    resp.set_cookie("csrf_token", token, samesite="Lax")
+    return resp
+
+
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login() -> Any:
     """Handle user login for Web UI and same-origin AJAX."""
@@ -111,6 +167,7 @@ def login() -> Any:
                                 getattr(current_user, "admin_sub_role_label", "")
                             ),
                             "is_primary_admin": getattr(current_user, "is_primary_admin", False),
+                            "avatar_url": getattr(current_user, "avatar_url", None),
                         },
                     }
                 ),
@@ -201,6 +258,71 @@ def login() -> Any:
             403,
         )
 
+    # Check concurrent active sessions (Single Active Concurrent Session Invariant)
+    now = utc_now()
+    existing_active_sessions = (
+        db.session.query(AuthSession)
+        .filter(
+            AuthSession.user_id == user.id,
+            AuthSession.revoked_at.is_(None),
+            AuthSession.expires_at > now,
+        )
+        .all()
+    )
+
+    current_raw_key = session.get("auth_session_key")
+    current_key_hash = hash_session_key(current_raw_key) if current_raw_key else None
+
+    other_active = [
+        s for s in existing_active_sessions
+        if not (current_key_hash and hmac.compare_digest(s.session_key_hash, current_key_hash))
+    ]
+
+    if other_active:
+        for s in existing_active_sessions:
+            s.revoked_at = now
+        user.auth_version = (user.auth_version or 1) + 1
+        db.session.commit()
+
+        # Emit Realtime SSE security event to immediately terminate active client A
+        try:
+            from pwd301.services.realtime_service import emit_domain_event
+
+            target_ids = [user.id]
+            if hasattr(user, "public_id") and user.public_id:
+                target_ids.append(str(user.public_id))
+            emit_domain_event(
+                event_type="auth:concurrent_session_revoked",
+                payload={
+                    "user_id": user.id,
+                    "public_id": str(getattr(user, "public_id", user.id)),
+                    "message": "Tài khoản của bạn đã được đăng nhập từ một thiết bị khác. Hệ thống đã tự động đăng xuất trên toàn bộ thiết bị để bảo vệ an toàn.",
+                },
+                target_user_ids=target_ids,
+            )
+        except Exception as sse_err:
+            current_app.logger.warning("Could not emit concurrent session SSE: %s", sse_err)
+
+        session.clear()
+        logout_user()
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "CONCURRENT_LOGIN_DETECTED",
+                        "message": "Tài khoản đã bị đăng xuất trên toàn bộ thiết bị do phát hiện đăng nhập đồng thời từ thiết bị khác để bảo vệ an toàn.",
+                    },
+                }
+            ),
+            409,
+        )
+
+    # Cleanly rotate: revoke previous session of this same client before issuing new session
+    for s in existing_active_sessions:
+        if current_key_hash and hmac.compare_digest(s.session_key_hash, current_key_hash):
+            s.revoked_at = now
+
     # Create server-side AuthSession in database
     user_agent_str = request.user_agent.string if request.user_agent else None
     session_duration = timedelta(days=30) if remember else None
@@ -273,6 +395,7 @@ def login() -> Any:
                         "admin_sub_role_label": getattr(user, "admin_sub_role_label", ""),
                         "is_primary_admin": getattr(user, "is_primary_admin", False),
                         "is_email_verified": getattr(user, "is_email_verified", False),
+                        "avatar_url": getattr(user, "avatar_url", None),
                     },
                 }
             ),
@@ -1109,3 +1232,11 @@ def auth_preferences() -> Any:
     res_dict = {"status": "ok", "preferences": prefs, "preferences_map": map_dict}
     res_dict.update(map_dict)
     return jsonify(res_dict), 200
+
+
+@auth_bp.route("/events/stream", methods=["GET"])
+def auth_events_stream() -> Any:
+    """Stream realtime events for authenticated session users via Server-Sent Events."""
+    from pwd301.services.realtime_service import build_sse_stream_response
+
+    return build_sse_stream_response()

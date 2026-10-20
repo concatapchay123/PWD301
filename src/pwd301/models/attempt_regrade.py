@@ -1117,3 +1117,105 @@ class RegradeItem(Base):
     def public_id(self) -> uuid.UUID:
         """Synthetic public UUIDv5 identifier conforming to ADR-002."""
         return uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.regrade_item.{self.id}")
+
+
+class AssessmentAppeal(Base):
+    """Student assessment score appeal record for instructor regrading."""
+
+    __tablename__ = "assessment_appeals"
+
+    id = db.Column(BigIntPK, primary_key=True, autoincrement=True)
+    public_id = db.Column(
+        GUID,
+        nullable=False,
+        unique=True,
+        default=uuid.uuid4,
+        server_default=sa.text("NEWSEQUENTIALID()"),
+    )
+    assessment_attempt_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("assessment_attempts.id", name="fk_assessment_appeals_attempt_id"),
+        nullable=False,
+    )
+    student_user_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("users.id", name="fk_assessment_appeals_student_id"),
+        nullable=False,
+    )
+    course_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("courses.id", name="fk_assessment_appeals_course_id"),
+        nullable=False,
+    )
+    reason = db.Column(sa.Unicode(255), nullable=False)
+    student_note = db.Column(NVarCharMax, nullable=True)
+    status = db.Column(
+        sa.String(20),
+        nullable=False,
+        default="PENDING",
+        server_default=sa.text("'PENDING'"),
+    )
+    original_score = db.Column(sa.Numeric(6, 2), nullable=False)
+    final_score = db.Column(sa.Numeric(6, 2), nullable=True)
+    instructor_feedback = db.Column(NVarCharMax, nullable=True)
+    reviewed_by_user_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("users.id", name="fk_assessment_appeals_reviewed_by_user_id"),
+        nullable=True,
+    )
+    reviewed_at = db.Column(UTCDateTime, nullable=True)
+    created_at = db.Column(
+        UTCDateTime,
+        nullable=False,
+        default=utc_now,
+        server_default=sa.text("SYSUTCDATETIME()"),
+    )
+    updated_at = db.Column(
+        UTCDateTime,
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
+        server_default=sa.text("SYSUTCDATETIME()"),
+    )
+    row_version = db.Column(RowVersion, nullable=True)
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "status IN ('PENDING','RESOLVED','REJECTED')",
+            name="ck_assessment_appeals_status",
+        ),
+        sa.Index("ix_assessment_appeals_course_status", "course_id", "status"),
+        sa.Index("ix_assessment_appeals_student", "student_user_id"),
+        sa.Index("ix_assessment_appeals_attempt", "assessment_attempt_id"),
+    )
+
+    attempt = relationship("AssessmentAttempt", foreign_keys=[assessment_attempt_id])
+    student = relationship("User", foreign_keys=[student_user_id])
+    course = relationship("Course", foreign_keys=[course_id])
+    reviewed_by = relationship("User", foreign_keys=[reviewed_by_user_id])
+
+    def serialize(self) -> dict[str, Any]:
+        return {
+            "id": str(self.public_id),
+            "appeal_id": str(self.public_id),
+            "attempt_id": str(self.attempt.public_id) if self.attempt else None,
+            "assessment_id": str(self.attempt.assessment.public_id) if self.attempt and self.attempt.assessment else None,
+            "assessment_title": self.attempt.assessment.title if self.attempt and self.attempt.assessment else "Bài thi",
+            "course_id": str(self.course.public_id) if self.course else None,
+            "course_code": self.course.course_code if self.course else "",
+            "course_title": self.course.title if self.course else "",
+            "student_id": str(self.student.public_id) if self.student else None,
+            "student_name": self.student.display_name if self.student else "Học viên",
+            "student_email": self.student.email if self.student else "",
+            "reason": self.reason,
+            "student_note": self.student_note,
+            "status": self.status,
+            "original_score": float(self.original_score) if self.original_score is not None else 0.0,
+            "final_score": float(self.final_score) if self.final_score is not None else None,
+            "instructor_feedback": self.instructor_feedback,
+            "reviewed_by_name": self.reviewed_by.display_name if self.reviewed_by else None,
+            "reviewed_at": self.reviewed_at.isoformat() if self.reviewed_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+

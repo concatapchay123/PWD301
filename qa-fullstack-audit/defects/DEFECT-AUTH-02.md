@@ -4,7 +4,7 @@
 - **Component:** Authentication Routing (`src/pwd301/blueprints/auth/routes.py`, `src/pwd301/blueprints/api_auth/routes.py`)
 - **Severity:** Low (P3)
 - **OWASP Classification:** API Design Inconsistency / Missing Session State Endpoint
-- **Status:** OPEN
+- **Status:** VERIFIED / RESOLVED
 
 ---
 
@@ -68,3 +68,10 @@ def get_session_info() -> tuple[Response, int] | Response:
         "csrf_token": csrf_tok,
     }), 200
 ```
+
+
+---
+
+## 5. Remediation Verification (PASSED)
+- **Implemented Fix:** In [src/pwd301/blueprints/auth/routes.py](file:///e:/PWD301/src/pwd301/blueprints/auth/routes.py), added dedicated `GET /auth/session` endpoint returning user session state, role, and CSRF token. Updated `frontend/assets/js/api.js` `getCurrentUser()` to utilize this endpoint.
+- **Verification Evidence:** Executed in Iterations 02 and 13 of `run_fullstack_20_iterations_master.py`. Response returned HTTP 200 with `status: authenticated/unauthenticated` and user profile details. Result: **PASSED**.

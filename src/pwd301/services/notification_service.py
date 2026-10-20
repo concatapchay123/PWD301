@@ -313,6 +313,22 @@ def dispatch_notification(
                 exc,
             )
 
+    if notification is not None:
+        from pwd301.services.realtime_service import emit_domain_event
+
+        emit_domain_event(
+            "notification:new",
+            {
+                "id": notification.id,
+                "title": clean_title,
+                "body": clean_body,
+                "category": in_app_cat,
+                "target_role": target_role,
+                "action_url": action_url,
+            },
+            target_user_ids=[user.id],
+        )
+
     return notification, email_delivery
 
 
@@ -775,4 +791,22 @@ def broadcast_system_notification(
     except Exception:
         s.rollback()
         raise
+
+    from pwd301.services.realtime_service import emit_domain_event
+
+    emit_domain_event(
+        "notification:broadcast",
+        {
+            "title": clean_title,
+            "body": clean_body,
+            "category": cat,
+            "target_role": clean_target_role,
+        },
+        target_roles=[clean_target_role] if clean_target_role else None,
+    )
+
     return count, False
+
+
+broadcast_notification = broadcast_system_notification
+create_notification = dispatch_notification

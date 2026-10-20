@@ -4,7 +4,7 @@
 - **Component:** Auth REST API (`src/pwd301/blueprints/api_auth/routes.py`)
 - **Severity:** High (P1)
 - **OWASP Classification:** API3:2023 - Broken Object Property Level Authorization / CWE-200 Information Exposure / CWE-640 Weak Password/Identity Recovery Mechanism
-- **Status:** OPEN
+- **Status:** VERIFIED / RESOLVED
 
 ---
 
@@ -117,3 +117,10 @@ In [src/pwd301/blueprints/api_auth/routes.py](file:///e:/PWD301/src/pwd301/bluep
         202,
     )
 ```
+
+
+---
+
+## 5. Remediation Verification (PASSED)
+- **Implemented Fix:** In [src/pwd301/blueprints/api_auth/routes.py](file:///e:/PWD301/src/pwd301/blueprints/api_auth/routes.py#L380-L400), token exposure was removed under production / strict configuration (`STRICT_TOKEN_SANITIZATION = True`). Token is dispatched out-of-band.
+- **Verification Evidence:** Executed in Iteration 13 of `run_fullstack_20_iterations_master.py`. Response payload was checked: `assert "token" not in res_email.get_json()`. Status: HTTP 202, token completely redacted. Result: **PASSED**.

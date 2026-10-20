@@ -475,6 +475,311 @@ class UI {
     });
   }
 
+  // 2.3. Course Deletion 2FA Security Modal (WF18 / TASK-109)
+  // =========================================================================
+  static showConcurrentSessionModal({ message = '', isLoginAttempt = false } = {}) {
+    if (document.getElementById('concurrent-session-lockdown-layer')) {
+      return;
+    }
+
+    const container = document.body;
+    const modalLayer = document.createElement('div');
+    modalLayer.id = 'concurrent-session-lockdown-layer';
+    modalLayer.className = 'fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[99999] flex items-center justify-center p-4 sm:p-6 animate-fade-in select-none';
+
+    let countdown = 5;
+    let timer = null;
+
+    const handleRedirect = async () => {
+      if (timer) clearInterval(timer);
+      try {
+        if (typeof ApiClient !== 'undefined' && typeof ApiClient.logout === 'function') {
+          await ApiClient.logout().catch(() => {});
+        }
+      } catch (_) {}
+      try {
+        localStorage.removeItem('token');
+        localStorage.removeItem('access_token');
+        sessionStorage.clear();
+      } catch (_) {}
+      if (window.app) {
+        window.app.currentUser = null;
+        window.app.currentRole = 'STUDENT';
+      }
+      modalLayer.remove();
+      window.location.hash = '#/auth/login';
+      if (!window.location.hash.includes('#/auth/login')) {
+        window.location.reload();
+      }
+    };
+
+    const displayMsg = message || 'Tài khoản của bạn được phát hiện đăng nhập đồng thời trên một thiết bị khác. Hệ thống đã tự động đăng xuất tất cả thiết bị để bảo vệ an toàn.';
+
+    modalLayer.innerHTML = `
+      <div class="bg-white dark:bg-slate-900 border-2 border-rose-500/80 rounded-3xl shadow-2xl w-full max-w-md p-6 sm:p-8 flex flex-col items-center text-center gap-5 transform transition-all duration-200 scale-100 animate-scale-up">
+        <div class="relative flex items-center justify-center">
+          <div class="w-20 h-20 rounded-full bg-rose-100 dark:bg-rose-950/60 flex items-center justify-center text-rose-600 dark:text-rose-400 border-2 border-rose-300 dark:border-rose-800 shadow-lg">
+            <span class="material-symbols-outlined text-[44px]">shield_lock</span>
+          </div>
+          <span class="absolute -top-1 -right-1 flex h-5 w-5">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-5 w-5 bg-rose-600 text-white text-[10px] font-bold items-center justify-center">!</span>
+          </span>
+        </div>
+
+        <div class="space-y-2">
+          <span class="px-3 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-wider bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-300/80 dark:border-rose-800/80 inline-block">
+            🛡️ Cảnh Báo An Ninh Hệ Thống
+          </span>
+          <h3 class="text-lg sm:text-xl font-black text-slate-900 dark:text-white leading-tight">
+            Phát Hiện Đăng Nhập Đồng Thời
+          </h3>
+          <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed max-w-sm mx-auto">
+            ${UI.escapeHtml(displayMsg)}
+          </p>
+        </div>
+
+        <div class="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-amber-800 dark:text-amber-300 text-xs text-left w-full space-y-1">
+          <div class="font-bold flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-[16px] text-amber-600">info</span>
+            Chính sách an toàn tài khoản:
+          </div>
+          <p class="text-[11px] leading-relaxed text-amber-700 dark:text-amber-400">
+            Nền tảng PWD301 chỉ cho phép 01 phiên làm việc duy nhất tại 1 thời điểm. Khi phát hiện thiết bị thứ 2 đăng nhập, toàn bộ các phiên đều tự động bị hủy để chống chia sẻ tài khoản trái phép.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          id="btn-confirm-concurrent-logout"
+          class="w-full py-3.5 px-6 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs sm:text-sm transition-all shadow-md shadow-rose-600/25 flex items-center justify-center gap-2 cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+        >
+          <span class="material-symbols-outlined text-[18px]">logout</span>
+          <span id="concurrent-logout-btn-text">Xác nhận & Về trang đăng nhập (${countdown}s)</span>
+        </button>
+      </div>
+    `;
+
+    container.appendChild(modalLayer);
+
+    const confirmBtn = modalLayer.querySelector('#btn-confirm-concurrent-logout');
+    const btnText = modalLayer.querySelector('#concurrent-logout-btn-text');
+
+    if (confirmBtn) {
+      confirmBtn.onclick = handleRedirect;
+    }
+
+    timer = setInterval(() => {
+      countdown--;
+      if (btnText) {
+        btnText.textContent = `Xác nhận & Về trang đăng nhập (${countdown}s)`;
+      }
+      if (countdown <= 0) {
+        clearInterval(timer);
+        handleRedirect();
+      }
+    }, 1000);
+  }
+
+  static showCourseDelete2FAModal({ courseCode = '', courseTitle = '', isDraft = false, requireAuditReason = false }) {
+    return new Promise((resolve) => {
+      const container = document.getElementById('modal-container');
+      if (!container) {
+        resolve({ confirmed: false });
+        return;
+      }
+
+      if (!UI._modalStack) UI._modalStack = [];
+      const activeLayer = container.querySelector('.modal-layer:last-child');
+      if (activeLayer) {
+        activeLayer.style.display = 'none';
+        UI._modalStack.push({
+          element: activeLayer,
+          onClose: window._modalOnClose
+        });
+      }
+
+      let settled = false;
+      let cleanupKeyHandler = null;
+
+      const finish = (result) => {
+        if (!settled) {
+          settled = true;
+          if (cleanupKeyHandler) cleanupKeyHandler();
+          window._modalOnClose = null;
+          UI.closeModal();
+          resolve(result);
+        }
+      };
+
+      const normCode = (courseCode || '').trim();
+
+      const modalLayer = document.createElement('div');
+      modalLayer.className = 'modal-layer fixed inset-0 bg-[#222120]/45 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-6';
+      modalLayer.innerHTML = `
+        <div class="bg-[#FAF9F5] dark:bg-[#202020] border border-rose-200 dark:border-rose-900/60 rounded-2xl shadow-elevated w-full max-w-lg p-6 flex flex-col gap-4 transform transition-all duration-150 scale-95 opacity-0" id="delete-2fa-dialog-card">
+          <!-- Header with Warning Icon Badge -->
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <div class="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/60 shadow-2xs">
+                <span class="material-symbols-outlined text-[28px]">warning</span>
+              </div>
+              <div>
+                <h3 class="text-base sm:text-lg font-bold text-[#222120] dark:text-[#EDEDEB] leading-snug">
+                  ${isDraft ? 'Xác nhận xóa vĩnh viễn khóa học nháp' : 'Xác nhận chuyển khóa học vào thùng rác'}
+                </h3>
+                <p class="text-xs text-rose-600 dark:text-rose-400 font-medium">Bảo mật 2 bước 2FA & Kiểm toán hệ thống</p>
+              </div>
+            </div>
+            <button type="button" id="delete-2fa-close-x-btn" class="p-1 rounded-lg text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#E8E6DF] dark:hover:bg-[#2E2D2B] transition-colors" title="Đóng">
+              <span class="material-symbols-outlined text-[20px]">close</span>
+            </button>
+          </div>
+
+          <!-- Course Details Danger Alert -->
+          <div class="rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/40 p-4 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] uppercase font-extrabold tracking-wider text-rose-800 dark:text-rose-300">Thông tin khóa học</span>
+              <span class="px-2 py-0.5 rounded font-mono font-bold text-xs bg-rose-200/70 dark:bg-rose-900/70 text-rose-900 dark:text-rose-200 border border-rose-300 dark:border-rose-800">${UI.escapeHtml(normCode)}</span>
+            </div>
+            <div class="font-bold text-sm text-[#222120] dark:text-[#EDEDEB] leading-snug">${UI.escapeHtml(courseTitle || 'Khóa học')}</div>
+            <p class="text-xs text-rose-700 dark:text-rose-400 leading-relaxed">
+              ${isDraft
+                ? 'Thao tác này sẽ xóa hoàn toàn khóa học bản nháp cùng toàn bộ bài giảng liên quan khỏi hệ thống và không thể khôi phục.'
+                : 'Khóa học sẽ bị ngừng công khai và chuyển vào Thùng rác (TRASH). Sinh viên sẽ không thể tiếp tục truy cập khóa học này.'}
+            </p>
+          </div>
+
+          <!-- Audit Reason (for Admin or when required) -->
+          ${requireAuditReason ? `
+            <div class="space-y-1.5">
+              <label class="block text-xs font-bold text-[#5C5B57] dark:text-[#9E9D99]">
+                Lý do kiểm toán xóa khóa học <span class="text-rose-500 font-bold">*</span>
+              </label>
+              <textarea
+                id="delete-course-audit-reason"
+                rows="2"
+                placeholder="Nhập lý do kiểm toán an ninh (bắt buộc)..."
+                class="w-full px-3.5 py-2.5 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E] text-xs text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-rose-500 transition-colors resize-none font-medium"
+              ></textarea>
+            </div>
+          ` : ''}
+
+          <!-- 2FA Verification Inputs -->
+          <div class="space-y-3 pt-1 border-t border-[#E8E6DF]/80 dark:border-[#2E2D2B]/80">
+            <div class="space-y-1.5">
+              <label class="block text-xs font-bold text-[#5C5B57] dark:text-[#9E9D99]">
+                1. Nhập lại chính xác Mã môn học: <strong class="font-mono text-primary text-xs underline">${UI.escapeHtml(normCode)}</strong>
+              </label>
+              <input
+                type="text"
+                id="delete-2fa-course-code"
+                data-target-code="${UI.escapeHtml(normCode)}"
+                placeholder="Gõ mã môn: ${UI.escapeHtml(normCode)}"
+                class="w-full px-3.5 py-2 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E] text-xs font-mono text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-primary transition-colors"
+                autocomplete="off"
+              />
+            </div>
+
+            <div class="space-y-1.5">
+              <label class="block text-xs font-bold text-[#5C5B57] dark:text-[#9E9D99]">
+                2. Nhập chính xác chuỗi: <strong class="text-rose-600 font-mono text-xs">XÁC NHẬN XÓA</strong>
+              </label>
+              <input
+                type="text"
+                id="delete-2fa-confirm-text"
+                placeholder="Gõ chính xác: XÁC NHẬN XÓA"
+                class="w-full px-3.5 py-2 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E] text-xs font-mono text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-rose-500 transition-colors"
+                autocomplete="off"
+              />
+            </div>
+          </div>
+
+          <!-- Actions -->
+          <div class="flex items-center justify-end gap-2.5 pt-3 border-t border-[#E8E6DF]/80 dark:border-[#2E2D2B]/80 shrink-0">
+            <button
+              type="button"
+              id="btn-cancel-delete-course-modal"
+              class="px-4 py-2.5 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#202020] text-[#5C5B57] dark:text-[#9E9D99] text-xs font-bold hover:bg-[#F4F1EA] dark:hover:bg-[#262524] transition-colors cursor-pointer"
+            >
+              Hủy bỏ
+            </button>
+            <button
+              type="button"
+              id="delete-course-confirm-action-btn"
+              class="confirm-action-btn px-5 py-2.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 text-xs font-bold border border-slate-300 dark:border-slate-700 flex items-center gap-1.5 cursor-not-allowed opacity-60 transition-all shadow-xs"
+              disabled
+            >
+              <span class="material-symbols-outlined text-[16px]">delete_forever</span>
+              <span>${isDraft ? 'Xóa vĩnh viễn khóa học nháp' : 'Chuyển vào thùng rác'}</span>
+            </button>
+          </div>
+        </div>
+      `;
+
+      container.appendChild(modalLayer);
+      container.classList.remove('hidden');
+
+      const card = modalLayer.querySelector('#delete-2fa-dialog-card');
+      if (card) {
+        requestAnimationFrame(() => {
+          card.classList.remove('scale-95', 'opacity-0');
+          card.classList.add('scale-100', 'opacity-100');
+        });
+      }
+
+      const codeInput = modalLayer.querySelector('#delete-2fa-course-code');
+      const textInput = modalLayer.querySelector('#delete-2fa-confirm-text');
+      const reasonInput = modalLayer.querySelector('#delete-course-audit-reason');
+      const confirmBtn = modalLayer.querySelector('#delete-course-confirm-action-btn');
+      const cancelBtn = modalLayer.querySelector('#btn-cancel-delete-course-modal');
+      const closeBtn = modalLayer.querySelector('#delete-2fa-close-x-btn');
+
+      const validate = () => {
+        const cVal = (codeInput?.value || '').trim();
+        const tVal = (textInput?.value || '').trim();
+        const rVal = (reasonInput?.value || '').trim();
+
+        const isCodeOk = cVal.toUpperCase() === normCode.toUpperCase();
+        const isTextOk = tVal === 'XÁC NHẬN XÓA';
+        const isReasonOk = !requireAuditReason || rVal.length > 0;
+
+        if (isCodeOk && isTextOk && isReasonOk) {
+          confirmBtn.disabled = false;
+          confirmBtn.className = 'confirm-action-btn px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold border border-rose-600 flex items-center gap-1.5 cursor-pointer opacity-100 transition-all shadow-xs';
+        } else {
+          confirmBtn.disabled = true;
+          confirmBtn.className = 'confirm-action-btn px-5 py-2.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 text-xs font-bold border border-slate-300 dark:border-slate-700 flex items-center gap-1.5 cursor-not-allowed opacity-60 transition-all shadow-xs';
+        }
+      };
+
+      codeInput?.addEventListener('input', validate);
+      textInput?.addEventListener('input', validate);
+      reasonInput?.addEventListener('input', validate);
+
+      confirmBtn?.addEventListener('click', () => {
+        if (confirmBtn.disabled) return;
+        const reason = reasonInput ? reasonInput.value.trim() : '';
+        finish({ confirmed: true, reason });
+      });
+
+      cancelBtn?.addEventListener('click', () => finish({ confirmed: false }));
+      closeBtn?.addEventListener('click', () => finish({ confirmed: false }));
+      modalLayer.addEventListener('click', (e) => {
+        if (e.target === modalLayer) finish({ confirmed: false });
+      });
+
+      const onKeyDown = (e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          finish({ confirmed: false });
+        }
+      };
+      document.addEventListener('keydown', onKeyDown);
+      cleanupKeyHandler = () => document.removeEventListener('keydown', onKeyDown);
+    });
+  }
+
   static cropImage(file, { aspectRatio = 16 / 9, title = 'Tùy chỉnh vùng hiển thị ảnh bìa' } = {}) {
     return new Promise((resolve) => {
       if (!file || !file.type || !file.type.startsWith('image/')) {
@@ -1627,7 +1932,8 @@ class UI {
   }
 
   // =========================================================================
-  // 12. 5-Category Changeset Diff Renderer (Deep Before vs After Inspection)
+  // =========================================================================
+  // 12. 7 Standardized Academic Divisions Diff Renderer (Deep Inspection)
   // =========================================================================
   static renderCategorizedDiffHtml(diff) {
     if (!diff) return '<div class="p-6 text-center text-slate-400 italic">Không có dữ liệu đối chiếu.</div>';
@@ -1643,10 +1949,20 @@ class UI {
     const gov = diff.governance_rules || {};
     const currentPrereqs = gov.current_prerequisites || [];
 
+    // Detailed change detection for governance rules & metadata (anti-false-positive)
+    const gradeChanged = gov.proposed?.minimum_grade_score != null && gov.current?.minimum_grade_score != null && Number(gov.proposed.minimum_grade_score) !== Number(gov.current.minimum_grade_score);
+    const progressChanged = gov.proposed?.minimum_progress_percent != null && gov.current?.minimum_progress_percent != null && Number(gov.proposed.minimum_progress_percent) !== Number(gov.current.minimum_progress_percent);
+    const lessonsChanged = gov.proposed?.require_all_required_lessons !== undefined && gov.current?.require_all_required_lessons !== undefined && Boolean(gov.proposed.require_all_required_lessons) !== Boolean(gov.current.require_all_required_lessons);
+    const assessmentsChanged = gov.proposed?.require_required_assessments !== undefined && gov.current?.require_required_assessments !== undefined && Boolean(gov.proposed.require_required_assessments) !== Boolean(gov.current.require_required_assessments);
+    const hasRulesChanged = Boolean(gov.completion_rules_changed || gradeChanged || progressChanged || lessonsChanged || assessmentsChanged);
+
+    const hasCover = Boolean(Object.hasOwn(gov, 'proposed_cover_url') || gov.cover_image_url);
+    const isCoverChanged = Boolean(gov.is_cover_changed || (Object.hasOwn(gov, 'proposed_cover_url') && gov.proposed_cover_url !== gov.current_cover_url));
+
     const totalCount = diff.total_changes_count || (
       struct.length + content.length + quizzes.length + questions.length +
       assessments.length + files.length + prereqs.length + metaChanges.length +
-      (gov.is_changed ? 1 : 0)
+      (hasRulesChanged ? 1 : 0) + (isCoverChanged ? 1 : 0)
     );
 
     if (totalCount === 0) {
@@ -1674,7 +1990,7 @@ class UI {
       MODIFIED: 'Chỉnh sửa',
     };
 
-    const renderTwoColDiff = (leftTitle, leftContent, rightTitle, rightContent) => `
+    const renderTwoColDiff = (leftTitle, leftContent, rightTitle, rightContent, isChanged = true) => `
       <div class="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100 dark:divide-slate-800 text-xs">
         <div class="p-3 bg-slate-50/60 dark:bg-slate-900/40 space-y-1">
           <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
@@ -1683,10 +1999,10 @@ class UI {
           </div>
           <div class="text-xs text-slate-700 dark:text-slate-300">${leftContent}</div>
         </div>
-        <div class="p-3 bg-emerald-50/30 dark:bg-emerald-950/20 space-y-1">
-          <div class="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-1">
-            <span class="material-symbols-outlined text-[13px]">verified</span>
-            <span>${rightTitle}</span>
+        <div class="p-3 ${isChanged ? 'bg-emerald-50/30 dark:bg-emerald-950/20' : 'bg-slate-50/60 dark:bg-slate-900/40'} space-y-1">
+          <div class="text-[10px] font-bold ${isChanged ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'} uppercase tracking-wider flex items-center gap-1">
+            <span class="material-symbols-outlined text-[13px]">${isChanged ? 'verified' : 'check_circle'}</span>
+            <span>${rightTitle}${isChanged ? '' : ' (Không thay đổi)'}</span>
           </div>
           <div class="text-xs text-slate-800 dark:text-slate-200">${rightContent}</div>
         </div>
@@ -1809,70 +2125,106 @@ class UI {
           `}
         </div>
 
-        <!-- 4. Question Bank Category -->
-        ${questions.length > 0 ? `
-        <div class="space-y-2.5">
-          <div class="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-700">
-            <div class="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-xs">
-              <span class="material-symbols-outlined text-[18px] text-amber-600">help_center</span>
-              <span>4. Ngân hàng Câu hỏi (${questions.length})</span>
-            </div>
-            <span class="text-[10px] text-slate-400">Trắc nghiệm, Tự luận, Câu hỏi đề xuất</span>
-          </div>
-          <div class="space-y-2.5">
-            ${questions.map(item => `
-              <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-850 overflow-hidden shadow-2xs">
-                <div class="px-3.5 py-2 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
-                  <div class="flex items-center gap-2">
-                    <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${badgeClasses[item.change_type] || 'bg-slate-100 text-slate-700'}">
-                      ${badgeLabels[item.change_type] || item.change_type}
-                    </span>
-                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300 font-mono font-bold">
-                      ${UI.escapeHtml(item.question_type || 'MULTIPLE_CHOICE')}
-                    </span>
-                    ${item.difficulty ? `<span class="text-[10px] text-slate-400">Độ khó: ${UI.escapeHtml(item.difficulty)}</span>` : ''}
-                  </div>
-                </div>
-                ${renderTwoColDiff(
-                  'Hiện tại',
-                  item.change_type === 'ADDED' ? '<span class="italic text-slate-400">(Câu hỏi mới chưa có trong ngân hàng đề)</span>' : '<span class="italic text-slate-500">(Phiên bản câu hỏi hiện tại đang lưu hành)</span>',
-                  'Sau chỉnh sửa',
-                  `<div class="font-medium text-slate-900 dark:text-slate-100">"${UI.escapeHtml(item.content || item.description || '')}"</div>${item.explanation ? `<div class="text-[11px] text-slate-500 italic mt-1">Giải thích: ${UI.escapeHtml(item.explanation)}</div>` : ''}`
-                )}
-              </div>
-            `).join('')}
-          </div>
-        </div>
-        ` : ''}
-
-        <!-- 5. Assessments Category -->
+        <!-- 4. Assessments & Question Bank Category (Unified Division 4) -->
         <div class="space-y-2.5">
           <div class="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-700">
             <div class="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-xs">
               <span class="material-symbols-outlined text-[18px] text-amber-600">assignment</span>
-              <span>5. Bài kiểm tra & Đánh giá (${assessments.length})</span>
+              <span>4. Bài kiểm tra, Đánh giá & Ngân hàng Câu hỏi (${assessments.length + questions.length})</span>
             </div>
-            <span class="text-[10px] text-slate-400">Kiểm tra chương, Final Test</span>
+            <span class="text-[10px] text-slate-400">Kiểm tra chương, Final Test & Ngân hàng câu hỏi</span>
           </div>
-          ${assessments.length === 0 ? `
-            <div class="p-3 text-slate-400 italic text-[11px] bg-slate-50 dark:bg-slate-800/40 rounded-xl">Không có thay đổi bài kiểm tra/đánh giá.</div>
+          ${(assessments.length === 0 && questions.length === 0) ? `
+            <div class="p-3 text-slate-400 italic text-[11px] bg-slate-50 dark:bg-slate-800/40 rounded-xl">Không có thay đổi về bài kiểm tra hoặc ngân hàng câu hỏi.</div>
+          ` : `
+            <div class="space-y-3">
+              ${assessments.length > 0 ? `
+                <div class="space-y-2.5">
+                  <div class="font-bold text-slate-700 dark:text-slate-300 text-[11px]">Bài kiểm tra & Đánh giá (${assessments.length}):</div>
+                  ${assessments.map(item => `
+                    <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-850 overflow-hidden shadow-2xs">
+                      <div class="px-3.5 py-2 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                          <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${badgeClasses[item.change_type] || 'bg-slate-100 text-slate-700'}">
+                            ${badgeLabels[item.change_type] || item.change_type}
+                          </span>
+                          <span class="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">${UI.escapeHtml(item.title)}</span>
+                        </div>
+                      </div>
+                      ${renderTwoColDiff(
+                        'Hiện tại',
+                        item.change_type === 'ADDED' ? '<span class="italic text-slate-400">(Bài kiểm tra mới)</span>' : '<span class="italic text-slate-500">(Phiên bản bài kiểm tra đang áp dụng)</span>',
+                        'Sau chỉnh sửa',
+                        `<div class="font-bold text-slate-900 dark:text-slate-100">${UI.escapeHtml(item.title)}</div><div class="text-[11px] text-emerald-700 dark:text-emerald-400 font-mono mt-0.5">${item.time_limit_minutes ? `${item.time_limit_minutes} phút` : 'Không giới hạn thời gian'} · ${item.total_points || 10} điểm · ${item.assessment_type === 'FINAL_EXAM' ? 'Final Test' : 'Kiểm tra chương'}</div>`
+                      )}
+                    </div>
+                  `).join('')}
+                </div>
+              ` : ''}
+
+              ${questions.length > 0 ? `
+                <div class="space-y-2.5 pt-2 ${assessments.length > 0 ? 'border-t border-slate-100 dark:border-slate-800' : ''}">
+                  <div class="font-bold text-slate-700 dark:text-slate-300 text-[11px] flex items-center gap-1.5">
+                    <span class="material-symbols-outlined text-[15px] text-amber-600">help_center</span>
+                    <span>Ngân hàng Câu hỏi (${questions.length}):</span>
+                  </div>
+                  <div class="space-y-2.5">
+                    ${questions.map(item => `
+                      <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-850 overflow-hidden shadow-2xs">
+                        <div class="px-3.5 py-2 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                          <div class="flex items-center gap-2">
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${badgeClasses[item.change_type] || 'bg-slate-100 text-slate-700'}">
+                              ${badgeLabels[item.change_type] || item.change_type}
+                            </span>
+                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300 font-mono font-bold">
+                              ${UI.escapeHtml(item.question_type || 'MULTIPLE_CHOICE')}
+                            </span>
+                            ${item.difficulty ? `<span class="text-[10px] text-slate-400">Độ khó: ${UI.escapeHtml(item.difficulty)}</span>` : ''}
+                          </div>
+                        </div>
+                        ${renderTwoColDiff(
+                          'Hiện tại',
+                          item.change_type === 'ADDED' ? '<span class="italic text-slate-400">(Câu hỏi mới chưa có trong ngân hàng đề)</span>' : '<span class="italic text-slate-500">(Phiên bản câu hỏi hiện tại đang lưu hành)</span>',
+                          'Sau chỉnh sửa',
+                          `<div class="font-medium text-slate-900 dark:text-slate-100">"${UI.escapeHtml(item.content || item.description || '')}"</div>${item.explanation ? `<div class="text-[11px] text-slate-500 italic mt-1">Giải thích: ${UI.escapeHtml(item.explanation)}</div>` : ''}`
+                        )}
+                      </div>
+                    `).join('')}
+                  </div>
+                </div>
+              ` : ''}
+            </div>
+          `}
+        </div>
+
+        <!-- 5. Standalone Files Category (Always Fixed at Division 5) -->
+        <div class="space-y-2.5">
+          <div class="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-700">
+            <div class="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-xs">
+              <span class="material-symbols-outlined text-[18px] text-teal-600">attach_file</span>
+              <span>5. Tài liệu & Tệp đính kèm (${files.length})</span>
+            </div>
+            <span class="text-[10px] text-slate-400">Tài liệu tham khảo, giáo trình đính kèm</span>
+          </div>
+          ${files.length === 0 ? `
+            <div class="p-3 text-slate-400 italic text-[11px] bg-slate-50 dark:bg-slate-800/40 rounded-xl">Không có thay đổi về tài liệu tham khảo hoặc giáo trình đính kèm.</div>
           ` : `
             <div class="space-y-2.5">
-              ${assessments.map(item => `
+              ${files.map(item => `
                 <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-850 overflow-hidden shadow-2xs">
                   <div class="px-3.5 py-2 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
                     <div class="flex items-center gap-2">
                       <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${badgeClasses[item.change_type] || 'bg-slate-100 text-slate-700'}">
                         ${badgeLabels[item.change_type] || item.change_type}
                       </span>
-                      <span class="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">${UI.escapeHtml(item.title)}</span>
+                      <span class="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">${UI.escapeHtml(item.file_name)}</span>
                     </div>
                   </div>
                   ${renderTwoColDiff(
                     'Hiện tại',
-                    item.change_type === 'ADDED' ? '<span class="italic text-slate-400">(Bài kiểm tra mới)</span>' : '<span class="italic text-slate-500">(Phiên bản bài kiểm tra đang áp dụng)</span>',
+                    item.change_type === 'ADDED' ? '<span class="italic text-slate-400">(Chưa có tệp tài liệu này trong môn học)</span>' : `<span class="text-slate-600 dark:text-slate-400">${UI.escapeHtml(item.file_name)}</span>`,
                     'Sau chỉnh sửa',
-                    `<div class="font-bold text-slate-900 dark:text-slate-100">${UI.escapeHtml(item.title)}</div><div class="text-[11px] text-emerald-700 dark:text-emerald-400 font-mono mt-0.5">${item.time_limit_minutes ? `${item.time_limit_minutes} phút` : 'Không giới hạn thời gian'} · ${item.total_points || 10} điểm · ${item.assessment_type === 'FINAL_EXAM' ? 'Final Test' : 'Kiểm tra chương'}</div>`
+                    `<div class="flex items-center justify-between gap-2"><span class="font-bold text-slate-900 dark:text-slate-100 truncate">${UI.escapeHtml(item.file_name)}</span><span class="font-mono text-emerald-700 dark:text-emerald-400 font-bold shrink-0">${item.file_size_bytes ? `${Math.round(item.file_size_bytes / 1024)} KB` : '0 KB'} · ${UI.escapeHtml(item.scan_status || 'CLEAN')}</span></div>`
                   )}
                 </div>
               `).join('')}
@@ -1880,45 +2232,12 @@ class UI {
           `}
         </div>
 
-        <!-- 6. Standalone Files Category -->
-        ${files.length > 0 ? `
-        <div class="space-y-2.5">
-          <div class="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-700">
-            <div class="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-xs">
-              <span class="material-symbols-outlined text-[18px] text-teal-600">attach_file</span>
-              <span>6. Tài liệu & Tệp đính kèm (${files.length})</span>
-            </div>
-            <span class="text-[10px] text-slate-400">Tài liệu tham khảo, giáo trình đính kèm</span>
-          </div>
-          <div class="space-y-2.5">
-            ${files.map(item => `
-              <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-850 overflow-hidden shadow-2xs">
-                <div class="px-3.5 py-2 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
-                  <div class="flex items-center gap-2">
-                    <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${badgeClasses[item.change_type] || 'bg-slate-100 text-slate-700'}">
-                      ${badgeLabels[item.change_type] || item.change_type}
-                    </span>
-                    <span class="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">${UI.escapeHtml(item.file_name)}</span>
-                  </div>
-                </div>
-                ${renderTwoColDiff(
-                  'Hiện tại',
-                  item.change_type === 'ADDED' ? '<span class="italic text-slate-400">(Chưa có tệp tài liệu này trong môn học)</span>' : `<span class="text-slate-600 dark:text-slate-400">${UI.escapeHtml(item.file_name)}</span>`,
-                  'Sau chỉnh sửa',
-                  `<div class="flex items-center justify-between gap-2"><span class="font-bold text-slate-900 dark:text-slate-100 truncate">${UI.escapeHtml(item.file_name)}</span><span class="font-mono text-emerald-700 dark:text-emerald-400 font-bold shrink-0">${item.file_size_bytes ? `${Math.round(item.file_size_bytes / 1024)} KB` : '0 KB'} · ${UI.escapeHtml(item.scan_status || 'CLEAN')}</span></div>`
-                )}
-              </div>
-            `).join('')}
-          </div>
-        </div>
-        ` : ''}
-
-        <!-- 7. Prerequisites Category (Explicit 2-Column with Course Code & Title) -->
+        <!-- 6. Prerequisites Category (Always Fixed at Division 6) -->
         <div class="space-y-2.5">
           <div class="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-700">
             <div class="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-xs">
               <span class="material-symbols-outlined text-[18px] text-amber-600">hub</span>
-              <span>7. Môn học Tiên quyết (${prereqs.length} thay đổi)</span>
+              <span>6. Môn học Tiên quyết (${prereqs.length} thay đổi)</span>
             </div>
             <span class="text-[10px] text-slate-400">Hiển thị rõ mã môn [Code] và tên môn học</span>
           </div>
@@ -1952,19 +2271,20 @@ class UI {
                     </div>
                   `).join('')}
                 </div>
-              ` : '<span class="italic text-slate-400">Không có thay đổi môn tiên quyết.</span>'
+              ` : '<span class="italic text-slate-400">Không có thay đổi môn tiên quyết.</span>',
+              prereqs.length > 0
             )}
           </div>
         </div>
 
-        <!-- 8. Metadata & Governance Rules Category -->
+        <!-- 7. Completion Rules, Metadata & New Editor Settings (Always Fixed at Division 7) -->
         <div class="space-y-2.5">
           <div class="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-700">
             <div class="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-xs">
               <span class="material-symbols-outlined text-[18px] text-purple-600">verified_user</span>
-              <span>8. Quy chế Hoàn thành & Thông tin chung (Metadata)</span>
+              <span>7. Quy chế Hoàn thành, Thông tin chung (Metadata) & Các tính năng tinh chỉnh mới</span>
             </div>
-            <span class="text-[10px] text-slate-400">Điều kiện tốt nghiệp, tiêu chí và ảnh bìa</span>
+            <span class="text-[10px] text-slate-400">Điều kiện tốt nghiệp, tiêu chí, ảnh bìa và thông tin khóa học</span>
           </div>
           <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-850 overflow-hidden shadow-2xs space-y-3 p-4">
             ${renderTwoColDiff(
@@ -1980,17 +2300,21 @@ class UI {
               'Sau chỉnh sửa',
               `
                 <div class="space-y-1.5 font-medium">
-                  <div><span class="text-slate-400">GPA tối thiểu:</span> <strong class="text-emerald-700 dark:text-emerald-300">${gov.proposed?.minimum_grade_score != null ? `${gov.proposed.minimum_grade_score}/10` : 'Chưa đặt'}</strong></div>
-                  <div><span class="text-slate-400">Tiến độ tối thiểu:</span> <strong class="text-emerald-700 dark:text-emerald-300">${gov.proposed?.minimum_progress_percent != null ? `${gov.proposed.minimum_progress_percent}%` : 'Chưa đặt'}</strong></div>
-                  <div><span class="text-slate-400">Học tất cả bài:</span> <strong class="text-emerald-700 dark:text-emerald-300">${gov.proposed?.require_all_required_lessons ? 'Có' : 'Không'}</strong></div>
-                  <div><span class="text-slate-400">Làm bài thi:</span> <strong class="text-emerald-700 dark:text-emerald-300">${gov.proposed?.require_required_assessments ? 'Có' : 'Không'}</strong></div>
+                  <div><span class="text-slate-400">GPA tối thiểu:</span> ${gradeChanged ? `<strong class="text-emerald-700 dark:text-emerald-300 font-bold">${gov.proposed?.minimum_grade_score != null ? `${gov.proposed.minimum_grade_score}/10` : 'Chưa đặt'}</strong>` : `<span class="text-slate-700 dark:text-slate-300">${gov.proposed?.minimum_grade_score != null ? `${gov.proposed.minimum_grade_score}/10` : 'Chưa đặt'}</span>`}</div>
+                  <div><span class="text-slate-400">Tiến độ tối thiểu:</span> ${progressChanged ? `<strong class="text-emerald-700 dark:text-emerald-300 font-bold">${gov.proposed?.minimum_progress_percent != null ? `${gov.proposed.minimum_progress_percent}%` : 'Chưa đặt'}</strong>` : `<span class="text-slate-700 dark:text-slate-300">${gov.proposed?.minimum_progress_percent != null ? `${gov.proposed.minimum_progress_percent}%` : 'Chưa đặt'}</span>`}</div>
+                  <div><span class="text-slate-400">Học tất cả bài:</span> ${lessonsChanged ? `<strong class="text-emerald-700 dark:text-emerald-300 font-bold">${gov.proposed?.require_all_required_lessons ? 'Có' : 'Không'}</strong>` : `<span class="text-slate-700 dark:text-slate-300">${gov.proposed?.require_all_required_lessons ? 'Có' : 'Không'}</span>`}</div>
+                  <div><span class="text-slate-400">Làm bài thi:</span> ${assessmentsChanged ? `<strong class="text-emerald-700 dark:text-emerald-300 font-bold">${gov.proposed?.require_required_assessments ? 'Có' : 'Không'}</strong>` : `<span class="text-slate-700 dark:text-slate-300">${gov.proposed?.require_required_assessments ? 'Có' : 'Không'}</span>`}</div>
                 </div>
-              `
+              `,
+              hasRulesChanged
             )}
 
             ${metaChanges.length > 0 ? `
               <div class="pt-3 border-t border-slate-100 dark:border-slate-800">
-                <div class="font-bold text-slate-700 dark:text-slate-200 text-[11px] mb-2">Thay đổi Thông tin Khóa học (Metadata):</div>
+                <div class="font-bold text-slate-700 dark:text-slate-200 text-[11px] mb-2 flex items-center gap-1.5">
+                  <span class="material-symbols-outlined text-[15px] text-purple-600">edit_note</span>
+                  <span>Thay đổi Thông tin Khóa học (Metadata):</span>
+                </div>
                 <div class="space-y-2">
                   ${metaChanges.map(item => `
                     <div class="text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">Trường: <span class="font-mono text-primary font-bold">[${UI.escapeHtml(item.field)}]</span></div>
@@ -1998,29 +2322,47 @@ class UI {
                       'Hiện tại',
                       `<span class="line-through text-rose-600 dark:text-rose-400">${UI.escapeHtml(String(item.old_value ?? '(Trống)'))}</span>`,
                       'Sau chỉnh sửa',
-                      `<strong class="text-emerald-700 dark:text-emerald-300">${UI.escapeHtml(String(item.new_value ?? '(Trống)'))}</strong>`
+                      `<strong class="text-emerald-700 dark:text-emerald-300">${UI.escapeHtml(String(item.new_value ?? '(Trống)'))}</strong>`,
+                      true
                     )}
                   `).join('')}
                 </div>
               </div>
             ` : ''}
 
-            ${(Object.hasOwn(gov, 'proposed_cover_url') || gov.cover_image_url) ? `
-              <div class="pt-3 border-t border-slate-100 dark:border-slate-800 grid gap-4 lg:grid-cols-2">
-                ${(Object.hasOwn(gov, 'proposed_cover_url') ? [
-                  { label: 'Ảnh bìa hiện tại', url: gov.current_cover_url },
-                  { label: 'Ảnh bìa sau chỉnh sửa', url: gov.proposed_cover_url }
-                ] : [{ label: 'Ảnh bìa khóa học', url: gov.cover_image_url }]).map(cover => `
-                  <figure class="min-w-0 space-y-2">
-                    <figcaption class="text-xs font-semibold text-slate-700 dark:text-slate-200">${cover.label}</figcaption>
-                    <div class="relative w-full aspect-video rounded-lg overflow-hidden bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center justify-center">
-                      ${cover.url ? `
-                        <img src="${UI.escapeHtml(cover.url)}" class="absolute inset-0 w-full h-full object-cover object-center" alt="${cover.label}" onerror="this.hidden=true;this.nextElementSibling.classList.remove('hidden')" />
-                        <p class="hidden p-4 text-center text-slate-300 text-xs">Không tải được ảnh bìa. Hãy tải lại để kiểm tra quyền truy cập.</p>
-                      ` : '<p class="p-4 text-center text-slate-300 text-xs">Không có ảnh bìa</p>'}
-                    </div>
-                  </figure>
-                `).join('')}
+            ${hasCover ? `
+              <div class="pt-3 border-t border-slate-100 dark:border-slate-800">
+                ${isCoverChanged ? `
+                  <div class="font-bold text-slate-700 dark:text-slate-200 text-[11px] mb-2 flex items-center gap-1.5">
+                    <span class="material-symbols-outlined text-[15px] text-emerald-600">image</span>
+                    <span>Thay đổi Ảnh bìa khóa học:</span>
+                    <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">Đã cập nhật</span>
+                  </div>
+                  <div class="grid gap-4 lg:grid-cols-2">
+                    ${(Object.hasOwn(gov, 'proposed_cover_url') ? [
+                      { label: 'Ảnh bìa hiện tại', url: gov.current_cover_url },
+                      { label: 'Ảnh bìa sau chỉnh sửa', url: gov.proposed_cover_url }
+                    ] : [{ label: 'Ảnh bìa khóa học', url: gov.cover_image_url }]).map(cover => `
+                      <figure class="min-w-0 space-y-2">
+                        <figcaption class="text-xs font-semibold text-slate-700 dark:text-slate-200">${cover.label}</figcaption>
+                        <div class="relative w-full aspect-video rounded-lg overflow-hidden bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center justify-center">
+                          ${cover.url ? `
+                            <img src="${UI.escapeHtml(cover.url)}" class="absolute inset-0 w-full h-full object-cover object-center" alt="${cover.label}" onerror="this.hidden=true;this.nextElementSibling.classList.remove('hidden')" />
+                            <p class="hidden p-4 text-center text-slate-300 text-xs">Không tải được ảnh bìa. Hãy tải lại để kiểm tra quyền truy cập.</p>
+                          ` : '<p class="p-4 text-center text-slate-300 text-xs">Không có ảnh bìa</p>'}
+                        </div>
+                      </figure>
+                    `).join('')}
+                  </div>
+                ` : `
+                  <div class="flex items-center justify-between text-xs py-1">
+                    <span class="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      <span class="material-symbols-outlined text-[15px] text-slate-400">image</span>
+                      <span>Ảnh bìa khóa học:</span>
+                    </span>
+                    <span class="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">Không thay đổi</span>
+                  </div>
+                `}
               </div>
             ` : ''}
           </div>
@@ -2450,6 +2792,7 @@ class ExamAntiCheatManager {
   start() {
     if (this.isActive) return;
     this.isActive = true;
+    ExamAntiCheatManager.activeInstance = this;
     document.addEventListener('visibilitychange', this._handleVisibilityChange);
     window.addEventListener('blur', this._handleWindowBlur);
     window.addEventListener('focus', this._handleWindowFocus);
@@ -2464,6 +2807,9 @@ class ExamAntiCheatManager {
     if (!this.isActive) return;
     for (const type of Array.from(this.openEvents.keys())) this._end(type);
     this.isActive = false;
+    if (ExamAntiCheatManager.activeInstance === this) {
+      ExamAntiCheatManager.activeInstance = null;
+    }
     document.removeEventListener('visibilitychange', this._handleVisibilityChange);
     window.removeEventListener('blur', this._handleWindowBlur);
     window.removeEventListener('focus', this._handleWindowFocus);
@@ -2472,6 +2818,12 @@ class ExamAntiCheatManager {
     document.removeEventListener('copy', this._handleCopyCut);
     document.removeEventListener('cut', this._handleCopyCut);
     document.removeEventListener('keydown', this._handleKeyDown);
+  }
+
+  recordSecurityViolation(type = 'SECURITY_VIOLATION') {
+    if (!this.isActive) return;
+    this._begin(type);
+    setTimeout(() => this._end(type), 1000);
   }
 
   _begin(type) {
@@ -2536,6 +2888,10 @@ class ExamAntiCheatManager {
   _handleContextMenu(e) {
     if (e && typeof e.preventDefault === 'function') {
       e.preventDefault();
+      this.recordSecurityViolation('CONTEXT_MENU_ATTEMPT');
+      if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
+        UI.showToast('CẢNH BÁO KHẢO THÍ: Nghiêm cấm thao tác chuột phải trong bài thi!', 'warning');
+      }
     }
   }
 
@@ -2551,23 +2907,28 @@ class ExamAntiCheatManager {
     const keyCode = e.keyCode || 0;
     const ctrlOrMeta = Boolean(e.ctrlKey || e.metaKey);
 
-    if (key === 'PrintScreen' || keyCode === 44 || (ctrlOrMeta && (key === 'p' || key === 'P'))) {
+    if (key === 'PrintScreen' || keyCode === 44 || (ctrlOrMeta && (key === 'p' || key === 'P')) || (ctrlOrMeta && e.shiftKey && (key === 'S' || key === 's')) || (e.shiftKey && (e.metaKey || e.ctrlKey) && (key === 'S' || key === 's'))) {
       e.preventDefault();
-      this._begin('SCREENSHOT_ATTEMPT');
-      setTimeout(() => this._end('SCREENSHOT_ATTEMPT'), 1000);
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText('');
+        }
+      } catch (_) {}
+      this.recordSecurityViolation('SCREENSHOT_ATTEMPT');
+      if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
+        UI.showToast('CẢNH BÁO KHẢO THÍ: Nghiêm cấm chụp màn hình trong bài thi. Vi phạm đã được ghi nhận vào báo cáo!', 'warning');
+      }
       return;
     }
     if (key === 'F12' || keyCode === 123) {
       e.preventDefault();
       return;
     }
-    if (ctrlOrMeta && e.shiftKey && (key === 'I' || key === 'i' || key === 'J' || key === 'j' || key === 'C' || key === 'c' || key === 'S' || key === 's')) {
+    if (ctrlOrMeta && e.shiftKey && (key === 'I' || key === 'i' || key === 'J' || key === 'j' || key === 'C' || key === 'c')) {
       e.preventDefault();
-      this._begin('SCREENSHOT_ATTEMPT');
-      setTimeout(() => this._end('SCREENSHOT_ATTEMPT'), 1000);
       return;
     }
-    if (ctrlOrMeta && (key === 'u' || key === 'U' || key === 's' || key === 'S')) {
+    if (ctrlOrMeta && (key === 'u' || key === 'U')) {
       e.preventDefault();
       return;
     }
@@ -2582,6 +2943,80 @@ class FloatingAITutor {
   static conversationId = null;
   static courseId = null;
 
+  static openDrawer() {
+    const launcher = document.getElementById('floating-ai-launcher');
+    const drawer = document.getElementById('floating-ai-drawer');
+    const container = document.getElementById('floating-ai-container');
+    const input = document.getElementById('floating-ai-input');
+    if (!drawer) return;
+
+    if (container) {
+      container.style.position = 'fixed';
+      container.style.bottom = '1.25rem';
+      container.style.right = '1.25rem';
+      container.style.left = 'auto';
+      container.style.top = 'auto';
+    }
+
+    FloatingAITutor.updateDrawerPosition();
+    drawer.classList.remove('hidden');
+    if (launcher) {
+      launcher.style.display = 'none';
+    }
+    if (input) {
+      setTimeout(() => input.focus(), 60);
+    }
+  }
+
+  static closeDrawer() {
+    const launcher = document.getElementById('floating-ai-launcher');
+    const drawer = document.getElementById('floating-ai-drawer');
+    const container = document.getElementById('floating-ai-container');
+    if (drawer) {
+      drawer.classList.add('hidden');
+    }
+    if (launcher) {
+      launcher.style.display = 'flex';
+    }
+    if (container) {
+      container.style.position = 'fixed';
+      container.style.bottom = '1.25rem';
+      container.style.right = '1.25rem';
+      container.style.left = 'auto';
+      container.style.top = 'auto';
+    }
+  }
+
+  static updateDrawerPosition() {
+    const drawer = document.getElementById('floating-ai-drawer');
+    const container = document.getElementById('floating-ai-container');
+    if (!drawer) return;
+
+    // Anchor container strictly to bottom-right corner
+    if (container) {
+      container.style.position = 'fixed';
+      container.style.bottom = '1.25rem';
+      container.style.right = '1.25rem';
+      container.style.left = 'auto';
+      container.style.top = 'auto';
+    }
+
+    const pad = 20; // 20px (1.25rem) padding from right and bottom edges
+    const drawerWidth = Math.min(384, window.innerWidth - pad * 2);
+    const drawerHeight = Math.min(520, window.innerHeight - pad * 2);
+
+    // AI Assistance chat drawer is ALWAYS anchored at the bottom-right corner
+    drawer.style.position = 'fixed';
+    drawer.style.right = `${pad}px`;
+    drawer.style.bottom = `${pad}px`;
+    drawer.style.left = 'auto';
+    drawer.style.top = 'auto';
+    drawer.style.width = `${Math.round(drawerWidth)}px`;
+    drawer.style.height = `${Math.round(drawerHeight)}px`;
+    drawer.style.margin = '0';
+    drawer.style.zIndex = '50';
+  }
+
   static init() {
     const launcher = document.getElementById('floating-ai-launcher');
     const container = document.getElementById('floating-ai-container');
@@ -2594,22 +3029,19 @@ class FloatingAITutor {
     if (FloatingAITutor.isInitialized) return;
     FloatingAITutor.isInitialized = true;
 
-    // Restore saved position if available
+    // Wipe any obsolete/corrupt coordinates from previous sessions
     try {
-      const savedPos = localStorage.getItem('pwd301_floating_ai_pos');
-      if (savedPos && container) {
-        const { left, top } = JSON.parse(savedPos);
-        const maxLeft = Math.max(0, window.innerWidth - 64);
-        const maxTop = Math.max(0, window.innerHeight - 64);
-        const clampedLeft = Math.max(10, Math.min(left, maxLeft));
-        const clampedTop = Math.max(10, Math.min(top, maxTop));
-        container.style.position = 'fixed';
-        container.style.left = `${clampedLeft}px`;
-        container.style.top = `${clampedTop}px`;
-        container.style.bottom = 'auto';
-        container.style.right = 'auto';
-      }
+      localStorage.removeItem('pwd301_floating_ai_pos');
     } catch (_) {}
+
+    // Enforce default bottom-right anchoring
+    if (container) {
+      container.style.position = 'fixed';
+      container.style.bottom = '1.25rem';
+      container.style.right = '1.25rem';
+      container.style.left = 'auto';
+      container.style.top = 'auto';
+    }
 
     // Mouse drag-and-drop handler for launcher
     let isDragging = false;
@@ -2632,7 +3064,6 @@ class FloatingAITutor {
 
       document.addEventListener('mousemove', onMouseMove);
       document.addEventListener('mouseup', onMouseUp);
-      e.preventDefault();
     };
 
     const onMouseMove = (e) => {
@@ -2640,7 +3071,8 @@ class FloatingAITutor {
       const dx = e.clientX - dragStartX;
       const dy = e.clientY - dragStartY;
 
-      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      // Ignore micro-jitters (< 10px) to prevent accidental dragging on click
+      if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
         hasMoved = true;
         const maxLeft = Math.max(0, window.innerWidth - launcher.offsetWidth - 10);
         const maxTop = Math.max(0, window.innerHeight - launcher.offsetHeight - 10);
@@ -2660,19 +3092,14 @@ class FloatingAITutor {
       isDragging = false;
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
-
-      if (hasMoved && container) {
-        const rect = container.getBoundingClientRect();
-        try {
-          localStorage.setItem('pwd301_floating_ai_pos', JSON.stringify({ left: rect.left, top: rect.top }));
-        } catch (_) {}
-      } else {
-        drawer.classList.toggle('hidden');
-        if (!drawer.classList.contains('hidden') && input) {
-          input.focus();
-        }
-      }
+      // Never store dragged coordinates to localStorage, guaranteeing default bottom-right position
     };
+
+    window.addEventListener('resize', () => {
+      if (drawer && !drawer.classList.contains('hidden')) {
+        FloatingAITutor.updateDrawerPosition();
+      }
+    });
 
     launcher.addEventListener('mousedown', onMouseDown);
 
@@ -2683,11 +3110,23 @@ class FloatingAITutor {
       };
     }
 
+    launcher.addEventListener('click', () => {
+      if (!hasMoved) {
+        FloatingAITutor.openDrawer();
+      }
+    });
+
     if (closeBtn) {
       closeBtn.onclick = () => {
-        drawer.classList.add('hidden');
+        FloatingAITutor.closeDrawer();
       };
     }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && drawer && !drawer.classList.contains('hidden')) {
+        FloatingAITutor.closeDrawer();
+      }
+    });
 
     form.onsubmit = async (e) => {
       e.preventDefault();
@@ -2745,10 +3184,7 @@ class FloatingAITutor {
     } else if (courseId) {
       FloatingAITutor.courseId = courseId;
     }
-    const drawer = document.getElementById('floating-ai-drawer');
-    if (drawer) {
-      drawer.classList.remove('hidden');
-    }
+    FloatingAITutor.openDrawer();
     const input = document.getElementById('floating-ai-input');
     if (input) {
       input.value = '';
@@ -2757,10 +3193,7 @@ class FloatingAITutor {
   }
 
   static close() {
-    const drawer = document.getElementById('floating-ai-drawer');
-    if (drawer) {
-      drawer.classList.add('hidden');
-    }
+    FloatingAITutor.closeDrawer();
   }
 
   static appendMessage(sender, text) {

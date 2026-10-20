@@ -94,7 +94,22 @@ class AppRouter {
     this._securityShieldInitialized = true;
     this.isSecurityLocked = false;
 
-    // 1. Hotkeys Prevention (DevTools, View Source, Screenshot)
+    // Helper: is current view actively taking an exam/quiz?
+    const isExamActive = () => {
+      if (typeof ExamAntiCheatManager !== 'undefined' && ExamAntiCheatManager.activeInstance && ExamAntiCheatManager.activeInstance.isActive) {
+        return true;
+      }
+      const hash = window.location.hash || '';
+      if (hash.includes('/assessments/attempt') || hash.includes('/assessments/attempts/')) {
+        return true;
+      }
+      if (document.getElementById('questions-viewport') || document.getElementById('lockdown-violation-count')) {
+        return true;
+      }
+      return false;
+    };
+
+    // 1. Hotkeys Prevention (DevTools, View Source, Screenshot in Exams)
     window.addEventListener('keydown', (e) => {
       if (this.isSecurityLocked) return;
       const key = (e.key || '').toUpperCase();
@@ -127,28 +142,43 @@ class AppRouter {
         return false;
       }
 
-      // PrintScreen / Win+Shift+S / Snipping Tool
+      // PrintScreen / Win+Shift+S / Snipping Tool (Only restricted during exams)
       if (key === 'PRINTSCREEN' || code === 44 || (isShift && (isCtrlOrMeta || isAlt) && key === 'S')) {
-        e.preventDefault();
-        e.stopPropagation();
-        try {
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText('');
+        if (isExamActive()) {
+          e.preventDefault();
+          e.stopPropagation();
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText('');
+            }
+          } catch (_) {}
+          if (typeof ExamAntiCheatManager !== 'undefined' && ExamAntiCheatManager.activeInstance) {
+            ExamAntiCheatManager.activeInstance.recordSecurityViolation('SCREENSHOT_ATTEMPT');
           }
-        } catch (_) {}
-        this.triggerGlobalSecurityLockdown('SCREEN_CAPTURE_ATTEMPT');
-        return false;
+          if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
+            UI.showToast('CẢNH BÁO KHẢO THÍ: Nghiêm cấm chụp màn hình trong bài thi. Vi phạm đã được ghi nhận vào báo cáo!', 'warning');
+          }
+          return false;
+        }
       }
     }, true);
 
-    // 2. Context Menu (Right Click) Prevention outside of text inputs
+    // 2. Context Menu (Right Click) Prevention only during exams
     window.addEventListener('contextmenu', (e) => {
-      const tag = (e.target && e.target.tagName ? e.target.tagName : '').toUpperCase();
-      const isEditable = e.target && (e.target.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA');
-      if (!isEditable) {
-        e.preventDefault();
-        this.triggerGlobalSecurityLockdown('CONTEXT_MENU_BLOCKED');
-        return false;
+      if (isExamActive()) {
+        const tag = (e.target && e.target.tagName ? e.target.tagName : '').toUpperCase();
+        const isEditable = e.target && (e.target.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA');
+        if (!isEditable) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (typeof ExamAntiCheatManager !== 'undefined' && ExamAntiCheatManager.activeInstance) {
+            ExamAntiCheatManager.activeInstance.recordSecurityViolation('CONTEXT_MENU_ATTEMPT');
+          }
+          if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
+            UI.showToast('CẢNH BÁO KHẢO THÍ: Nghiêm cấm thao tác chuột phải trong bài thi!', 'warning');
+          }
+          return false;
+        }
       }
     }, true);
 
@@ -166,15 +196,7 @@ class AppRouter {
         return;
       }
 
-      try {
-        if (typeof window.outerWidth === 'number' && typeof window.innerWidth === 'number') {
-          const widthThreshold = window.outerWidth - window.innerWidth > 160;
-          const heightThreshold = window.outerHeight - window.innerHeight > 160;
-          if (widthThreshold || heightThreshold) {
-            this.triggerGlobalSecurityLockdown('DEVTOOLS_DETECTED');
-          }
-        }
-      } catch (_) {}
+      // Window dimension comparison removed in TASK-108 to eliminate zoom-in/out false positives
     };
 
     this._securityTimer = setInterval(checkTiming, 1000);
@@ -649,6 +671,9 @@ class AppRouter {
     const cleanHash = target.startsWith('#') ? target : `#${target}`;
     if (replace) {
       window.history.replaceState(null, '', cleanHash);
+      if (window.location.hash !== cleanHash) {
+        window.location.hash = cleanHash;
+      }
       this.handleRoute();
     } else {
       if ((window.location.hash || '#/') === cleanHash) {
@@ -680,6 +705,14 @@ class AppRouter {
 
   async dispatchRoute(path, query, viewport = this.viewport) {
     if (!viewport) return;
+
+    if (path.startsWith('#/admin')) {
+      const userRoles = (this.currentUser && (this.currentUser.role_codes || [this.currentUser.primary_role || 'STUDENT'])) || ['STUDENT'];
+      if (!userRoles.includes('ADMIN')) {
+        this.redirectToRoleHome();
+        return;
+      }
+    }
 
     // --- Student Routes ---
     if (path === '#/student/dashboard') {
@@ -744,6 +777,23 @@ class AppRouter {
         return;
       }
       await InstructorView.renderCourseManage(viewport, targetCourseId, query.tab || 'curriculum', query.lesson || query.lesson_id, query.learning_unit_id);
+    } else if (path.startsWith('#/instructor/courses/') && (path.endsWith('/changes') || path.endsWith('/diff'))) {
+      const parts = path.split('/');
+      const targetCourseId = parts[3];
+      if (!targetCourseId || targetCourseId === 'undefined' || targetCourseId === 'null' || !String(targetCourseId).trim()) {
+        UI.showToast('Vui lòng chọn một khóa học từ danh sách để xem thay đổi.', 'info');
+        window.location.hash = '#/instructor/courses';
+        return;
+      }
+      await InstructorView.renderCourseChangesPage(viewport, targetCourseId);
+    } else if (path === '#/instructor/courses/changes' || path === '#/instructor/courses/diff') {
+      const targetCourseId = query.id || query.course_id;
+      if (!targetCourseId || targetCourseId === 'undefined' || targetCourseId === 'null' || !String(targetCourseId).trim()) {
+        UI.showToast('Vui lòng chọn một khóa học từ danh sách để xem thay đổi.', 'info');
+        window.location.hash = '#/instructor/courses';
+        return;
+      }
+      await InstructorView.renderCourseChangesPage(viewport, targetCourseId);
     } else if (path.startsWith('#/instructor/courses/') && path.includes('/lessons/new')) {
       const parts = path.split('/');
       const courseId = parts[3];
@@ -759,6 +809,8 @@ class AppRouter {
         await InstructorView.renderCourseManage(viewport, courseId, 'curriculum', lessonId, query.learning_unit_id);
       }
 
+    } else if (path === '#/instructor/appeals') {
+      await InstructorView.renderAppeals(viewport, query);
     } else if (path === '#/instructor/prerequisites/requests' || path === '#/instructor/prerequisite-requests') {
       await InstructorView.renderPrerequisiteApprovalRequests(viewport);
     } else if (path === '#/instructor/exams' || path === '#/instructor/exams/hub') {
@@ -896,13 +948,20 @@ class AppRouter {
   }
 
   async fetchInstructorPendingCounts() {
-    if (this.currentRole !== 'INSTRUCTOR' || typeof ApiClient.getInstructorPrerequisitePendingCount !== 'function') return;
+    if (this.currentRole !== 'INSTRUCTOR') return;
     try {
-      const res = await ApiClient.getInstructorPrerequisitePendingCount();
-      this.instructorPrereqPendingCount = (res && typeof res.count === 'number') ? res.count : 0;
+      if (typeof ApiClient.getInstructorPrerequisitePendingCount === 'function') {
+        const res = await ApiClient.getInstructorPrerequisitePendingCount();
+        this.instructorPrereqPendingCount = (res && typeof res.count === 'number') ? res.count : 0;
+      }
+      if (typeof ApiClient.getInstructorAppeals === 'function') {
+        const resAppeals = await ApiClient.getInstructorAppeals({ status: 'PENDING' });
+        const appealsList = (resAppeals && resAppeals.data && resAppeals.data.appeals) ? resAppeals.data.appeals : (resAppeals?.appeals || []);
+        this.instructorAppealsPendingCount = (resAppeals && resAppeals.data && typeof resAppeals.data.total === 'number') ? resAppeals.data.total : appealsList.length;
+      }
       this.renderDynamicSidebar();
     } catch (err) {
-      console.warn('Silent instructor prereq badge fetch warning:', err);
+      console.warn('Silent instructor prereq/appeals badge fetch warning:', err);
     }
   }
 
@@ -917,6 +976,7 @@ class AppRouter {
     if (!isPathMatch) {
       if (mPath === '#/instructor/exams' && curPath.startsWith('#/instructor/exams/')) isPathMatch = true;
       else if (mPath === '#/instructor/courses' && curPath.startsWith('#/instructor/courses/')) isPathMatch = true;
+      else if (mPath === '#/instructor/appeals' && curPath.startsWith('#/instructor/appeals')) isPathMatch = true;
       else if (mPath === '#/instructor/prerequisites/requests' && (curPath.startsWith('#/instructor/prerequisites') || curPath === '#/instructor/prerequisite-requests')) isPathMatch = true;
       else if (mPath === '#/student/courses' && (curPath.startsWith('#/student/courses/') || curPath.startsWith('#/student/lessons/'))) isPathMatch = true;
       else if (mPath === '#/student/assessments' && curPath.startsWith('#/student/assessments/')) isPathMatch = true;
@@ -994,6 +1054,7 @@ class AppRouter {
         { label: 'Trang chủ', path: '#/instructor/dashboard', icon: 'home' },
         { label: 'Khóa học', path: '#/instructor/courses', icon: 'auto_stories' },
         { label: 'Soạn đề thi', path: '#/instructor/exams', icon: 'assignment_add' },
+        { label: 'Phúc khảo', path: '#/instructor/appeals', icon: 'rate_review', badge: this.instructorAppealsPendingCount || 0 },
         { label: 'Duyệt môn tiên quyết', path: '#/instructor/prerequisites/requests', icon: 'account_tree', badge: this.instructorPrereqPendingCount || 0 },
         { label: 'Cài đặt', path: '#/instructor/settings', icon: 'settings' },
       ];
@@ -1136,7 +1197,9 @@ class AppRouter {
     let avatarUrl = user.avatar_url;
     if (!avatarUrl && typeof localStorage !== 'undefined') {
       try {
-        avatarUrl = localStorage.getItem(`pwd301:random-avatar:${user.public_id || user.id || user.email}`)
+        const idKey = user.public_id || user.id;
+        avatarUrl = (idKey ? localStorage.getItem(`pwd301:random-avatar:${idKey}`) : null)
+          || (user.email ? localStorage.getItem(`pwd301:random-avatar:${user.email}`) : null)
           || localStorage.getItem('pwd301_avatar');
       } catch {
         avatarUrl = null;

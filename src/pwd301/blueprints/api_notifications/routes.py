@@ -269,3 +269,11 @@ def retry_failed_emails_api() -> tuple[Response, int] | Response:
     )
     response_data = {"retried_count": count}
     return jsonify({"success": True, "data": response_data, **response_data}), 200
+
+
+@api_notification_bp.route("/events/stream", methods=["GET"])
+def notification_events_stream_api() -> tuple[Response, int] | Response:
+    """Stream realtime events for notifications and mutations via Server-Sent Events."""
+    from pwd301.services.realtime_service import build_sse_stream_response
+
+    return build_sse_stream_response()

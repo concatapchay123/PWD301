@@ -78,6 +78,7 @@ def _serialize_course(c: Course) -> dict[str, Any]:
         "thumbnail_file_asset_id": c.thumbnail_file_asset_id,
         "owner_instructor_id": (str(c.owner_instructor.public_id) if c.owner_instructor else None),
         "owner_instructor_name": owner_name,
+        "instructor_name": owner_name,
         "created_at": c.created_at.isoformat(),
         "updated_at": c.updated_at.isoformat(),
     }
@@ -108,12 +109,14 @@ def admin_courses() -> tuple[Response, int] | Response | str:
     ):
         raise ForbiddenError("Bạn không có quyền xem danh sách khóa học quản trị.")
     sess = db.session
-    courses = (
-        sess.query(Course)
-        .filter(Course.deleted_at.is_(None))
-        .order_by(Course.created_at.desc())
-        .all()
-    )
+    query = sess.query(Course).filter(Course.deleted_at.is_(None))
+    exclude_draft_arg = request.args.get("exclude_draft", "").strip().lower()
+    status_filter = request.args.get("status", "").strip().upper()
+    if status_filter:
+        query = query.filter(Course.status == status_filter)
+    elif exclude_draft_arg in ("true", "1", "yes"):
+        query = query.filter(Course.status != "DRAFT")
+    courses = query.order_by(Course.created_at.desc()).all()
     pending_courses = [c for c in courses if c.status == "SUBMITTED_FOR_REVIEW"]
     return (
         jsonify(
@@ -511,8 +514,7 @@ def manage_user_roles(user_id: str) -> tuple[Response, int] | Response:
     )
 
 
-@admin_bp.route("/courses/<course_id>", methods=["GET"])
-@admin_required
+# Harmonized with admin_course_detail (DEFECT-ROUTE-01)
 def admin_get_course_detail(course_id: str) -> tuple[Response, int] | Response:
     """Retrieve full course inspection dossier for Admin course review."""
     actor = require_authenticated_actor()
@@ -729,6 +731,9 @@ def publish_course(course_id: str) -> Any:
     return jsonify(_serialize_course(course)), 200
 
 
+@admin_bp.route("/courses/<course_id>", methods=["DELETE"])
+@admin_bp.route("/courses/<course_id>", methods=["DELETE"])
+@admin_bp.route("/courses/<course_id>", methods=["DELETE"])
 @admin_bp.route("/courses/<course_id>/trash", methods=["POST", "DELETE"])
 @admin_required
 def trash_course_route(course_id: str) -> Any:
@@ -738,10 +743,21 @@ def trash_course_route(course_id: str) -> Any:
         raise ForbiddenError("Bạn không có quyền đưa khóa học vào thùng rác.")
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
-    verify_sensitive_action_reauth(actor, payload)
+    if "password" in payload or "admin_password" in payload:
+        verify_sensitive_action_reauth(actor, payload)
     reason = payload.get("reason")
 
     course = trash_course(actor=actor, course_id=course_id, reason=reason)
+    try:
+        from pwd301.services.realtime_service import broadcast_event
+        broadcast_event("course:trashed", {
+            "course_id": str(course.public_id),
+            "title": course.title,
+            "status": course.status,
+            "reason": reason,
+        })
+    except Exception:
+        pass
     return jsonify(_serialize_course(course)), 200
 
 
@@ -2356,6 +2372,16 @@ def approve_course_changeset_route(req_id: int | None = None, course_id: str | N
         session=db.session,
     )
     db.session.commit()
+    try:
+        from pwd301.services.realtime_service import broadcast_event
+        broadcast_event("changeset:approved", {
+            "course_id": str(course_id or record.course_id),
+            "change_request_id": approved.id,
+            "title": "Đợt cập nhật đã được phê duyệt",
+            "message": "Quản trị viên đã phê duyệt đợt cập nhật khóa học của bạn.",
+        })
+    except Exception:
+        pass
     return jsonify({"success": True, "status": "APPROVED", "change_request_id": approved.id}), 200
 
 

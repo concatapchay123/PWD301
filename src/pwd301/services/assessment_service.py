@@ -1086,6 +1086,17 @@ def update_assessment(
             sess.rollback()
             raise
 
+    from pwd301.services.realtime_service import emit_domain_event
+
+    emit_domain_event(
+        "assessment:updated",
+        {
+            "assessment_id": str(assessment.public_id),
+            "course_id": str(assessment.course.public_id) if getattr(assessment, "course", None) else None,
+            "title": assessment.title,
+        },
+    )
+
     return assessment
 
 

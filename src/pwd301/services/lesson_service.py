@@ -936,7 +936,12 @@ def create_lesson(
             .scalar()
             or 0
         )
-        if child_count >= 10:
+        is_draft_revision = bool(
+            data.get("previous_lesson_id")
+            or data.get("change_request_id")
+            or draft_request is not None
+        )
+        if not is_draft_revision and child_count >= 10:
             raise LessonValidationError("A learning unit can contain at most 10 lessons.")
 
     validate_lesson_media_limits(unit, None, clean_markdown)
@@ -1039,6 +1044,18 @@ def create_lesson(
         except Exception:
             sess.rollback()
             raise
+
+    from pwd301.services.realtime_service import emit_domain_event
+
+    emit_domain_event(
+        "lesson:updated",
+        {
+            "course_id": str(course.public_id),
+            "lesson_id": str(lesson.public_id),
+            "title": lesson.title,
+            "action": "create",
+        },
+    )
 
     return lesson
 
@@ -1337,6 +1354,18 @@ def update_lesson(
         except Exception:
             sess.rollback()
             raise
+
+    from pwd301.services.realtime_service import emit_domain_event
+
+    emit_domain_event(
+        "lesson:updated",
+        {
+            "course_id": str(course.public_id),
+            "lesson_id": str(lesson.public_id),
+            "title": lesson.title,
+            "action": "update",
+        },
+    )
 
     return lesson
 
@@ -1657,6 +1686,18 @@ def trash_lesson(
             sess.rollback()
             raise
 
+    from pwd301.services.realtime_service import emit_domain_event
+
+    emit_domain_event(
+        "lesson:updated",
+        {
+            "course_id": str(course.public_id),
+            "lesson_id": str(lesson.public_id),
+            "title": lesson.title,
+            "action": "create",
+        },
+    )
+
     return lesson
 
 
@@ -1764,6 +1805,18 @@ def change_lesson_status(
         except Exception:
             sess.rollback()
             raise
+
+    from pwd301.services.realtime_service import emit_domain_event
+
+    emit_domain_event(
+        "lesson:updated",
+        {
+            "course_id": str(course.public_id),
+            "lesson_id": str(lesson.public_id),
+            "title": lesson.title,
+            "action": "create",
+        },
+    )
 
     return lesson
 
@@ -2014,8 +2067,8 @@ def get_course_lessons(
                 ]
         return result
 
-    # Others see only PUBLISHED lessons of active courses
-    if course.deleted_at is not None or course.status in ("TRASH", "ARCHIVED"):
+    # Others see only PUBLISHED lessons of active, published courses (DEFECT-BOLA-01)
+    if course.deleted_at is not None or course.status != "PUBLISHED":
         return []
 
     return (
@@ -2761,6 +2814,19 @@ def create_lesson_change_request(actor, course_id, payload, session=None):
     record = active_changeset(course.id, sess)
     if session is None:
         sess.commit()
+
+    from pwd301.services.realtime_service import emit_domain_event
+
+    emit_domain_event(
+        "changeset:updated",
+        {
+            "course_id": str(course.public_id),
+            "change_request_id": record.id if record else None,
+            "course_code": course.course_code,
+            "title": course.title,
+        },
+    )
+
     return record, staged
 
 
@@ -2808,6 +2874,11 @@ def _apply_course_metadata_dict(
     if not metadata or not isinstance(metadata, dict):
         return
     sess = session if session is not None else db.session
+    if "course_code" in metadata and metadata["course_code"]:
+        code = str(metadata["course_code"]).strip()
+        if code:
+            course.course_code = code
+            course.course_code_normalized = code.upper()
     if "title" in metadata and metadata["title"]:
         title = str(metadata["title"]).strip()
         if title:
@@ -2997,10 +3068,12 @@ def _apply_sealed_course_changeset(actor, req, proposed, sess):
                 remove_course_prerequisite,
             )
 
-            for public_id in proposed["prerequisites"].get("remove") or []:
-                remove_course_prerequisite(actor, course.id, public_id, session=sess)
-            for public_id in proposed["prerequisites"].get("add") or []:
-                add_course_prerequisite(actor, course.id, public_id, session=sess)
+            for item in proposed["prerequisites"].get("remove") or []:
+                pid = item.get("course_id") or item.get("public_id") or item.get("course_code") if isinstance(item, dict) else item
+                remove_course_prerequisite(actor, course.id, pid, session=sess)
+            for item in proposed["prerequisites"].get("add") or []:
+                pid = item.get("course_id") or item.get("public_id") or item.get("course_code") if isinstance(item, dict) else item
+                add_course_prerequisite(actor, course.id, pid, session=sess)
         operations = list((proposed.get("operations") or {}).values())
         operations.sort(
             key=lambda item: (
@@ -3153,6 +3226,20 @@ def approve_course_change_request(actor, change_request_id, review_reason=None, 
         )
     if session is None:
         sess.commit()
+
+    from pwd301.services.realtime_service import emit_domain_event
+
+    emit_domain_event(
+        "changeset:approved",
+        {
+            "course_id": str(req.course.public_id),
+            "change_request_id": req.id,
+            "course_code": req.course.course_code,
+            "title": req.course.title,
+        },
+        target_user_ids=[req.requested_by_user_id] if req.requested_by_user_id else None,
+    )
+
     return req
 
 
@@ -3195,7 +3282,26 @@ def reject_course_change_request(actor, change_request_id, review_reason=None, s
     successor_draft(actor, req, sess)
     if session is None:
         sess.commit()
+
+    from pwd301.services.realtime_service import emit_domain_event
+
+    emit_domain_event(
+        "changeset:rejected",
+        {
+            "course_id": str(req.course.public_id),
+            "change_request_id": req.id,
+            "course_code": req.course.course_code,
+            "title": req.course.title,
+            "review_reason": review_reason,
+        },
+        target_user_ids=[req.requested_by_user_id] if req.requested_by_user_id else None,
+    )
+
     return req
+
+
+approve_course_changeset = approve_course_change_request
+reject_course_changeset = reject_course_change_request
 
 
 def get_lesson_detail_with_draft(actor, lesson_id, session=None):
@@ -3689,6 +3795,21 @@ def submit_course_changeset(actor, course_id, payload, session=None):
                 )
     if session is None:
         sess.commit()
+
+    from pwd301.services.realtime_service import emit_domain_event
+
+    emit_domain_event(
+        "changeset:submitted",
+        {
+            "course_id": str(course.public_id),
+            "change_request_id": record.id,
+            "course_code": course.course_code,
+            "title": course.title,
+            "instructor_name": getattr(actor, "display_name", "") or getattr(actor, "full_name", ""),
+        },
+        target_roles=["ADMIN"],
+    )
+
     return record
 
 
@@ -3814,6 +3935,19 @@ def retract_course_changeset(actor, course_id, session=None, expected_identity=N
     )
     if session is None:
         sess.commit()
+
+    from pwd301.services.realtime_service import emit_domain_event
+
+    emit_domain_event(
+        "changeset:retracted",
+        {
+            "course_id": str(course.public_id),
+            "change_request_id": record.id,
+            "course_code": course.course_code,
+            "title": course.title,
+        },
+    )
+
     return record
 
 
@@ -3864,6 +3998,19 @@ def discard_course_changeset(actor, course_id, session=None):
     sess.flush()
     if session is None:
         sess.commit()
+
+    from pwd301.services.realtime_service import emit_domain_event
+
+    emit_domain_event(
+        "changeset:discarded",
+        {
+            "course_id": str(course.public_id),
+            "change_request_id": record.id if record else None,
+            "course_code": course.course_code,
+            "title": course.title,
+        },
+    )
+
     return {"status": "DISCARDED", "message": "Đã hủy bản nháp; nội dung đã duyệt được bảo toàn."}
 
 
@@ -3883,29 +4030,43 @@ def get_course_changeset_diff(
         isinstance(change_request_id_or_course_id, int)
         or str(change_request_id_or_course_id).isdigit()
     ):
-        req = sess.get(CourseChangeRequest, int(change_request_id_or_course_id))
-        if req:
-            course = sess.get(Course, req.course_id)
+        candidate_req = sess.get(CourseChangeRequest, int(change_request_id_or_course_id))
+        if candidate_req is not None:
+            if candidate_req.status in ("DRAFT", "PENDING"):
+                req = candidate_req
+                course = sess.get(Course, req.course_id)
+            else:
+                candidate_course = sess.get(Course, int(change_request_id_or_course_id))
+                if candidate_course is not None:
+                    active_cr = active_changeset(candidate_course.id, sess)
+                    if active_cr is not None:
+                        req = active_cr
+                        course = candidate_course
+                if req is None:
+                    req = candidate_req
+                    course = sess.get(Course, req.course_id)
 
-    if req is None:
+    if req is None or course is None:
         course = _resolve_course(change_request_id_or_course_id, session=sess)
         if course:
-            req = (
-                sess.query(CourseChangeRequest)
-                .filter(
-                    CourseChangeRequest.course_id == course.id,
-                    CourseChangeRequest.target_type == "COURSE",
-                    CourseChangeRequest.status.in_(["DRAFT", "PENDING", "REJECTED"]),
-                    sa.or_(
-                        CourseChangeRequest.change_type == "COURSE_VERSION_CHANGESET",
-                        CourseChangeRequest.proposed_payload_json.like(
-                            '%"action": "COURSE_VERSION_CHANGESET"%'
+            req = active_changeset(course.id, sess)
+            if req is None:
+                req = (
+                    sess.query(CourseChangeRequest)
+                    .filter(
+                        CourseChangeRequest.course_id == course.id,
+                        CourseChangeRequest.target_type == "COURSE",
+                        CourseChangeRequest.status.in_(["DRAFT", "PENDING", "REJECTED"]),
+                        sa.or_(
+                            CourseChangeRequest.change_type == "COURSE_VERSION_CHANGESET",
+                            CourseChangeRequest.proposed_payload_json.like(
+                                '%"action": "COURSE_VERSION_CHANGESET"%'
+                            ),
                         ),
-                    ),
+                    )
+                    .order_by(CourseChangeRequest.id.desc())
+                    .first()
                 )
-                .order_by(CourseChangeRequest.id.desc())
-                .first()
-            )
 
     if course is None:
         raise ResourceNotFoundError("Khóa học hoặc yêu cầu thay đổi không tồn tại.")
@@ -4275,12 +4436,49 @@ def get_course_changeset_diff(
 
     proposed_curriculum.sort(key=lambda x: x.get("position", 0))
 
-    # Build Deep 5-Category Changeset Diff
-    curriculum_structure = []
-    content_blocks = []
-    interactive_quizzes = []
+    # =========================================================================
+    # 7 STANDARDIZED ACADEMIC DIVISIONS DIFF EXTRACTION
+    # =========================================================================
 
-    def _parse_quiz_list(md: str) -> list[dict[str, Any]]:
+    def _extract_video_urls(md: str | None) -> list[str]:
+        urls = []
+        if not md:
+            return urls
+        for match in re.finditer(r"<!--\s*video_url:\s*(\S+?)\s*-->", md):
+            urls.append(match.group(1).strip())
+        match_list = re.search(r"<!--\s*video_urls:\s*(\[.*?\])\s*-->", md, re.DOTALL)
+        if match_list:
+            try:
+                parsed = json.loads(match_list.group(1))
+                if isinstance(parsed, list):
+                    urls.extend([str(u).strip() for u in parsed if u])
+            except Exception:
+                pass
+        return urls
+
+    def _extract_meta_tags(desc: str | None) -> tuple[str, str | None, dict[str, Any] | None]:
+        if not desc:
+            return "", None, None
+        clean = desc
+        trailer_url = None
+        contact_info = None
+
+        m_tr = re.search(r"<!--\s*trailer_url:\s*(.*?)\s*-->", clean, re.DOTALL)
+        if m_tr:
+            trailer_url = m_tr.group(1).strip()
+            clean = re.sub(r"<!--\s*trailer_url:\s*.*?\s*-->\n*", "", clean, flags=re.DOTALL)
+
+        m_ci = re.search(r"<!--\s*contact_info:\s*(\{.*?\})\s*-->", clean, re.DOTALL)
+        if m_ci:
+            try:
+                contact_info = json.loads(m_ci.group(1))
+            except Exception:
+                contact_info = None
+            clean = re.sub(r"<!--\s*contact_info:\s*\{.*?\}\s*-->\n*", "", clean, flags=re.DOTALL)
+
+        return clean.strip(), trailer_url, contact_info
+
+    def _parse_quiz_list(md: str | None) -> list[dict[str, Any]]:
         m = re.search(r"<!--\s*mini_quiz:\s*(.+?)\s*-->", md or "", re.DOTALL)
         if m:
             try:
@@ -4290,7 +4488,13 @@ def get_course_changeset_diff(
                 return []
         return []
 
-    # 0. Structure: Learning Unit operations (Chapters)
+    curriculum_structure = []
+    content_blocks = []
+    interactive_quizzes = []
+
+    # Division 1: Cấu trúc Đề cương & Vị trí Bài học
+    # -------------------------------------------------------------------------
+    # 1.1 Chapter / Learning Unit operations (Strictly single-pass, no duplicate loops)
     for op_val in (p_data.get("operations") or {}).values():
         if not isinstance(op_val, dict):
             continue
@@ -4300,7 +4504,11 @@ def get_course_changeset_diff(
             unit_title = op_val.get("title") or "Chương học"
             if uid and not op_val.get("title"):
                 try:
-                    u_obj = sess.query(LearningUnit).filter(LearningUnit.public_id == uuid.UUID(str(uid))).first()
+                    u_obj = (
+                        sess.query(LearningUnit)
+                        .filter(LearningUnit.public_id == uuid.UUID(str(uid)))
+                        .first()
+                    )
                     if u_obj:
                         unit_title = u_obj.title
                 except Exception:
@@ -4310,6 +4518,7 @@ def get_course_changeset_diff(
                     "change_type": "REMOVED",
                     "title": f"Chương: {unit_title}",
                     "description": f"Xóa toàn bộ chương '{unit_title}'",
+                    "unit_id": str(uid or ""),
                 }
             )
         elif act == "CREATE_LEARNING_UNIT":
@@ -4319,6 +4528,7 @@ def get_course_changeset_diff(
                     "change_type": "ADDED",
                     "title": f"Chương: {u_title}",
                     "description": f"Thêm chương mục mới: {u_title}",
+                    "unit_id": str(op_val.get("unit_id") or ""),
                 }
             )
         elif act == "UPDATE_LEARNING_UNIT":
@@ -4328,10 +4538,11 @@ def get_course_changeset_diff(
                     "change_type": "MODIFIED",
                     "title": f"Chương: {u_title}",
                     "description": f"Đổi tên chương mục thành '{u_title}'",
+                    "unit_id": str(op_val.get("unit_id") or ""),
                 }
             )
 
-    # 1. Structure: Added lessons
+    # 1.2 Added lessons
     for item in added_lessons:
         curriculum_structure.append(
             {
@@ -4344,7 +4555,7 @@ def get_course_changeset_diff(
             }
         )
 
-    # 2. Structure: Deleted lessons
+    # 1.3 Deleted lessons
     for item in deleted_lessons:
         curriculum_structure.append(
             {
@@ -4355,7 +4566,8 @@ def get_course_changeset_diff(
             }
         )
 
-    # 3. Structure, Content & Quizzes from Modified lessons
+    # 1.4 Modified lessons: check unit move, reorder, title rename
+    processed_orig_ids = set()
     for m_item in modified_lessons:
         orig = None
         target_id = m_item.get("target_id")
@@ -4376,9 +4588,15 @@ def get_course_changeset_diff(
         lid = str(orig.public_id) if orig else str(m_item.get("lesson_id") or "")
 
         if orig:
+            processed_orig_ids.add(orig.id)
             orig_unit_title = orig.learning_unit.title if orig.learning_unit else "Chưa gán"
             new_unit_id = m_item.get("learning_unit_id")
             new_unit_title = m_item.get("unit_title")
+            if new_unit_id and not new_unit_title:
+                u_res = _resolve_learning_unit(new_unit_id, session=sess)
+                if u_res:
+                    new_unit_title = u_res.title
+
             if (
                 new_unit_id
                 and str(new_unit_id) != str(orig.learning_unit_id)
@@ -4395,8 +4613,9 @@ def get_course_changeset_diff(
                         "description": f"Chuyển từ '{orig_unit_title}' sang '{new_unit_title or 'Chương mới'}'",
                     }
                 )
+
             old_pos = orig.position
-            new_pos = m_item.get("position")
+            new_pos = pos_map.get(lid) or pos_map.get(orig.id) or m_item.get("position")
             if new_pos and new_pos != old_pos:
                 curriculum_structure.append(
                     {
@@ -4408,6 +4627,7 @@ def get_course_changeset_diff(
                         "description": f"Đổi thứ tự từ #{old_pos} sang #{new_pos}",
                     }
                 )
+
             if (m_item.get("title") or "").strip() != (orig.title or "").strip():
                 curriculum_structure.append(
                     {
@@ -4419,6 +4639,7 @@ def get_course_changeset_diff(
                     }
                 )
 
+            # Division 2: Lesson Content & Media
             orig_content = (orig.markdown_content or "").strip()
             new_content = (m_item.get("markdown_content") or "").strip()
             if orig_content != new_content:
@@ -4433,6 +4654,22 @@ def get_course_changeset_diff(
                         "description": f"Cập nhật nội dung văn bản ({len(orig_content)} -> {len(new_content)} ký tự)",
                     }
                 )
+
+            orig_vids = _extract_video_urls(orig.markdown_content)
+            new_vids = _extract_video_urls(m_item.get("markdown_content"))
+            if orig_vids != new_vids:
+                content_blocks.append(
+                    {
+                        "change_type": "MODIFIED" if orig_vids else "ADDED",
+                        "lesson_title": title,
+                        "lesson_id": lid,
+                        "field": "video",
+                        "old_value": ", ".join(orig_vids) if orig_vids else "(Chưa có)",
+                        "new_value": ", ".join(new_vids) if new_vids else "(Đã xóa)",
+                        "description": f"Cập nhật video bài giảng: {', '.join(new_vids) or '(Xóa video)'}",
+                    }
+                )
+
             orig_sum = (orig.summary or "").strip()
             new_sum = (m_item.get("summary") or "").strip()
             if orig_sum != new_sum:
@@ -4448,6 +4685,7 @@ def get_course_changeset_diff(
                     }
                 )
 
+            # Division 3: Interactive Quizzes for modified lessons
             old_qs = _parse_quiz_list(orig.markdown_content)
             new_qs = _parse_quiz_list(m_item.get("markdown_content") or "")
 
@@ -4503,23 +4741,60 @@ def get_course_changeset_diff(
                 }
             )
 
-    # If no specific structural changes were appended for modified lessons, record modification
-    if not curriculum_structure and modified_lessons:
-        for m_item in modified_lessons:
+    # 1.5 Capture reorders from reorder_plan / pos_map for lessons not in modified_lessons
+    for les in live_lessons:
+        lid_str = str(les.public_id)
+        if lid_str in del_set or les.id in del_set or les.id in processed_orig_ids:
+            continue
+        new_pos = pos_map.get(lid_str) or pos_map.get(les.id)
+        if new_pos and new_pos != les.position:
             curriculum_structure.append(
                 {
-                    "change_type": "MODIFIED",
-                    "title": m_item.get("title") or "Bài giảng",
-                    "lesson_id": str(m_item.get("lesson_id") or ""),
-                    "description": f"Cập nhật bài giảng '{m_item.get('title', 'Bài giảng')}'",
+                    "change_type": "REORDERED",
+                    "title": les.title,
+                    "lesson_id": lid_str,
+                    "old_position": les.position,
+                    "new_position": new_pos,
+                    "description": f"Đổi thứ tự từ #{les.position} sang #{new_pos}",
                 }
             )
 
-    # Reviewer assessments come from the sealed submission; editable drafts use current authored rows.
+    # 1.6 Division 3: Interactive quizzes from newly added lessons
+    for a_item in added_lessons:
+        add_qs = _parse_quiz_list(a_item.get("markdown_content") or "")
+        a_title = a_item.get("title") or "Bài giảng mới"
+        a_id = a_item.get("temp_id") or ""
+        for nq in add_qs:
+            q_text = nq.get("question") or nq.get("prompt") or ""
+            interactive_quizzes.append(
+                {
+                    "change_type": "ADDED",
+                    "lesson_title": a_title,
+                    "lesson_id": a_id,
+                    "question": q_text,
+                    "type": nq.get("type") or nq.get("q_type") or "MULTIPLE_CHOICE",
+                    "description": f"Thêm câu hỏi ({nq.get('type') or 'Trắc nghiệm'}): {q_text[:70]}",
+                }
+            )
+        add_vids = _extract_video_urls(a_item.get("markdown_content"))
+        if add_vids:
+            content_blocks.append(
+                {
+                    "change_type": "ADDED",
+                    "lesson_title": a_title,
+                    "lesson_id": a_id,
+                    "field": "video",
+                    "new_value": ", ".join(add_vids),
+                    "description": f"Thêm video bài giảng: {', '.join(add_vids)}",
+                }
+            )
+
+    # Division 4: Assessments & Question Bank
+    # -------------------------------------------------------------------------
     from pwd301.models.assessment import Assessment
     from pwd301.models.course import CourseCompletionRule
     from pwd301.services.course_assessment_workflow import assessment_snapshot
-    from pwd301.services.course_workflow_service import cover_review_fields, review_version
+    from pwd301.services.course_workflow_service import cover_review_fields, cover_url, review_version
 
     sealed_assessments = p_data.get("submitted_snapshot", {}).get("assessments")
     if sealed_assessments is None:
@@ -4540,6 +4815,7 @@ def get_course_changeset_diff(
     assessments_list = []
     for public_id, snapshot in sealed_assessments.items():
         fields = snapshot["fields"]
+        is_mod = bool(fields.get("previous_assessment_id"))
         assessments_list.append(
             {
                 "assessment_id": public_id,
@@ -4548,46 +4824,31 @@ def get_course_changeset_diff(
                 "status": fields["status"],
                 "time_limit_minutes": fields["time_limit_minutes"],
                 "total_points": sum(float(item["points"]) for item in snapshot["assignments"]),
-                "change_type": "MODIFIED" if fields.get("previous_assessment_id") else "ADDED",
+                "change_type": "MODIFIED" if is_mod else "ADDED",
                 "snapshot": snapshot,
-                "description": f"Cập nhật bài khảo thí '{fields['title']}'",
+                "description": f"{'Cập nhật' if is_mod else 'Thêm'} bài khảo thí '{fields['title']}'",
             }
         )
-    baseline = p_data.get("baseline_snapshot") or {}
-    current_reqs: dict[str, Any] = {}
-    raw_reqs = baseline.get("course_metadata", {}).get(
-        "completion_requirements", course.completion_requirements
-    )
-    if raw_reqs:
-        try:
-            current_reqs = json.loads(raw_reqs) if isinstance(raw_reqs, str) else dict(raw_reqs)
-        except (TypeError, ValueError):
-            current_reqs = {}
-    rule = sess.query(CourseCompletionRule).filter_by(course_id=course.id).first()
-    current_reqs.update(
-        baseline.get("completion_rules")
-        or {
-            "minimum_progress_percent": float(rule.minimum_progress_percent)
-            if rule and rule.minimum_progress_percent is not None
-            else None,
-            "require_all_required_lessons": bool(rule.require_all_required_lessons)
-            if rule
-            else True,
-            "require_required_assessments": bool(rule.require_required_assessments)
-            if rule
-            else True,
-        }
-    )
-    meta_diff = p_data.get("course_metadata") or {}
-    covers = cover_review_fields(course, p_data, sess)
-    baseline_cover = baseline.get("course_metadata", {}).get(
-        "thumbnail_file_asset_id", course.thumbnail_file_asset_id
-    )
-    if baseline:
-        from pwd301.services.course_workflow_service import cover_url
 
-        covers["current_cover_url"] = cover_url(course, baseline_cover, sess)
-    # Question bank changes (from submitted snapshot, operations, or draft question rows)
+    # Check for deleted assessments in operations
+    for op_val in (p_data.get("operations") or {}).values():
+        if isinstance(op_val, dict) and op_val.get("action") == "DELETE_ASSESSMENT":
+            aid = op_val.get("assessment_id")
+            a_title = op_val.get("title") or "Bài khảo thí"
+            assessments_list.append(
+                {
+                    "assessment_id": str(aid or ""),
+                    "title": a_title,
+                    "assessment_type": op_val.get("assessment_type", "QUIZ"),
+                    "status": "TRASH",
+                    "time_limit_minutes": None,
+                    "total_points": 0,
+                    "change_type": "REMOVED",
+                    "description": f"Xóa bài khảo thí '{a_title}'",
+                }
+            )
+
+    # Question bank changes
     from pwd301.models.question_bank import Question
     from pwd301.services.course_question_workflow import question_snapshot
 
@@ -4618,7 +4879,7 @@ def get_course_changeset_diff(
         q_ops = [
             op
             for op in (p_data.get("operations") or {}).values()
-            if op.get("action") == "QUESTION_REVISION"
+            if isinstance(op, dict) and op.get("action") == "QUESTION_REVISION"
         ]
         if q_ops:
             for op in q_ops:
@@ -4669,76 +4930,103 @@ def get_course_changeset_diff(
                     }
                 )
 
-    # Standalone file changes
-    from pwd301.models.file_import import FileAsset
-
+    # Division 5: Standalone Files
+    # -------------------------------------------------------------------------
     file_changes = []
-    raw_files = (
+    raw_files = list(
         p_data.get("submitted_snapshot", {}).get("new_file_assets")
         if p_data.get("submitted_snapshot", {}).get("new_file_assets") is not None
         else (p_data.get("new_file_assets") or p_data.get("uploaded_file_assets") or [])
     )
+    if req is not None:
+        cr_files = (
+            sess.query(FileAsset)
+            .filter(
+                FileAsset.course_id == course.id,
+                FileAsset.asset_type == "RESOURCE",
+                FileAsset.deleted_at.is_(None),
+                FileAsset.created_at >= req.created_at,
+            )
+            .all()
+        )
+        for cf in cr_files:
+            cf_id_str = str(cf.public_id)
+            if cf_id_str not in raw_files:
+                raw_files.append(cf_id_str)
+
     for f_id in raw_files:
         try:
             f_pub = uuid.UUID(str(f_id))
             fa = sess.query(FileAsset).filter_by(public_id=f_pub).first()
             if fa and fa.deleted_at is None:
-                size_bytes = fa.size_bytes if hasattr(fa, "size_bytes") else 0
+                fname = getattr(fa, "display_name", None) or getattr(fa, "file_name", "Tài liệu đính kèm")
+                size_bytes = getattr(fa, "size_bytes", 0)
                 size_str = f"{size_bytes} bytes" if size_bytes else "0 bytes"
                 file_changes.append(
                     {
                         "change_type": "ADDED",
                         "asset_id": str(fa.public_id),
-                        "file_name": fa.file_name,
+                        "file_name": fname,
                         "file_size_bytes": size_bytes,
-                        "mime_type": fa.mime_type
-                        if hasattr(fa, "mime_type")
-                        else "application/octet-stream",
-                        "scan_status": fa.virus_scan_status
-                        if hasattr(fa, "virus_scan_status")
-                        else "CLEAN",
-                        "description": f"Thêm tệp tài liệu: {fa.file_name} ({size_str})",
+                        "mime_type": getattr(fa, "mime_type", "application/pdf"),
+                        "scan_status": getattr(fa, "virus_scan_status", "CLEAN"),
+                        "description": f"Thêm tệp tài liệu: {fname} ({size_str})",
                     }
                 )
         except Exception:
             pass
 
-    # Prerequisite changes
+    # Division 6: Prerequisites
+    # -------------------------------------------------------------------------
+    baseline = p_data.get("baseline_snapshot") or {}
     prerequisite_changes = []
     raw_prereq_changes = p_data.get("prerequisites") or {}
-    for add_id in raw_prereq_changes.get("add") or []:
+    for add_item in raw_prereq_changes.get("add") or []:
         try:
-            target_c = _resolve_course(add_id, session=sess)
-            if target_c:
-                prerequisite_changes.append(
-                    {
-                        "change_type": "ADDED",
-                        "course_id": str(target_c.public_id),
-                        "course_code": target_c.course_code,
-                        "title": target_c.title,
-                        "description": f"Thêm môn tiên quyết: [{target_c.course_code}] {target_c.title}",
-                    }
-                )
+            target_id = add_item.get("id") or add_item.get("course_id") or add_item.get("course_code") if isinstance(add_item, dict) else add_item
+            target_c = _resolve_course(target_id, session=sess) if target_id else None
+            code = target_c.course_code if target_c else (add_item.get("course_code") if isinstance(add_item, dict) else str(add_item))
+            c_title = target_c.title if target_c else (add_item.get("title") if isinstance(add_item, dict) else "Môn học")
+            cid_str = str(target_c.public_id) if target_c else str(add_item.get("course_id", "") if isinstance(add_item, dict) else add_item)
+            prerequisite_changes.append(
+                {
+                    "change_type": "ADDED",
+                    "course_id": cid_str,
+                    "course_code": code,
+                    "title": c_title,
+                    "description": f"Thêm môn tiên quyết: [{code}] {c_title}",
+                }
+            )
         except Exception:
             pass
-    for rem_id in raw_prereq_changes.get("remove") or []:
+    for rem_item in raw_prereq_changes.get("remove") or []:
         try:
-            target_c = _resolve_course(rem_id, session=sess)
-            if target_c:
-                prerequisite_changes.append(
-                    {
-                        "change_type": "REMOVED",
-                        "course_id": str(target_c.public_id),
-                        "course_code": target_c.course_code,
-                        "title": target_c.title,
-                        "description": f"Xóa môn tiên quyết: [{target_c.course_code}] {target_c.title}",
-                    }
-                )
+            target_id = rem_item.get("id") or rem_item.get("course_id") or rem_item.get("course_code") if isinstance(rem_item, dict) else rem_item
+            target_c = _resolve_course(target_id, session=sess) if target_id else None
+            code = target_c.course_code if target_c else (rem_item.get("course_code") if isinstance(rem_item, dict) else str(rem_item))
+            c_title = target_c.title if target_c else (rem_item.get("title") if isinstance(rem_item, dict) else "Môn học")
+            cid_str = str(target_c.public_id) if target_c else str(rem_item.get("course_id", "") if isinstance(rem_item, dict) else rem_item)
+            prerequisite_changes.append(
+                {
+                    "change_type": "REMOVED",
+                    "course_id": cid_str,
+                    "course_code": code,
+                    "title": c_title,
+                    "description": f"Xóa môn tiên quyết: [{code}] {c_title}",
+                }
+            )
         except Exception:
             pass
 
     current_prereqs_list = []
-    for cur_id in baseline.get("prerequisites", []):
+    prereq_ids = baseline.get("prerequisites")
+    if prereq_ids is None:
+        from pwd301.models.course import CoursePrerequisite
+
+        links = sess.query(CoursePrerequisite).filter_by(course_id=course.id).all()
+        prereq_ids = [link.prerequisite_course_id for link in links]
+
+    for cur_id in prereq_ids:
         try:
             target_c = _resolve_course(cur_id, session=sess)
             if target_c:
@@ -4750,13 +5038,19 @@ def get_course_changeset_diff(
                     }
                 )
             else:
-                current_prereqs_list.append({"course_id": str(cur_id)})
+                current_prereqs_list.append(
+                    {"course_id": str(cur_id), "course_code": "MÃ MÔN", "title": ""}
+                )
         except Exception:
-            current_prereqs_list.append({"course_id": str(cur_id)})
+            current_prereqs_list.append(
+                {"course_id": str(cur_id), "course_code": "MÃ MÔN", "title": ""}
+            )
 
-    # Metadata changes
+    # Division 7: Governance Rules & Metadata
+    # -------------------------------------------------------------------------
+    baseline_meta = baseline.get("course_metadata") or {}
     current_course_metadata = {
-        key: baseline.get("course_metadata", {}).get(key, getattr(course, key, None))
+        key: baseline_meta.get(key, getattr(course, key, None))
         for key in (
             "title",
             "description",
@@ -4767,54 +5061,243 @@ def get_course_changeset_diff(
             "difficulty",
             "capacity",
             "thumbnail_file_asset_id",
+            "trailer_url",
+            "contact_info",
         )
     }
+
+    meta_diff = p_data.get("course_metadata") or {}
     metadata_changes = []
-    for k, new_v in meta_diff.items():
+
+    # Clean description and meta tags extraction
+    old_clean_desc, old_trailer, old_contact = _extract_meta_tags(
+        current_course_metadata.get("description")
+    )
+    new_trailer = meta_diff.get("trailer_url")
+    new_contact = meta_diff.get("contact_info")
+    raw_new_desc = meta_diff.get("description")
+
+    if raw_new_desc is not None:
+        new_clean_desc, desc_trailer, desc_contact = _extract_meta_tags(raw_new_desc)
+        if new_trailer is None:
+            new_trailer = desc_trailer
+        if new_contact is None:
+            new_contact = desc_contact
+    else:
+        new_clean_desc = old_clean_desc
+        if new_trailer is None:
+            new_trailer = old_trailer
+        if new_contact is None:
+            new_contact = old_contact
+
+    if raw_new_desc is not None and old_clean_desc != new_clean_desc:
+        metadata_changes.append(
+            {
+                "field": "description",
+                "label": "Mô tả khóa học",
+                "old_value": old_clean_desc or "(Trống)",
+                "new_value": new_clean_desc or "(Trống)",
+                "description": f"Cập nhật mô tả khóa học ({len(old_clean_desc)} -> {len(new_clean_desc)} ký tự)",
+            }
+        )
+
+    if (
+        "trailer_url" in meta_diff or "<!-- trailer_url:" in (raw_new_desc or "")
+    ) and (old_trailer or "") != (new_trailer or ""):
+        metadata_changes.append(
+            {
+                "field": "trailer_url",
+                "label": "Video giới thiệu (Trailer URL)",
+                "old_value": old_trailer or "(Chưa có)",
+                "new_value": new_trailer or "(Đã xóa)",
+                "description": f"Cập nhật video trailer: {new_trailer or '(Xóa video)'}",
+            }
+        )
+
+    if (
+        "contact_info" in meta_diff or "<!-- contact_info:" in (raw_new_desc or "")
+    ) and old_contact != new_contact:
+        metadata_changes.append(
+            {
+                "field": "contact_info",
+                "label": "Thông tin liên hệ giảng viên",
+                "old_value": json.dumps(old_contact, ensure_ascii=False)
+                if old_contact
+                else "(Chưa có)",
+                "new_value": json.dumps(new_contact, ensure_ascii=False)
+                if new_contact
+                else "(Đã xóa)",
+                "description": "Cập nhật thông tin liên hệ giảng viên",
+            }
+        )
+
+    field_labels = {
+        "title": "Tiêu đề khóa học",
+        "category": "Danh mục",
+        "difficulty": "Cấp độ khó",
+        "capacity": "Sĩ số tối đa",
+        "learning_objectives": "Mục tiêu học tập (SLOs)",
+        "target_audience": "Đối tượng học viên",
+    }
+    for k in (
+        "title",
+        "category",
+        "difficulty",
+        "capacity",
+        "learning_objectives",
+        "target_audience",
+    ):
+        if k not in meta_diff:
+            continue
+        new_v = meta_diff[k]
         old_v = current_course_metadata.get(k)
-        if old_v != new_v:
+        is_diff = False
+        if k == "capacity":
+            try:
+                old_int = int(old_v) if old_v is not None else None
+                new_int = int(new_v) if new_v is not None else None
+                is_diff = old_int != new_int
+            except (ValueError, TypeError):
+                is_diff = old_v != new_v
+        else:
+            old_str = str(old_v or "").strip()
+            new_str = str(new_v or "").strip()
+            is_diff = old_str != new_str
+
+        if is_diff:
             metadata_changes.append(
                 {
                     "field": k,
-                    "old_value": old_v,
-                    "new_value": new_v,
-                    "description": f"Cập nhật {k}: '{old_v}' → '{new_v}'",
+                    "label": field_labels.get(k, k),
+                    "old_value": old_v if old_v is not None else "(Trống)",
+                    "new_value": new_v if new_v is not None else "(Trống)",
+                    "description": f"Cập nhật {field_labels.get(k, k)}: '{old_v}' → '{new_v}'",
                 }
             )
 
+    # Completion Rules Calculation & Zero False Positive Diff
+    current_reqs: dict[str, Any] = {}
+    raw_reqs = baseline_meta.get(
+        "completion_requirements", course.completion_requirements
+    )
+    if raw_reqs:
+        try:
+            current_reqs = json.loads(raw_reqs) if isinstance(raw_reqs, str) else dict(raw_reqs)
+        except (TypeError, ValueError):
+            current_reqs = {}
+    rule = sess.query(CourseCompletionRule).filter_by(course_id=course.id).first()
+    if "minimum_progress_percent" not in current_reqs:
+        if "completion_percent" in current_reqs:
+            current_reqs["minimum_progress_percent"] = current_reqs["completion_percent"]
+        else:
+            current_reqs["minimum_progress_percent"] = (
+                float(rule.minimum_progress_percent)
+                if rule and rule.minimum_progress_percent is not None
+                else None
+            )
+    if "require_all_required_lessons" not in current_reqs:
+        current_reqs["require_all_required_lessons"] = (
+            bool(rule.require_all_required_lessons) if rule else True
+        )
+    if "require_required_assessments" not in current_reqs:
+        current_reqs["require_required_assessments"] = (
+            bool(rule.require_required_assessments) if rule else True
+        )
+    if "minimum_grade_score" not in current_reqs and "min_gpa" in current_reqs:
+        current_reqs["minimum_grade_score"] = current_reqs["min_gpa"]
+
+    proposed_rules = dict(current_reqs)
+    raw_prop_rules = p_data.get("completion_rules") or {}
+    for r_k, r_v in raw_prop_rules.items():
+        if r_v is not None:
+            proposed_rules[r_k] = r_v
+    if "min_gpa" in proposed_rules and "minimum_grade_score" not in raw_prop_rules:
+        proposed_rules["minimum_grade_score"] = proposed_rules["min_gpa"]
+    if "completion_percent" in proposed_rules and "minimum_progress_percent" not in raw_prop_rules:
+        proposed_rules["minimum_progress_percent"] = proposed_rules["completion_percent"]
+
+    def _normalize_num(val: Any) -> float | None:
+        if val is None:
+            return None
+        try:
+            return float(val)
+        except (ValueError, TypeError):
+            return None
+
+    completion_rules_changed = False
+    for r_k in (
+        "minimum_grade_score",
+        "minimum_progress_percent",
+        "require_all_required_lessons",
+        "require_required_assessments",
+    ):
+        if (
+            r_k in raw_prop_rules
+            or (r_k == "minimum_grade_score" and "min_gpa" in raw_prop_rules)
+            or (r_k == "minimum_progress_percent" and "completion_percent" in raw_prop_rules)
+        ):
+            cur_v = current_reqs.get(r_k)
+            new_v = proposed_rules.get(r_k)
+            if r_k in ("minimum_grade_score", "minimum_progress_percent"):
+                if _normalize_num(cur_v) != _normalize_num(new_v):
+                    completion_rules_changed = True
+                    break
+            else:
+                if bool(cur_v) != bool(new_v):
+                    completion_rules_changed = True
+                    break
+
+    # Cover Image Calculation & Zero False Positive Diff
+    current_cover_id = baseline_meta.get(
+        "thumbnail_file_asset_id", course.thumbnail_file_asset_id
+    )
+    proposed_cover_id = (
+        meta_diff.get("thumbnail_file_asset_id")
+        if "thumbnail_file_asset_id" in meta_diff
+        else current_cover_id
+    )
+
+    cover_image_changed = False
+    if "thumbnail_file_asset_id" in meta_diff:
+        c_norm = str(current_cover_id) if current_cover_id is not None else None
+        p_norm = str(proposed_cover_id) if proposed_cover_id is not None else None
+        if c_norm != p_norm:
+            cover_image_changed = True
+
+    current_cover_url = cover_url(course, current_cover_id, sess)
+    proposed_cover_url = (
+        cover_url(course, proposed_cover_id, sess)
+        if cover_image_changed
+        else current_cover_url
+    )
+
+    is_gov_changed = bool(
+        completion_rules_changed
+        or cover_image_changed
+        or len(metadata_changes) > 0
+        or len(prerequisite_changes) > 0
+    )
+
     governance_rules = {
-        "is_changed": bool(
-            meta_diff
-            or p_data.get("completion_rules")
-            or p_data.get("prerequisites")
-            or prerequisite_changes
-            or covers.get("proposed_cover_url") != covers.get("current_cover_url")
-        ),
+        "is_changed": is_gov_changed,
+        "completion_rules_changed": completion_rules_changed,
+        "cover_image_changed": cover_image_changed,
         "current": current_reqs,
-        "proposed": {**current_reqs, **(p_data.get("completion_rules") or {})},
+        "proposed": proposed_rules,
         "current_prerequisites": current_prereqs_list,
         "proposed_prerequisite_changes": p_data.get("prerequisites") or {},
         "prerequisite_changes": prerequisite_changes,
-        "cover_image_url": covers["proposed_cover_url"],
-        **covers,
         "course_metadata": meta_diff,
         "current_course_metadata": current_course_metadata,
         "metadata_changes": metadata_changes,
+        "current_cover_url": current_cover_url,
     }
-    for operation in (p_data.get("operations") or {}).values():
-        if "LEARNING_UNIT" in operation.get("action", ""):
-            curriculum_structure.append(
-                {
-                    "change_type": "ADDED"
-                    if operation["action"].startswith("CREATE")
-                    else "REMOVED"
-                    if operation["action"].startswith("DELETE")
-                    else "MODIFIED",
-                    "title": operation.get("title") or "Chương bài học",
-                    "description": operation["action"],
-                    "unit_id": operation.get("unit_id"),
-                }
-            )
+    if cover_image_changed:
+        governance_rules["proposed_cover_url"] = (
+            cover_url(course, proposed_cover_id, sess) if proposed_cover_id else None
+        )
+        governance_rules["cover_image_url"] = governance_rules["proposed_cover_url"]
+
     total_changes_count = (
         len(curriculum_structure)
         + len(content_blocks)
@@ -4824,22 +5307,69 @@ def get_course_changeset_diff(
         + len(file_changes)
         + len(prerequisite_changes)
         + len(metadata_changes)
-        + (
-            1
-            if (
-                covers.get("proposed_cover_url") != covers.get("current_cover_url")
-                and covers.get("proposed_cover_url") is not None
-            )
-            else 0
-        )
-        + (1 if p_data.get("completion_rules") else 0)
+        + (1 if cover_image_changed else 0)
+        + (1 if completion_rules_changed else 0)
     )
+
+    academic_divisions = {
+        "1_curriculum_structure": {
+            "title": "Cấu trúc Đề cương & Vị trí Bài học",
+            "items": curriculum_structure,
+            "count": len(curriculum_structure),
+        },
+        "2_content_blocks": {
+            "title": "Nội dung Bài học & Đa phương tiện",
+            "items": content_blocks,
+            "count": len(content_blocks),
+        },
+        "3_interactive_quizzes": {
+            "title": "Câu hỏi Ôn tập Tương tác",
+            "items": interactive_quizzes,
+            "count": len(interactive_quizzes),
+        },
+        "4_assessments_and_questions": {
+            "title": "Bài kiểm tra & Ngân hàng câu hỏi",
+            "assessments": [a for a in assessments_list if a.get("change_type") != "UNCHANGED"],
+            "questions": question_changes,
+            "count": len([a for a in assessments_list if a.get("change_type") != "UNCHANGED"])
+            + len(question_changes),
+        },
+        "5_file_changes": {
+            "title": "Tài liệu & Tệp đính kèm",
+            "items": file_changes,
+            "count": len(file_changes),
+        },
+        "6_prerequisite_changes": {
+            "title": "Môn học Tiên quyết",
+            "items": prerequisite_changes,
+            "count": len(prerequisite_changes),
+        },
+        "7_governance_and_metadata": {
+            "title": "Quy chế Hoàn thành & Thông tin chung (Metadata)",
+            "governance_rules": governance_rules,
+            "metadata_changes": metadata_changes,
+            "completion_rules_changed": completion_rules_changed,
+            "cover_image_changed": cover_image_changed,
+            "count": len(metadata_changes)
+            + (1 if cover_image_changed else 0)
+            + (1 if completion_rules_changed else 0),
+        },
+    }
+
+    stats = p_data.get("changeset_stats") or {
+        "reordered_lessons_count": len(lessons_order),
+        "added_lessons_count": len(added_lessons),
+        "modified_lessons_count": len(modified_lessons),
+        "deleted_lessons_count": len(deleted_lessons),
+    }
 
     return {
         "change_request_id": req.id if req else None,
         "request_id": req.id if req else None,
         "review_version": review_version(req) if req else None,
-        **covers,
+        "current_cover_url": current_cover_url,
+        "proposed_cover_url": proposed_cover_url if cover_image_changed else None,
+        "cover_image_changed": cover_image_changed,
         "course_id": course.id,
         "course_public_id": str(course.public_id),
         "course_code": course.course_code,
@@ -4867,6 +5397,7 @@ def get_course_changeset_diff(
         "course_metadata": meta_diff,
         "current_course_metadata": current_course_metadata,
         "metadata_changes": metadata_changes,
+        "academic_divisions": academic_divisions,
         "total_changes_count": total_changes_count,
         "diff": {
             "reorder_plan": reorder_plan,
@@ -4875,6 +5406,7 @@ def get_course_changeset_diff(
             "deleted_lessons": deleted_lessons,
         },
     }
+
 
 
 def apply_course_version_changeset(actor, course_id, payload, session=None):

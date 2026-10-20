@@ -373,7 +373,7 @@ class TestFileUploadAndScanning:
     ) -> None:
         """When scanner errors out, file status is PENDING and a FILE_SCAN job is enqueued."""
 
-        def mock_scan_blob_error(path: Any) -> ScanVerdict:
+        def mock_scan_blob_error(path: Any, **kwargs: Any) -> ScanVerdict:
             return ScanVerdict(
                 engine_name="mock_scanner",
                 engine_version="1.0",
@@ -482,6 +482,12 @@ class TestFileDownloadAccess:
             headers={"Accept": "application/json"},
         )
         asset_id = up_resp.get_json()["asset_id"]
+
+        from pwd301.models.course import CourseChangeRequest
+        cr = db.session.query(CourseChangeRequest).filter_by(course_id=course.id).first()
+        if cr:
+            cr.status = "APPLIED"
+            db.session.commit()
 
         # Log in as enrolled student
         login_web_user(client, enrolled_student)

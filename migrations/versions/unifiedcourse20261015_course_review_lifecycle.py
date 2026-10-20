@@ -33,19 +33,30 @@ def upgrade():
             "ck_course_change_requests_3",
             "status IN ('DRAFT','PENDING','APPROVED','REJECTED','CANCELLED','APPLIED')",
         )
-    with op.batch_alter_table("learning_units") as batch:
-        batch.add_column(sa.Column("change_request_id", sa.BigInteger(), nullable=True))
-        batch.create_foreign_key("fk_learning_units_change_request_id", "course_change_requests", ["change_request_id"], ["id"])
+    insp = sa.inspect(connection)
+    lu_cols = [c["name"] for c in insp.get_columns("learning_units")]
+    if "change_request_id" not in lu_cols:
+        with op.batch_alter_table("learning_units") as batch:
+            batch.add_column(sa.Column("change_request_id", sa.BigInteger(), nullable=True))
+            batch.create_foreign_key("fk_learning_units_change_request_id", "course_change_requests", ["change_request_id"], ["id"])
+    
+    asm_cols = [c["name"] for c in insp.get_columns("assessments")]
     with op.batch_alter_table("assessments") as batch:
-        batch.add_column(sa.Column("change_request_id", sa.BigInteger(), nullable=True))
-        batch.add_column(sa.Column("previous_assessment_id", sa.BigInteger(), nullable=True))
-        batch.create_foreign_key("fk_assessments_change_request_id", "course_change_requests", ["change_request_id"], ["id"])
-        batch.create_foreign_key("fk_assessments_previous_assessment_id", "assessments", ["previous_assessment_id"], ["id"])
+        if "change_request_id" not in asm_cols:
+            batch.add_column(sa.Column("change_request_id", sa.BigInteger(), nullable=True))
+            batch.create_foreign_key("fk_assessments_change_request_id", "course_change_requests", ["change_request_id"], ["id"])
+        if "previous_assessment_id" not in asm_cols:
+            batch.add_column(sa.Column("previous_assessment_id", sa.BigInteger(), nullable=True))
+            batch.create_foreign_key("fk_assessments_previous_assessment_id", "assessments", ["previous_assessment_id"], ["id"])
+            
+    q_cols = [c["name"] for c in insp.get_columns("questions")]
     with op.batch_alter_table("questions") as batch:
-        batch.add_column(sa.Column("change_request_id", sa.BigInteger(), nullable=True))
-        batch.add_column(sa.Column("previous_question_id", sa.BigInteger(), nullable=True))
-        batch.create_foreign_key("fk_questions_change_request_id", "course_change_requests", ["change_request_id"], ["id"])
-        batch.create_foreign_key("fk_questions_previous_question_id", "questions", ["previous_question_id"], ["id"])
+        if "change_request_id" not in q_cols:
+            batch.add_column(sa.Column("change_request_id", sa.BigInteger(), nullable=True))
+            batch.create_foreign_key("fk_questions_change_request_id", "course_change_requests", ["change_request_id"], ["id"])
+        if "previous_question_id" not in q_cols:
+            batch.add_column(sa.Column("previous_question_id", sa.BigInteger(), nullable=True))
+            batch.create_foreign_key("fk_questions_previous_question_id", "questions", ["previous_question_id"], ["id"])
     op.create_index(
         "uq_course_changeset_active", "course_change_requests", ["course_id"], unique=True,
         mssql_where=sa.text("change_type='COURSE_VERSION_CHANGESET' AND status IN ('DRAFT','PENDING')"),

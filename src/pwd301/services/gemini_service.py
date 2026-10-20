@@ -891,7 +891,9 @@ class RealGeminiClient(GeminiClientBase):
         parts = content.get("parts", [])
         if not parts:
             raise AIError("Gemini returned response without content parts.")
-        return parts[0].get("text", "").strip()
+        # Concatenate all parts to prevent dropping subsequent chunks or reasoning blocks
+        full_text = "".join(p.get("text", "") for p in parts if isinstance(p, dict) and "text" in p)
+        return full_text.strip()
 
     def generate_text(self, prompt: str, system_instruction: str | None = None) -> str:
         payload: dict[str, Any] = {
@@ -1178,13 +1180,14 @@ class RealGeminiClient(GeminiClientBase):
             "gọi người dùng là 'bạn'.\n"
             "- TUYỆT ĐỐI KHÔNG tự nhận là 'AI của môn học PWD301' "
             "(PWD301 là mã đồ án/nền tảng, không phải môn học).\n"
-            "- Trả lời bằng tiếng Việt ngắn gọn, chuẩn xác kỹ thuật, "
-            "đi thẳng vào trọng tâm, súc tích và dễ hiểu."
+            "- Trả lời bằng tiếng Việt chuẩn xác kỹ thuật, sư phạm, mạch lạc và hoàn chỉnh.\n"
+            "- Cấu trúc câu trả lời bài bản: (1) Tóm tắt ngắn gọn trọng tâm, (2) Giải thích chi tiết các điểm then chốt, (3) Ví dụ minh họa thực tiễn.\n"
+            "- Tuyệt đối KHÔNG dừng lửng giữa chừng, luôn đảm bảo câu trả lời trọn vẹn và đầy đủ ý nghĩa."
         )
         payload["systemInstruction"] = {"parts": [{"text": system_instruction_text}]}
         payload["generationConfig"] = {
             "temperature": 0.3,
-            "maxOutputTokens": 1024,
+            "maxOutputTokens": 4096,
             "topP": 0.85,
         }
         try:

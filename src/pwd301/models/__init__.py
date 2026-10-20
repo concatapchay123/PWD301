@@ -21,6 +21,7 @@ from pwd301.models.assessment import (
     AssessmentSection,
 )
 from pwd301.models.attempt_regrade import (
+    AssessmentAppeal,
     AssessmentAttempt,
     AssessmentResult,
     AssessmentResultHistory,
@@ -143,6 +144,7 @@ __all__ = [
     "AssessmentBlueprintRule",
     "AssessmentQuestionPool",
     # Assessment Attempt & Regrading
+    "AssessmentAppeal",
     "AssessmentAttempt",
     "AttemptQuestion",
     "AttemptChoiceSnapshot",

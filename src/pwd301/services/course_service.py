@@ -563,6 +563,20 @@ def create_course(
         sess.rollback()
         raise
 
+    from pwd301.services.realtime_service import emit_domain_event
+
+    emit_domain_event(
+        "course:created",
+        {
+            "course_id": str(course.public_id),
+            "id": str(course.public_id),
+            "course_code": course.course_code,
+            "title": course.title,
+            "status": course.status,
+            "owner_instructor_id": course.owner_instructor_id,
+        },
+    )
+
     return course
 
 
@@ -647,6 +661,7 @@ def update_course(
         "description": course.description,
         "learning_objectives": course.learning_objectives,
         "target_audience": course.target_audience,
+        "course_code": course.course_code,
         "completion_requirements": course.completion_requirements,
         "category": course.category,
         "difficulty": course.difficulty,
@@ -840,6 +855,20 @@ def update_course(
             sess.rollback()
             raise
 
+    from pwd301.services.realtime_service import emit_domain_event
+
+    emit_domain_event(
+        "course:updated",
+        {
+            "course_id": str(course.public_id),
+            "id": str(course.public_id),
+            "course_code": course.course_code,
+            "title": course.title,
+            "status": course.status,
+            "owner_instructor_id": course.owner_instructor_id,
+        },
+    )
+
     return course
 
 
@@ -861,6 +890,28 @@ def queue_course_metadata_review(
 
     # Whitelist & validate proposed metadata
     proposed: dict[str, Any] = {}
+    if "course_code" in data:
+        raw_code = data["course_code"]
+        if not raw_code or not isinstance(raw_code, str) or not raw_code.strip():
+            raise CourseValidationError("course_code cannot be empty.")
+        code = raw_code.strip()
+        if len(code) > 30:
+            raise CourseValidationError("course_code cannot exceed 30 characters.")
+        norm_code = code.upper()
+        if norm_code != course.course_code_normalized:
+            existing = (
+                sess.query(Course)
+                .filter(
+                    Course.course_code_normalized == norm_code,
+                    Course.id != course.id,
+                    Course.deleted_at.is_(None),
+                )
+                .first()
+            )
+            if existing is not None:
+                raise CourseAlreadyExistsError(f"A course with code '{code}' already exists.")
+        proposed["course_code"] = code
+
     if "title" in data:
         raw_title = data["title"]
         if not raw_title or not isinstance(raw_title, str) or not raw_title.strip():
@@ -1001,8 +1052,7 @@ def queue_course_metadata_review(
             metadata[key] = value
     payload["course_metadata"] = metadata
     write_payload(req, payload, sess)
-    if session is None:
-        sess.commit()
+    sess.commit()
     return req
 
 
@@ -1480,6 +1530,23 @@ def change_course_status(
             sess.rollback()
             raise
 
+    from pwd301.services.realtime_service import emit_domain_event
+
+    course_event_payload = {
+        "course_id": str(course.public_id),
+        "id": str(course.public_id),
+        "course_code": course.course_code,
+        "title": course.title,
+        "status": course.status,
+        "owner_instructor_id": course.owner_instructor_id,
+    }
+    if target_status == "PUBLISHED":
+        emit_domain_event("course:published", course_event_payload)
+    elif target_status == "TRASH":
+        emit_domain_event("course:trashed", course_event_payload)
+    else:
+        emit_domain_event("course:updated", course_event_payload)
+
     return course
 
 
@@ -1627,6 +1694,20 @@ def reassign_course_owner(
     except Exception:
         sess.rollback()
         raise
+
+    from pwd301.services.realtime_service import emit_domain_event
+
+    emit_domain_event(
+        "course:updated",
+        {
+            "course_id": str(course.public_id),
+            "id": str(course.public_id),
+            "course_code": course.course_code,
+            "title": course.title,
+            "status": course.status,
+            "owner_instructor_id": course.owner_instructor_id,
+        },
+    )
 
     return course
 
@@ -1790,7 +1871,37 @@ def swap_course_owners(
         sess.rollback()
         raise
 
+    from pwd301.services.realtime_service import emit_domain_event
+
+    emit_domain_event(
+        "course:updated",
+        {
+            "course_id": str(course.public_id),
+            "id": str(course.public_id),
+            "course_code": course.course_code,
+            "title": course.title,
+            "status": course.status,
+            "owner_instructor_id": course.owner_instructor_id,
+        },
+    )
+
     return course_a, course_b
+
+
+def publish_course(
+    actor: User,
+    course_id: Course | int | uuid.UUID | str,
+    reason: str | None = None,
+    session: Session | scoped_session[Any] | None = None,
+) -> Course:
+    """Publish a course by transitioning it to PUBLISHED status."""
+    return change_course_status(
+        actor=actor,
+        course_id=course_id,
+        new_status="PUBLISHED",
+        reason=reason,
+        session=session,
+    )
 
 
 def trash_course(
@@ -1822,6 +1933,83 @@ def trash_course(
         reason=reason,
         session=session,
     )
+
+
+def hard_delete_draft_course(
+    actor: User,
+    course_id: Course | int | uuid.UUID | str,
+    session: Session | scoped_session[Any] | None = None,
+) -> bool:
+    """Hard-delete an unpublished DRAFT course owned by the instructor.
+
+    Invariants:
+    - Only courses in status 'DRAFT' that have never been published (published_at is None)
+      can be hard-deleted.
+    - Cascades through unpublished child entities (lessons, units, completion rules, change requests).
+    - Preserves safety: raises ForbiddenError if published or not owner/admin.
+    """
+    sess = session if session is not None else db.session
+    course = require_course_manager(actor, course_id, session=sess)
+
+    if course.published_at is not None or course.status != "DRAFT":
+        raise ForbiddenError("Chỉ có thể xóa vĩnh viễn khóa học nháp chưa từng xuất bản.")
+
+    cid = course.id
+
+    from pwd301.models.assessment import (
+        Assessment,
+        AssessmentBlueprint,
+        AssessmentQuestionAssignment,
+        AssessmentQuestionPool,
+        AssessmentSection,
+    )
+    from pwd301.models.course import (
+        CourseChangeRequest,
+        CourseCompletionRule,
+        CourseCompletionSummary,
+        CoursePrerequisite,
+        LearningUnit,
+        Lesson,
+        LessonProgress,
+        LessonProgressReceipt,
+        LessonResource,
+    )
+    from pwd301.models.file_import import FileAsset
+
+    # Delete draft assessments
+    assessments = sess.query(Assessment).filter(Assessment.course_id == cid).all()
+    for a in assessments:
+        sess.query(AssessmentQuestionAssignment).filter(AssessmentQuestionAssignment.assessment_id == a.id).delete(synchronize_session=False)
+        sess.query(AssessmentSection).filter(AssessmentSection.assessment_id == a.id).delete(synchronize_session=False)
+        sess.query(AssessmentQuestionPool).filter(AssessmentQuestionPool.assessment_id == a.id).delete(synchronize_session=False)
+        sess.query(AssessmentBlueprint).filter(AssessmentBlueprint.assessment_id == a.id).delete(synchronize_session=False)
+        sess.delete(a)
+
+    # Delete lessons and resources
+    lessons = sess.query(Lesson).filter(Lesson.course_id == cid).all()
+    for l in lessons:
+        sess.query(LessonResource).filter(LessonResource.lesson_id == l.id).delete(synchronize_session=False)
+        sess.query(LessonProgressReceipt).filter(LessonProgressReceipt.lesson_id == l.id).delete(synchronize_session=False)
+        sess.query(LessonProgress).filter(LessonProgress.lesson_id == l.id).delete(synchronize_session=False)
+        sess.delete(l)
+
+    # Delete learning units
+    sess.query(LearningUnit).filter(LearningUnit.course_id == cid).delete(synchronize_session=False)
+
+    # Delete change requests & completion rules
+    sess.query(CourseChangeRequest).filter(CourseChangeRequest.course_id == cid).delete(synchronize_session=False)
+    sess.query(CourseCompletionRule).filter(CourseCompletionRule.course_id == cid).delete(synchronize_session=False)
+    sess.query(CourseCompletionSummary).filter(CourseCompletionSummary.course_id == cid).delete(synchronize_session=False)
+    sess.query(CoursePrerequisite).filter(sa.or_(CoursePrerequisite.course_id == cid, CoursePrerequisite.prerequisite_course_id == cid)).delete(synchronize_session=False)
+
+    # Delete file assets associated with this course
+    sess.query(FileAsset).filter(FileAsset.course_id == cid).delete(synchronize_session=False)
+
+    # Delete the course itself
+    sess.delete(course)
+    sess.commit()
+    return True
+
 
 
 def list_courses(

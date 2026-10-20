@@ -3,7 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>PWD301 LMS - Học Tập Và Bài Thi</title>
+  <title>PPTQ LMS - Học Tập Và Bài Thi</title>
+  <link rel="icon" type="image/x-icon" href="/frontend/favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="/frontend/assets/img/favicon.png">
+  <link rel="apple-touch-icon" href="/frontend/assets/img/pptq_icon.png">
 
   <!-- Pre-paint Theme Restoration to prevent white flash (FOUC) -->
   <script>
@@ -490,8 +493,9 @@
       
       <!-- Left: Brand -->
       <div class="flex items-center shrink-0 z-10">
-        <a href="#/" class="flex items-center shrink-0 group py-1">
-          <span class="font-bold text-base tracking-tight text-[#222120] dark:text-[#EDEDEB] group-hover:opacity-80 transition-opacity">PPTQ LMS</span>
+        <a href="#/" class="flex items-center gap-2.5 shrink-0 group py-1" title="PPTQ - Nền tảng Đào tạo và Khảo thí Trực tuyến">
+          <img src="/frontend/assets/img/pptq_icon.png" alt="PPTQ Logo" class="h-8 w-8 object-contain rounded-lg shadow-2xs group-hover:scale-105 transition-transform" />
+          <span class="font-black text-lg tracking-tight text-[#222120] dark:text-[#EDEDEB] group-hover:opacity-85 transition-opacity">PPTQ</span>
         </a>
       </div>
 
@@ -641,7 +645,7 @@
   <!-- Global Floating Circular AI Tutor Widget (Warm Editorial Style) -->
   <div id="floating-ai-container" class="fixed bottom-5 right-5 z-40 flex flex-col items-end pointer-events-none">
     <!-- Flyout Chat Drawer -->
-    <div id="floating-ai-drawer" class="hidden pointer-events-auto mb-3 w-96 max-w-[calc(100vw-2.5rem)] h-[520px] bg-[#FAF9F5] dark:bg-[#202020] rounded-2xl shadow-elevated border border-[#E8E6DF] dark:border-[#2E2D2B] flex flex-col overflow-hidden">
+    <div id="floating-ai-drawer" class="hidden pointer-events-auto w-96 max-w-[calc(100vw-2.5rem)] h-[520px] max-h-[calc(100vh-2.5rem)] bg-[#FAF9F5] dark:bg-[#202020] rounded-2xl shadow-elevated border border-[#E8E6DF] dark:border-[#2E2D2B] flex flex-col overflow-hidden">
       <!-- Drawer Header -->
       <div class="px-4 py-3 bg-[#F4F1EA] dark:bg-[#262524] border-b border-[#E8E6DF] dark:border-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] flex items-center justify-between shrink-0">
         <div class="flex items-center gap-2.5">
@@ -656,11 +660,11 @@
             </div>
           </div>
         </div>
-        <div class="flex items-center gap-1">
-          <button type="button" id="floating-ai-reset-btn" title="Làm mới cuộc trò chuyện" class="p-1 rounded-md text-[#8F8E8A] hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-[#E8E6DF] dark:hover:bg-[#2E2D2B] transition-colors cursor-pointer">
+        <div class="flex items-center gap-1 shrink-0 z-10">
+          <button type="button" id="floating-ai-reset-btn" title="Làm mới cuộc trò chuyện" class="w-7 h-7 flex items-center justify-center rounded-md text-[#8F8E8A] hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-[#E8E6DF] dark:hover:bg-[#2E2D2B] transition-colors cursor-pointer">
             <span class="material-symbols-outlined text-[16px]">refresh</span>
           </button>
-          <button type="button" id="floating-ai-close-btn" title="Đóng cửa sổ" class="p-1 rounded-md text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#E8E6DF] dark:hover:bg-[#2E2D2B] transition-colors cursor-pointer">
+          <button type="button" id="floating-ai-close-btn" title="Đóng cửa sổ" class="w-7 h-7 flex items-center justify-center rounded-md text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#E8E6DF] dark:hover:bg-[#2E2D2B] transition-colors cursor-pointer">
             <span class="material-symbols-outlined text-[16px]">close</span>
           </button>
         </div>
@@ -718,16 +722,17 @@
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
   <!-- VideoArmor for Forensic Dynamic Watermarking & Anti-Tamper Armor -->
-  <script src="/frontend/assets/js/components/video-armor.js?v=3.2.5"></script>
-  <script src="/frontend/assets/js/ui.js?v=3.2.5"></script>
-  <script src="/frontend/assets/js/api.js?v=3.2.5"></script>
-  <script src="/frontend/assets/js/exam-store.js?v=3.2.5"></script>
-  <script src="/frontend/assets/js/views/auth.js?v=3.2.5"></script>
-  <script src="/frontend/assets/js/views/student.js?v=3.2.5"></script>
-  <script src="/frontend/assets/js/views/instructor.js?v=3.2.5"></script>
-  <script src="/frontend/assets/js/views/instructor-exams.js?v=3.2.5"></script>
-  <script src="/frontend/assets/js/views/admin.js?v=3.2.5"></script>
-  <script src="/frontend/assets/js/router.js?v=3.2.5"></script>
+  <script src="/frontend/assets/js/components/video-armor.js?v=3.2.6"></script>
+  <script src="/frontend/assets/js/ui.js?v=3.2.6"></script>
+  <script src="/frontend/assets/js/api.js?v=3.2.6"></script>
+  <script src="/frontend/assets/js/realtime.js?v=3.2.6"></script>
+  <script src="/frontend/assets/js/exam-store.js?v=3.2.6"></script>
+  <script src="/frontend/assets/js/views/auth.js?v=3.2.6"></script>
+  <script src="/frontend/assets/js/views/student.js?v=3.2.6"></script>
+  <script src="/frontend/assets/js/views/instructor.js?v=3.2.6"></script>
+  <script src="/frontend/assets/js/views/instructor-exams.js?v=3.2.6"></script>
+  <script src="/frontend/assets/js/views/admin.js?v=3.2.6"></script>
+  <script src="/frontend/assets/js/router.js?v=3.2.6"></script>
 
   <!-- Application Bootstrap -->
   <script>

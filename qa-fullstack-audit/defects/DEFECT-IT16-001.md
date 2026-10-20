@@ -6,7 +6,7 @@
 - **Severity:** Medium (P2)
 - **Priority:** P2
 - **Component:** `src/pwd301/blueprints/instructor/routes.py` (`instructor_list_courses`)
-- **Status:** OPEN
+- **Status:** MITIGATED / SLA VERIFIED
 - **Discovered In:** Iteration 16 (Performance Profiling)
 
 ---

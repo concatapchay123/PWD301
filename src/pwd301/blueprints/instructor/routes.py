@@ -748,6 +748,7 @@ def _normalize_course_metadata_payload(actor, course_id, payload):
     if not isinstance(payload, dict):
         raise CourseValidationError("Course metadata must be a JSON object.")
     allowed = {
+        "course_code",
         "title",
         "category",
         "description",
@@ -827,12 +828,14 @@ def update_course_route(course_id: str) -> Any:
 
     try:
         course = update_course(actor, course_id, payload)
+        db.session.commit()
     except (
         CourseValidationError,
         CourseAlreadyExistsError,
         ForbiddenError,
         CourseStateViolationError,
     ):
+        db.session.rollback()
         raise
     except Exception:
         db.session.rollback()
@@ -1115,6 +1118,7 @@ def publish_course_route(course_id: str) -> Any:
         raise
 
 
+@instructor_bp.route("/courses/<course_id>", methods=["DELETE"])
 @instructor_bp.route("/courses/<course_id>/trash", methods=["POST", "DELETE"])
 @instructor_required
 def trash_course_route(course_id: str) -> Any:
@@ -1124,7 +1128,27 @@ def trash_course_route(course_id: str) -> Any:
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     reason = payload.get("reason")
     course = trash_course(actor, course_id, reason=reason)
-    return jsonify(_serialize_course(course)), 200
+    try:
+        from pwd301.services.realtime_service import broadcast_event
+        broadcast_event("course:trashed", {
+            "course_id": str(course.public_id),
+            "title": course.title,
+            "status": course.status,
+            "reason": reason,
+        })
+    except Exception:
+        pass
+    return jsonify({
+        "success": True,
+        "message": "Đã chuyển khóa học vào thùng rác thành công.",
+        "data": {
+            "course_id": str(course.public_id),
+            "status": course.status,
+            "title": course.title,
+        },
+        "course_id": str(course.public_id),
+        "status": course.status,
+    }), 200
 
 
 def _authoring_response(actor, course, data):
@@ -2129,6 +2153,16 @@ def submit_course_changeset_route(course_id: str) -> tuple[Response, int] | Resp
 
     req = submit_course_changeset(actor, course_id, payload, session=db.session)
     db.session.commit()
+    try:
+        from pwd301.services.realtime_service import broadcast_event
+        broadcast_event("changeset:submitted", {
+            "course_id": str(course_id),
+            "change_request_id": req.id,
+            "title": "Có khóa học mới gửi duyệt",
+            "message": "Giảng viên vừa gửi một đợt cập nhật giáo trình mới chờ xét duyệt.",
+        })
+    except Exception:
+        pass
     return jsonify(
         {
             "status": "pending_approval",
@@ -4893,3 +4927,226 @@ def instructor_ai_draft_questions() -> Any:
         ),
         201,
     )
+
+
+# =========================================================================
+# Grade Appeals (Phúc khảo) Instructor Management Endpoints
+# =========================================================================
+
+@instructor_bp.route("/appeals", methods=["GET"])
+@instructor_required
+def list_instructor_appeals_route() -> Any:
+    """List student grade appeals for instructor-managed courses."""
+    actor = require_authenticated_actor()
+    from pwd301.models.attempt_regrade import AssessmentAppeal
+    from pwd301.models.course import Course
+
+    sess = db.session
+    if actor.is_admin:
+        managed_course_ids = [row[0] for row in sess.query(Course.id).filter(Course.deleted_at.is_(None)).all()]
+    else:
+        managed_course_ids = [
+            row[0] for row in sess.query(Course.id)
+            .filter(Course.owner_instructor_id == actor.id, Course.deleted_at.is_(None))
+            .all()
+        ]
+
+    if not managed_course_ids:
+        return jsonify({"success": True, "items": [], "pending_count": 0, "total_count": 0}), 200
+
+    query = sess.query(AssessmentAppeal).filter(AssessmentAppeal.course_id.in_(managed_course_ids))
+    status_filter = request.args.get("status")
+    if status_filter and status_filter.upper() != "ALL":
+        query = query.filter(AssessmentAppeal.status == status_filter.upper())
+
+    course_filter = request.args.get("course_id")
+    if course_filter:
+        from pwd301.services.course_service import _resolve_course
+        c_obj = _resolve_course(course_filter, session=sess)
+        if c_obj:
+            query = query.filter(AssessmentAppeal.course_id == c_obj.id)
+
+    appeals = query.order_by(
+        sa.case((AssessmentAppeal.status == "PENDING", 0), else_=1),
+        AssessmentAppeal.created_at.desc(),
+    ).all()
+
+    pending_count = sess.query(sa.func.count(AssessmentAppeal.id)).filter(
+        AssessmentAppeal.course_id.in_(managed_course_ids),
+        AssessmentAppeal.status == "PENDING",
+    ).scalar() or 0
+
+    return jsonify({
+        "success": True,
+        "items": [a.serialize() for a in appeals],
+        "pending_count": pending_count,
+        "total_count": len(appeals),
+    }), 200
+
+
+@instructor_bp.route("/appeals/<appeal_id>", methods=["GET"])
+@instructor_required
+def get_instructor_appeal_detail_route(appeal_id: str) -> Any:
+    """Get full details of a specific grade appeal including attempt submission questions and answers."""
+    actor = require_authenticated_actor()
+    from pwd301.models.attempt_regrade import AssessmentAppeal
+    sess = db.session
+
+    appeal = None
+    try:
+        app_uuid = uuid.UUID(str(appeal_id))
+        appeal = sess.query(AssessmentAppeal).filter(AssessmentAppeal.public_id == app_uuid).first()
+    except (ValueError, TypeError, AttributeError):
+        if str(appeal_id).isdigit():
+            appeal = sess.query(AssessmentAppeal).filter(AssessmentAppeal.id == int(appeal_id)).first()
+
+    if appeal is None:
+        raise ResourceNotFoundError("Đơn phúc khảo không tồn tại.")
+
+    # Check authorization
+    if not actor.is_admin and appeal.course.owner_instructor_id != actor.id:
+        raise ForbiddenError("Bạn không có quyền quản lý đơn phúc khảo của khóa học này.")
+
+    attempt = appeal.attempt
+    attempt_data = None
+    if attempt:
+        from pwd301.services.attempt_service import _serialize_attempt
+        attempt_data = _serialize_attempt(attempt)
+
+    return jsonify({
+        "success": True,
+        "appeal": appeal.serialize(),
+        "attempt": attempt_data,
+    }), 200
+
+
+@instructor_bp.route("/appeals/<appeal_id>/resolve", methods=["POST"])
+@instructor_required
+def resolve_instructor_appeal_route(appeal_id: str) -> Any:
+    """Resolve an appeal by inputting the direct final score, updating AssessmentResult, and notifying student."""
+    actor = require_authenticated_actor()
+    from pwd301.models.attempt_regrade import AssessmentAppeal, AssessmentResultHistory
+    from pwd301.models.types import utc_now
+    sess = db.session
+
+    appeal = None
+    try:
+        app_uuid = uuid.UUID(str(appeal_id))
+        appeal = sess.query(AssessmentAppeal).filter(AssessmentAppeal.public_id == app_uuid).first()
+    except (ValueError, TypeError, AttributeError):
+        if str(appeal_id).isdigit():
+            appeal = sess.query(AssessmentAppeal).filter(AssessmentAppeal.id == int(appeal_id)).first()
+
+    if appeal is None:
+        raise ResourceNotFoundError("Đơn phúc khảo không tồn tại.")
+
+    if not actor.is_admin and appeal.course.owner_instructor_id != actor.id:
+        raise ForbiddenError("Bạn không có quyền xử lý đơn phúc khảo của khóa học này.")
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    raw_final_score = payload.get("final_score")
+    if raw_final_score is None:
+        raise ValidationError("Vui lòng nhập điểm số cuối cùng sau phúc khảo (final_score).")
+
+    try:
+        final_score = round(float(raw_final_score), 2)
+        if final_score < 0.0 or final_score > 10.0:
+            raise ValidationError("Điểm số phải nằm trong thang điểm từ 0.0 đến 10.0.")
+    except (ValueError, TypeError):
+        raise ValidationError("Điểm số cuối cùng phải là số hợp lệ.") from None
+
+    feedback = str(payload.get("instructor_feedback") or payload.get("feedback") or "").strip()
+    action = str(payload.get("action") or "RESOLVE").upper()
+    target_status = "REJECTED" if action == "REJECT" else "RESOLVED"
+
+    now = utc_now()
+    attempt = appeal.attempt
+    old_score = float(appeal.original_score or 0.0)
+
+    # Invariant: Score entered by instructor is the final score of the student
+    if target_status == "RESOLVED" and attempt:
+        # Determine max points of the assessment
+        max_points = 10.0
+        passing_pct = 50.0
+        if attempt.assessment:
+            passing_pct = float(attempt.assessment.passing_percent or 50.0)
+            assigned_points = sum(
+                (float(q.points or 1.0) for q in attempt.assessment.question_assignments),
+                0.0
+            )
+            if assigned_points > 0:
+                max_points = assigned_points
+
+        percent_score = round((final_score / max_points) * 100.0, 2) if max_points > 0 else 0.0
+        is_passed = percent_score >= passing_pct
+
+        if attempt.result:
+            old_result_score = float(attempt.result.score or 0.0)
+            old_percent = float(attempt.result.percent_score or 0.0)
+            attempt.result.score = final_score
+            attempt.result.percent_score = percent_score
+            attempt.result.passed = is_passed
+            attempt.result.status = "FINAL"
+            attempt.result.updated_at = now
+
+            # Append to AssessmentResultHistory
+            res_hist = AssessmentResultHistory(
+                attempt_id=attempt.id,
+                old_score=old_result_score,
+                new_score=final_score,
+                old_percent=old_percent,
+                new_percent=percent_score,
+                reason_code="MANUAL",
+                reason=f"Phúc khảo bởi giảng viên: {feedback}" if feedback else "Chấm phúc khảo bài thi",
+                actor_user_id=actor.id,
+                created_at=now,
+            )
+            sess.add(res_hist)
+
+        attempt.total_score = final_score
+        attempt.status = "GRADED"
+        attempt.updated_at = now
+
+    appeal.final_score = final_score if target_status == "RESOLVED" else old_score
+    appeal.status = target_status
+    appeal.instructor_feedback = feedback
+    appeal.reviewed_by_user_id = actor.id
+    appeal.reviewed_at = now
+    appeal.updated_at = now
+
+    # Dispatch notification to student
+    try:
+        from pwd301.services.notification_service import dispatch_notification
+        exam_title = attempt.assessment.title if attempt and attempt.assessment else "Bài thi"
+        if target_status == "RESOLVED":
+            notif_msg = (
+                f"Đơn phúc khảo bài thi '{exam_title}' đã được Giảng viên phê duyệt. "
+                f"Điểm số cuối cùng của bạn là: {final_score} điểm."
+            )
+        else:
+            notif_msg = (
+                f"Đơn phúc khảo bài thi '{exam_title}' đã được Giảng viên xem xét và giữ nguyên điểm số ban đầu. "
+                f"Lời nhận xét: {feedback or 'Không có'}"
+            )
+
+        dispatch_notification(
+            recipient_user=appeal.student_user_id,
+            event_type="INSTRUCTOR_APPEAL_DECISION",
+            title="Kết quả phúc khảo bài thi",
+            body=notif_msg,
+            action_url=f"#/student/assessments/results?attempt_id={attempt.public_id}" if attempt else "#/student/assessments",
+            category="GRADE",
+            target_role="STUDENT",
+            session=sess,
+        )
+    except Exception:
+        pass
+
+    sess.commit()
+
+    return jsonify({
+        "success": True,
+        "message": "Đã hoàn tất xử lý đơn phúc khảo thành công.",
+        "appeal": appeal.serialize(),
+    }), 200
+

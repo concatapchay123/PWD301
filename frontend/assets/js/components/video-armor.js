@@ -55,6 +55,19 @@ class VideoArmor {
       if (VideoArmor._isGlobalLocked) return;
       const violation = VideoArmor.checkShortcutViolation(e);
       if (violation) {
+        if (violation === 'SCREEN_CAPTURE_ATTEMPT') {
+          const isExam = typeof ExamAntiCheatManager !== 'undefined' && ExamAntiCheatManager.activeInstance && ExamAntiCheatManager.activeInstance.isActive;
+          if (isExam) {
+            if (typeof e.preventDefault === 'function') e.preventDefault();
+            if (typeof e.stopPropagation === 'function') e.stopPropagation();
+            VideoArmor._clearClipboardStatic();
+            ExamAntiCheatManager.activeInstance.recordSecurityViolation('SCREENSHOT_ATTEMPT');
+            if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
+              UI.showToast('CẢNH BÁO KHẢO THÍ: Nghiêm cấm chụp màn hình trong bài thi!', 'warning');
+            }
+          }
+          return;
+        }
         if (typeof e.preventDefault === 'function') e.preventDefault();
         if (typeof e.stopPropagation === 'function') e.stopPropagation();
         VideoArmor._clearClipboardStatic();
@@ -69,17 +82,18 @@ class VideoArmor {
     // 2. Contextmenu handler
     VideoArmor._globalContextMenuHandler = (e) => {
       if (VideoArmor._isGlobalLocked) return;
-      const target = e?.target;
-      const tag = (target && target.tagName ? target.tagName : '').toUpperCase();
-      const isEditable = target && (target.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA');
-      if (!isEditable) {
-        if (typeof e?.preventDefault === 'function') e.preventDefault();
-        if (typeof e?.stopPropagation === 'function') e.stopPropagation();
-        VideoArmor._clearClipboardStatic();
-        // In local development (localhost / 127.0.0.1), prevent default inspect menu without revoking session
-        const isLocalHost = Boolean(win && win.location && (win.location.hostname === 'localhost' || win.location.hostname === '127.0.0.1'));
-        if (!isLocalHost) {
-          VideoArmor.triggerGlobalLockdown('CONTEXT_MENU_BLOCKED');
+      const isExam = typeof ExamAntiCheatManager !== 'undefined' && ExamAntiCheatManager.activeInstance && ExamAntiCheatManager.activeInstance.isActive;
+      if (isExam) {
+        const target = e?.target;
+        const tag = (target && target.tagName ? target.tagName : '').toUpperCase();
+        const isEditable = target && (target.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA');
+        if (!isEditable) {
+          if (typeof e?.preventDefault === 'function') e.preventDefault();
+          if (typeof e?.stopPropagation === 'function') e.stopPropagation();
+          ExamAntiCheatManager.activeInstance.recordSecurityViolation('CONTEXT_MENU_ATTEMPT');
+          if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
+            UI.showToast('CẢNH BÁO KHẢO THÍ: Nghiêm cấm thao tác chuột phải trong bài thi!', 'warning');
+          }
         }
       }
     };
@@ -833,6 +847,19 @@ class VideoArmor {
 
     const violation = this._checkShortcutViolation(event);
     if (violation) {
+      if (violation === 'SCREEN_CAPTURE_ATTEMPT') {
+        const isExam = typeof ExamAntiCheatManager !== 'undefined' && ExamAntiCheatManager.activeInstance && ExamAntiCheatManager.activeInstance.isActive;
+        if (isExam) {
+          if (typeof event.preventDefault === 'function') event.preventDefault();
+          if (typeof event.stopPropagation === 'function') event.stopPropagation();
+          this._clearClipboard();
+          ExamAntiCheatManager.activeInstance.recordSecurityViolation('SCREENSHOT_ATTEMPT');
+          if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
+            UI.showToast('CẢNH BÁO KHẢO THÍ: Nghiêm cấm chụp màn hình trong bài thi!', 'warning');
+          }
+        }
+        return;
+      }
       if (typeof event.preventDefault === 'function') event.preventDefault();
       if (typeof event.stopPropagation === 'function') event.stopPropagation();
       this._clearClipboard();
@@ -852,12 +879,18 @@ class VideoArmor {
     if (!this.container || this.container.isConnected === false) return;
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
 
-    if (event) {
-      if (typeof event.preventDefault === 'function') event.preventDefault();
-      if (typeof event.stopPropagation === 'function') event.stopPropagation();
+    const isExam = typeof ExamAntiCheatManager !== 'undefined' && ExamAntiCheatManager.activeInstance && ExamAntiCheatManager.activeInstance.isActive;
+    if (isExam) {
+      if (event) {
+        if (typeof event.preventDefault === 'function') event.preventDefault();
+        if (typeof event.stopPropagation === 'function') event.stopPropagation();
+      }
+      this._clearClipboard();
+      ExamAntiCheatManager.activeInstance.recordSecurityViolation('CONTEXT_MENU_ATTEMPT');
+      if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
+        UI.showToast('CẢNH BÁO KHẢO THÍ: Nghiêm cấm thao tác chuột phải trong bài thi!', 'warning');
+      }
     }
-    this._clearClipboard();
-    this.triggerBlackout('CONTEXT_MENU_BLOCKED');
   }
 
   destroy() {

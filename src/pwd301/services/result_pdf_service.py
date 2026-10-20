@@ -367,7 +367,7 @@ def _page_number(canvas: Any, doc: Any) -> None:
     if os.path.exists(_LOGO_WATERMARK_PATH):
         try:
             wm_w = 340
-            wm_h = wm_w * (572 / 1024)
+            wm_h = wm_w * (260 / 743)
             canvas.drawImage(
                 _LOGO_WATERMARK_PATH,
                 (w - wm_w) / 2,
@@ -392,10 +392,10 @@ def _page_number(canvas: Any, doc: Any) -> None:
     canvas.setFont(_FONT_NORMAL, 7)
     canvas.setFillColor(colors.HexColor("#64748B"))
     canvas.drawRightString(w - doc.rightMargin, 39, f"Trang {doc.page}")
-    canvas.drawString(doc.leftMargin, 39, "PWD301 LMS  /  KHẢO THÍ & ĐÀO TẠO")
+    canvas.drawString(doc.leftMargin, 39, "PPTQ LMS  /  KHẢO THÍ & ĐÀO TẠO")
     if doc.page > 1:
         canvas.setFont(_FONT_BOLD, 8)
-        canvas.drawString(doc.leftMargin, h - 26, "PWD301 LMS  |  KẾT QUẢ KHẢO THÍ")
+        canvas.drawString(doc.leftMargin, h - 26, "PPTQ LMS  |  KẾT QUẢ KHẢO THÍ")
     canvas.restoreState()
 
 
@@ -427,8 +427,8 @@ def build_attempt_result_pdf(result_data: dict[str, Any]) -> bytes:
         rightMargin=36,
         topMargin=36,
         bottomMargin=60,
-        title="PWD301 LMS - Bang Diem Ket Qua Khao Thi",
-        author="PWD301 LMS Examination Board",
+        title="PPTQ LMS - Bang Diem Ket Qua Khao Thi",
+        author="PPTQ LMS Examination Board",
     )
     # Platypus frames inset content by six points on both sides.
     doc.width -= 12
@@ -516,11 +516,11 @@ def build_attempt_result_pdf(result_data: dict[str, Any]) -> bytes:
     story = []
 
     # 1. Top Organization & Document Header
-    org_line = Paragraph("HỆ THỐNG QUẢN LÝ ĐÀO TẠO & KHẢO THÍ PWD301 LMS", style_header_org)
+    org_line = Paragraph("HỆ THỐNG QUẢN LÝ ĐÀO TẠO & KHẢO THÍ PPTQ LMS", style_header_org)
     if os.path.exists(_LOGO_LIGHT_PATH):
         from reportlab.platypus import Image as RLImage
-        logo_img = RLImage(_LOGO_LIGHT_PATH, width=54, height=30)
-        brand = Table([[logo_img, org_line]], colWidths=[58, doc.width - 58])
+        logo_img = RLImage(_LOGO_LIGHT_PATH, width=64, height=22)
+        brand = Table([[logo_img, org_line]], colWidths=[68, doc.width - 68])
     else:
         brand = Table([[_MetricIcon("cap"), org_line]], colWidths=[34, doc.width - 34])
     brand.setStyle(
@@ -809,7 +809,7 @@ def build_attempt_result_pdf(result_data: dict[str, Any]) -> bytes:
     # 5. Footer Notice
     now_str = datetime.now(UTC).strftime("%d/%m/%Y %H:%M:%S UTC")
     footer_text = Paragraph(
-        f"<i>Bảng điểm điện tử được trích xuất tự động từ Cơ sở Dữ liệu Khảo thí PWD301 LMS vào lúc {now_str}. "
+        f"<i>Bảng điểm điện tử được trích xuất tự động từ Cơ sở Dữ liệu Khảo thí PPTQ LMS vào lúc {now_str}. "
         "Mọi thắc mắc về điểm số vui lòng gửi yêu cầu phúc khảo qua cổng Học viên trước thời hạn quy định.</i>",
         style_doc_sub,
     )
@@ -961,7 +961,7 @@ def build_assessment_gradebook_pdf(gradebook_data: dict[str, Any]) -> bytes:
 
     if os.path.exists(_LOGO_LIGHT_PATH):
         from reportlab.platypus import Image as RLImage
-        logo_img = RLImage(_LOGO_LIGHT_PATH, width=72, height=40)
+        logo_img = RLImage(_LOGO_LIGHT_PATH, width=80, height=28)
         logo_img.hAlign = "CENTER"
         story = [logo_img, Spacer(1, 4)]
     else:
@@ -969,7 +969,7 @@ def build_assessment_gradebook_pdf(gradebook_data: dict[str, Any]) -> bytes:
 
     # 1. Organization Header
     org_title = Paragraph(
-        "BỘ GIÁO DỤC VÀ ĐÀO TẠO &bull; HỆ THỐNG ĐÀO TẠO TRỰC TUYẾN PWD301 LMS",
+        "HỆ THỐNG ĐÀO TẠO TRỰC TUYẾN PPTQ LMS",
         style_header_org,
     )
     story.append(org_title)
@@ -1291,7 +1291,7 @@ def build_assessment_gradebook_pdf(gradebook_data: dict[str, Any]) -> bytes:
         ],
         [
             Paragraph(f"<b>{_plain(instructor_name)}</b>", style_sig_title),
-            Paragraph("<b>BAN KHẢO THÍ HỆ THỐNG PWD301</b>", style_sig_title),
+            Paragraph("<b>BAN KHẢO THÍ HỆ THỐNG PPTQ</b>", style_sig_title),
         ],
     ]
     sig_table = Table(sig_rows, colWidths=[doc.width / 2] * 2)
@@ -1312,7 +1312,7 @@ def build_assessment_gradebook_pdf(gradebook_data: dict[str, Any]) -> bytes:
 
     # 7. Security & Verification Footer
     footer_text = Paragraph(
-        f"<i>Bảng điểm học vụ điện tử được sinh tự động bởi Hệ thống PWD301 LMS lúc {now_str}. "
+        f"<i>Bảng điểm học vụ điện tử được sinh tự động bởi Hệ thống PPTQ LMS lúc {now_str}. "
         "Dữ liệu có tính pháp lý nội bộ dùng cho công tác quản trị học vụ và lưu trữ khảo thí.</i>",
         style_doc_sub,
     )

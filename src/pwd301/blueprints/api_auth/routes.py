@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from flask import Response, g, jsonify, request
+from flask import Response, current_app, g, jsonify, request
 
 from pwd301.blueprints.api_auth import api_auth_bp
 from pwd301.services.exceptions import (
@@ -382,16 +382,19 @@ def request_email_change_api() -> tuple[Response, int]:
     user.pending_email = new_email
     db.session.commit()
 
-    return (
-        jsonify(
-            {
-                "message": "Verification token issued for email change.",
-                "pending_email": new_email,
-                "token": raw_token,
-            }
-        ),
-        202,
-    )
+    response_payload = {
+        "message": "Verification token issued for email change.",
+        "pending_email": new_email,
+    }
+    # Security Rule (DEFECT-AUTH-01): Sensitive tokens must not be exposed in production responses.
+    # Dispatched solely via out-of-band email unless specifically permitted in test runner.
+    if current_app.config.get("EXPOSE_TEST_TOKENS", False) or (
+        current_app.config.get("TESTING")
+        and not current_app.config.get("STRICT_TOKEN_SANITIZATION", False)
+    ):
+        response_payload["token"] = raw_token
+
+    return jsonify(response_payload), 202
 
 
 @api_auth_bp.route("/email-change/verify", methods=["POST"])

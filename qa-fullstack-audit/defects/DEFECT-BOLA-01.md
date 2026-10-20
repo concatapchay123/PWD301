@@ -4,7 +4,7 @@
 - **Component:** Course & Lesson REST API (`src/pwd301/blueprints/api_courses/routes.py`, `src/pwd301/services/lesson_service.py`)
 - **Severity:** Medium (P2)
 - **OWASP Classification:** API1:2023 - Broken Object Level Authorization (BOLA) / CWE-285 Improper Authorization
-- **Status:** OPEN
+- **Status:** VERIFIED / RESOLVED
 
 ---
 
@@ -96,3 +96,10 @@ def get_course_lessons(
         raise CourseNotFoundError("Course not found.")
     ...
 ```
+
+
+---
+
+## 5. Remediation Verification (PASSED)
+- **Implemented Fix:** In [src/pwd301/services/lesson_service.py](file:///e:/PWD301/src/pwd301/services/lesson_service.py#L2015-L2030), `get_course_lessons` enforces access authorization: if `course.deleted_at is not None or course.status != 'PUBLISHED'`, the service verifies caller privileges and returns an empty list `[]` for unprivileged callers.
+- **Verification Evidence:** Executed in Iteration 13 of `run_fullstack_20_iterations_master.py`. Probed anonymous request against a draft course: `assert len(res_draft_lessons.get_json().get("lessons", [])) == 0`. Returned 0 draft lessons without information leakage. Result: **PASSED**.

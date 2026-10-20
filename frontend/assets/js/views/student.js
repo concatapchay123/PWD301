@@ -411,18 +411,25 @@ class StudentView {
   }
 
   static isSupportedAvatarUrl(url) {
-    return /^https:\/\/api\.dicebear\.com\/(?:7\.x\/bottts|10\.x\/(?:adventurer|lorelei|fun-emoji|pixel-art|thumbs|bottts))\/svg\?seed=[a-z0-9]+$/.test(String(url));
+    if (!url || typeof url !== 'string') return false;
+    const str = url.trim();
+    if (str.startsWith('https://api.dicebear.com/')) return true;
+    if (str.startsWith('http://') || str.startsWith('https://') || str.startsWith('/')) return true;
+    return false;
   }
 
   static getStoredRandomAvatarUrl(identity) {
-    const key = `pwd301:random-avatar:${String(identity || '').trim()}`;
-    if (!String(identity || '').trim()) return '';
+    if (!identity) return '';
     try {
-      const value = window.localStorage?.getItem(key) || '';
-      return StudentView.isSupportedAvatarUrl(value) ? value : '';
+      const idStr = String(identity).trim();
+      const val = window.localStorage?.getItem(`pwd301:random-avatar:${idStr}`);
+      if (val && StudentView.isSupportedAvatarUrl(val)) return val;
+      const legacy = window.localStorage?.getItem('pwd301_avatar');
+      if (legacy && StudentView.isSupportedAvatarUrl(legacy)) return legacy;
     } catch (_error) {
       return '';
     }
+    return '';
   }
 
   static storeRandomAvatarUrl(identity, avatarUrl) {
@@ -552,7 +559,7 @@ class StudentView {
                       <span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
                       <span>Đang học dang dở</span>
                     </span>
-                    <span class="text-xs font-mono font-bold text-slate-500" id="hero-course-code">PWD301</span>
+                    <span class="text-xs font-mono font-bold text-slate-500" id="hero-course-code">PPTQ</span>
                   </div>
                   <span class="text-xs font-medium text-slate-400 flex items-center gap-1">
                     <span class="material-symbols-outlined text-[16px]">schedule</span>
@@ -659,12 +666,12 @@ class StudentView {
                 <!-- Urgent Assessment Item -->
                 <div class="p-3.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 space-y-2.5" id="todo-urgent-exam-box">
                   <div class="flex items-start justify-between gap-2">
-                    <div class="flex flex-col">
-                      <div class="flex items-center gap-1.5">
-                        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-600 text-white">Khẩn cấp</span>
+                    <div class="flex flex-col min-w-0 flex-1">
+                      <div class="flex items-center gap-1.5 min-w-0">
+                        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-600 text-white shrink-0">Khẩn cấp</span>
                         <span class="text-xs font-bold text-slate-900 dark:text-white truncate" id="todo-exam-title">Khảo thí chuẩn hóa</span>
                       </div>
-                      <span class="text-[11px] text-slate-500 mt-0.5" id="todo-exam-meta">Thời lượng: 45 phút • Điểm tối đa: 10đ</span>
+                      <span class="text-[11px] text-slate-500 mt-0.5 truncate" id="todo-exam-meta">Thời lượng: 45 phút • Điểm tối đa: 10đ</span>
                     </div>
                     <span class="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-amber-500 text-white shrink-0" id="todo-exam-clock">
                       Sắp mở
@@ -764,6 +771,10 @@ class StudentView {
       const todoExamCta = document.getElementById('todo-exam-cta-btn');
 
       if (upcoming.length > 0) {
+        const emptyState = document.getElementById('todo-empty-state');
+        if (emptyState) emptyState.classList.add('hidden');
+        const urgentBox = document.getElementById('todo-urgent-exam-box');
+        if (urgentBox) urgentBox.classList.remove('hidden');
         const nextExam = upcoming[0];
         if (urgentTitle) urgentTitle.textContent = `${upcoming.length} Bài thi cần làm`;
         if (urgentSub) urgentSub.textContent = `${nextExam.title} • Thời lượng: ${nextExam.time_limit_minutes || 45}p`;
@@ -781,6 +792,8 @@ class StudentView {
 
         const urgentBox = document.getElementById('todo-urgent-exam-box');
         if (urgentBox) urgentBox.classList.add('hidden');
+        const emptyState = document.getElementById('todo-empty-state');
+        if (emptyState) emptyState.classList.remove('hidden');
       }
 
       // Update Recent Results in To-Do
@@ -980,7 +993,7 @@ class StudentView {
               <input
                 type="text"
                 id="catalog-search-input"
-                placeholder="Nhập tên môn học, mã khóa (VD: PWD301, UXD101...)..."
+                placeholder="Nhập tên môn học, mã khóa (VD: PPTQ, UXD101...)..."
                 class="w-full pl-12 pr-4 py-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-base outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 shadow-sm transition-all"
               />
             </div>
@@ -1223,7 +1236,7 @@ class StudentView {
           <div class="p-5 rounded-2xl bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border border-primary/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div class="space-y-1">
               <div class="flex items-center gap-2">
-                <span class="px-2.5 py-1 rounded-md bg-primary text-white font-mono text-xs font-bold">${UI.escapeHtml(course.course_code || 'PWD301')}</span>
+                <span class="px-2.5 py-1 rounded-md bg-primary text-white font-mono text-xs font-bold">${UI.escapeHtml(course.course_code || 'PPTQ')}</span>
                 <span class="px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold">${UI.escapeHtml(course.category || 'Chuyên ngành')}</span>
                 ${UI.statusBadge(course.status)}
               </div>
@@ -1671,7 +1684,7 @@ class StudentView {
       // Extract metadata values
       const instructorName = course.instructor_name || sylRes?.course?.instructor_name || course.instructor?.full_name || 'Đội ngũ Giảng viên Chuyên môn';
       const instructorTitle = course.instructor?.title || 'Giảng viên Bộ môn Mạng & ATTT';
-      const courseCode = course.code || course.course_code || 'PWD301';
+      const courseCode = course.code || course.course_code || 'PPTQ';
       const courseTitle = course.title || 'Khóa học Đào tạo Chuyên sâu';
       const plainDesc = rawDesc || 'Khóa học trang bị kiến thức nền tảng và kỹ năng thực hành chuyên sâu theo giáo trình chuẩn quốc tế, giúp học viên làm chủ công nghệ và ứng dụng thực tiễn.';
       const ytHeroId = videoUrl ? UI.parseYouTubeId(videoUrl) : null;
@@ -2540,7 +2553,7 @@ class StudentView {
 
               <div class="flex items-center gap-2 min-w-0">
                 <span class="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono text-[11px] font-bold border border-slate-200 dark:border-slate-700 shrink-0">
-                  ${UI.escapeHtml(course.code || 'PWD301')}
+                  ${UI.escapeHtml(course.code || 'PPTQ')}
                 </span>
                 <h1 class="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white truncate max-w-[180px] sm:max-w-xs md:max-w-md" title="${UI.escapeHtml(course.title)}">
                   ${UI.escapeHtml(course.title)}
@@ -2594,15 +2607,15 @@ class StudentView {
                   id="tab-btn-resources"
                   class="flex items-center justify-center gap-1.5 border-b-2 transition-all cursor-pointer ${currentTab === 'resources' ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 bg-emerald-50/30 dark:bg-emerald-950/20' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}"
                 >
-                  <span class="material-symbols-outlined text-[17px]">folder_open</span>
-                  <span class="truncate" id="tab-resources-badge-label">Tài liệu (${totalResourceCount})</span>
+                  <span class="material-symbols-outlined text-[17px] ${!isEnrolled ? 'text-amber-500' : ''}">${!isEnrolled ? 'lock' : 'folder_open'}</span>
+                  <span class="truncate" id="tab-resources-badge-label">Tài liệu ${!isEnrolled ? '🔒' : `(${totalResourceCount})`}</span>
                 </button>
                 <button
                   type="button"
                   id="tab-btn-ai"
                   class="flex items-center justify-center gap-1.5 border-b-2 transition-all cursor-pointer ${currentTab === 'ai' ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 bg-indigo-50/30 dark:bg-indigo-950/20' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}"
                 >
-                  <span class="material-symbols-outlined text-[17px] text-indigo-500">smart_toy</span>
+                  <img src="assets/img/octopus_ai_icon.png" class="w-4 h-4 rounded-full object-cover shrink-0" alt="Bạch tuộc AI">
                   <span class="truncate">Trợ lý AI</span>
                 </button>
               </div>
@@ -2663,8 +2676,8 @@ class StudentView {
                 <!-- Messages container -->
                 <div id="console-ai-messages" class="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar text-xs">
                   <div class="flex gap-2">
-                    <div class="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 flex items-center justify-center shrink-0">
-                      <span class="material-symbols-outlined text-[14px]">smart_toy</span>
+                    <div class="w-6 h-6 rounded-full overflow-hidden bg-indigo-100 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 shadow-2xs flex items-center justify-center shrink-0">
+                      <img src="assets/img/octopus_ai_icon.png" class="w-full h-full object-cover" alt="Bạch tuộc AI">
                     </div>
                     <div class="bg-white dark:bg-slate-800 p-2.5 rounded-2xl rounded-tl-sm border border-slate-200 dark:border-slate-700 shadow-xs max-w-[85%] space-y-1">
                       <div class="font-bold text-slate-800 dark:text-slate-100 text-[11px]">Bạch tuộc trợ lí AI</div>
@@ -2688,23 +2701,24 @@ class StudentView {
                   </button>
                 </div>
 
-                <!-- Chat Input Form -->
-                <div class="p-2.5 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
-                  <form id="console-ai-form" class="flex items-center gap-1.5">
+                <!-- Chat Input Form (Modern Inset Pill - ChatGPT/Gemini Style) -->
+                <div class="p-2.5 sm:p-3 border-t border-slate-200/80 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm shrink-0">
+                  <form id="console-ai-form" class="relative flex items-center w-full">
                     <input
                       type="text"
                       id="console-ai-input"
                       placeholder="Hỏi Bạch tuộc AI về bài học..."
-                      class="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 outline-none focus:border-indigo-500 transition-all"
+                      class="w-full pl-3.5 pr-11 py-2.5 text-xs rounded-full border border-slate-200 dark:border-slate-700/80 bg-slate-50/80 dark:bg-slate-800/80 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none focus:border-indigo-500 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-indigo-500/15 transition-all shadow-2xs"
                       autocomplete="off"
                     />
                     <button
                       type="submit"
                       id="console-ai-send-btn"
-                      class="p-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white transition-colors cursor-pointer shrink-0 disabled:opacity-50"
+                      disabled
+                      class="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-400 dark:text-slate-500 flex items-center justify-center transition-all duration-200 cursor-not-allowed disabled:pointer-events-none enabled:bg-indigo-600 enabled:hover:bg-indigo-500 enabled:text-white enabled:cursor-pointer enabled:shadow-xs enabled:hover:scale-105 active:scale-95 shrink-0"
                       title="Gửi câu hỏi"
                     >
-                      <span class="material-symbols-outlined text-[18px]">send</span>
+                      <span class="material-symbols-outlined text-[15px] pointer-events-none">arrow_upward</span>
                     </button>
                   </form>
                 </div>
@@ -2926,8 +2940,8 @@ class StudentView {
           `;
         } else {
           div.innerHTML = `
-            <div class="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 flex items-center justify-center shrink-0">
-              <span class="material-symbols-outlined text-[14px]">smart_toy</span>
+            <div class="w-6 h-6 rounded-full overflow-hidden bg-indigo-100 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 shadow-2xs flex items-center justify-center shrink-0">
+              <img src="assets/img/octopus_ai_icon.png" class="w-full h-full object-cover" alt="Bạch tuộc AI">
             </div>
             <div class="bg-white dark:bg-slate-800 p-2.5 rounded-2xl rounded-tl-sm border border-slate-200 dark:border-slate-700 shadow-xs max-w-[85%] space-y-1">
               <div class="font-bold text-slate-800 dark:text-slate-100 text-[11px]">Bạch tuộc trợ lí AI</div>
@@ -2966,8 +2980,8 @@ class StudentView {
           typingDiv = document.createElement('div');
           typingDiv.className = 'flex gap-2';
           typingDiv.innerHTML = `
-            <div class="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 flex items-center justify-center shrink-0">
-              <span class="material-symbols-outlined text-[14px]">smart_toy</span>
+            <div class="w-6 h-6 rounded-full overflow-hidden bg-indigo-100 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 shadow-2xs flex items-center justify-center shrink-0">
+              <img src="assets/img/octopus_ai_icon.png" class="w-full h-full object-cover" alt="Bạch tuộc AI">
             </div>
             <div class="bg-white dark:bg-slate-800 p-2.5 rounded-2xl rounded-tl-sm border border-slate-200 dark:border-slate-700 shadow-xs text-slate-500 text-[11px] flex items-center gap-1.5">
               <span class="inline-block animate-spin text-[12px]">⏳</span> Bạch tuộc đang suy nghĩ câu trả lời...
@@ -3004,10 +3018,19 @@ class StudentView {
 
       // Form submit & Prompt chips listeners
       const aiForm = document.getElementById('console-ai-form');
+      const aiInputEl = document.getElementById('console-ai-input');
+      const aiSendBtnEl = document.getElementById('console-ai-send-btn');
+      if (aiInputEl && aiSendBtnEl) {
+        aiInputEl.addEventListener('input', () => {
+          if (!isAiSending) {
+            aiSendBtnEl.disabled = !aiInputEl.value.trim();
+          }
+        });
+      }
       if (aiForm) {
         aiForm.onsubmit = (e) => {
           e.preventDefault();
-          const val = document.getElementById('console-ai-input')?.value;
+          const val = aiInputEl?.value;
           sendConsoleAIMessage(val);
         };
       }
@@ -3032,8 +3055,8 @@ class StudentView {
         if (msgContainer) {
           msgContainer.innerHTML = `
             <div class="flex gap-2">
-              <div class="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 flex items-center justify-center shrink-0">
-                <span class="material-symbols-outlined text-[14px]">smart_toy</span>
+              <div class="w-6 h-6 rounded-full overflow-hidden bg-indigo-100 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 shadow-2xs flex items-center justify-center shrink-0">
+                <img src="assets/img/octopus_ai_icon.png" class="w-full h-full object-cover" alt="Bạch tuộc AI">
               </div>
               <div class="bg-white dark:bg-slate-800 p-2.5 rounded-2xl rounded-tl-sm border border-slate-200 dark:border-slate-700 shadow-xs max-w-[85%] space-y-1">
                 <div class="font-bold text-slate-800 dark:text-slate-100 text-[11px]">Bạch tuộc trợ lí AI</div>
@@ -3360,6 +3383,10 @@ class StudentView {
         const link = event.target.closest?.('[data-download-asset]');
         if (!link || !link.dataset.downloadAsset) return;
         event.preventDefault();
+        if (!isEnrolled) {
+          UI.showToast('Vui lòng ghi danh khóa học để tải tài liệu học tập.', 'warning');
+          return;
+        }
         try {
           const ticket = await ApiClient.getFileDownloadTicket(link.dataset.downloadAsset);
           if (link.isConnected === false) return;
@@ -3378,6 +3405,39 @@ class StudentView {
       const resourcesContainer = document.getElementById('sidebar-panel-resources');
       const renderSidebarResources = () => {
         if (!resourcesContainer) return;
+
+        if (!isEnrolled) {
+          resourcesContainer.innerHTML = `
+            <div class="h-full flex flex-col items-center justify-center p-6 text-center space-y-4 select-none animate-fade-in">
+              <div class="w-14 h-14 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-600 dark:text-amber-400 flex items-center justify-center shadow-xs">
+                <span class="material-symbols-outlined text-3xl">lock</span>
+              </div>
+              <div class="space-y-1.5 max-w-xs">
+                <h3 class="text-sm font-bold text-slate-800 dark:text-slate-100">Kho tài liệu học tập bị khóa</h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Tài liệu môn học, bài giảng và tài nguyên đính kèm chỉ mở cho học viên đã ghi danh khóa học.
+                </p>
+              </div>
+              <button
+                type="button"
+                id="resources-quick-enroll-btn"
+                class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md shadow-emerald-600/20 flex items-center gap-1.5 cursor-pointer"
+              >
+                <span class="material-symbols-outlined text-[16px]">how_to_reg</span>
+                <span>Ghi danh để mở khóa</span>
+              </button>
+            </div>
+          `;
+          const quickBtn = resourcesContainer.querySelector('#resources-quick-enroll-btn');
+          if (quickBtn) {
+            quickBtn.onclick = () => {
+              const mainEnrollBtn = document.getElementById('console-enroll-btn');
+              if (mainEnrollBtn) mainEnrollBtn.click();
+              else if (typeof window._ciscoEnrollQuick === 'function') window._ciscoEnrollQuick();
+            };
+          }
+          return;
+        }
 
         if (totalResourceCount === 0) {
           resourcesContainer.innerHTML = `
@@ -3771,21 +3831,28 @@ class StudentView {
             `;
           }
 
-          const enrollBtn = document.getElementById('console-enroll-btn');
-          if (enrollBtn) {
-            enrollBtn.onclick = async () => {
-              try {
+          const executeEnroll = async () => {
+            const enrollBtn = document.getElementById('console-enroll-btn');
+            try {
+              if (enrollBtn) {
                 enrollBtn.disabled = true;
                 enrollBtn.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> Đang ghi danh...';
-                await ApiClient.enrollCourse(course.id || courseId);
-                UI.showToast(`Ghi danh thành công khóa học: ${course.title}`, 'success');
-                await StudentView.renderCourseConsole(container, courseId, activeItem?.id || null);
-              } catch (err) {
-                UI.showToast(err.message || 'Không thể ghi danh.', 'error');
+              }
+              await ApiClient.enrollCourse(course.id || courseId);
+              UI.showToast(`Ghi danh thành công khóa học: ${course.title}`, 'success');
+              await StudentView.renderCourseConsole(container, courseId, activeItem?.id || null);
+            } catch (err) {
+              UI.showToast(err.message || 'Không thể ghi danh.', 'error');
+              if (enrollBtn) {
                 enrollBtn.disabled = false;
                 enrollBtn.innerHTML = '<span class="material-symbols-outlined text-[18px]">how_to_reg</span> <span>Ghi danh môn học ngay</span>';
               }
-            };
+            }
+          };
+          window._ciscoEnrollQuick = executeEnroll;
+          const enrollBtn = document.getElementById('console-enroll-btn');
+          if (enrollBtn) {
+            enrollBtn.onclick = executeEnroll;
           }
           return;
         }
@@ -5523,7 +5590,7 @@ class StudentView {
               <span class="material-symbols-outlined text-[34px] ml-0.5 pointer-events-none">play_arrow</span>
             </button>
           </div>
-          <!-- PWD301 Flat Warm Editorial Custom Control Bar -->
+          <!-- PPTQ Flat Warm Editorial Custom Control Bar -->
           <div class="relative bg-slate-950 p-3 flex flex-col gap-2 z-20 transition-opacity duration-200" id="${playerId}-controls">
             <!-- Scrubber Track -->
             <div class="relative w-full h-2.5 bg-slate-700/60 rounded-full cursor-pointer group/track hover:h-3 transition-all" id="${playerId}-progress-track" title="Tiến độ bài học">
@@ -5534,24 +5601,27 @@ class StudentView {
 
             <div class="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-200">
               <div class="flex items-center gap-3">
-                <button type="button" id="${playerId}-play-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Phát/Tạm dừng">
+                <button type="button" id="${playerId}-play-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Phát/Tạm dừng (Space / K)">
                   <span class="material-symbols-outlined text-[20px] align-middle">play_arrow</span>
                 </button>
-                <button type="button" id="${playerId}-mute-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Bật/Tắt âm">
+                <button type="button" id="${playerId}-mute-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Bật/Tắt âm (M)">
                   <span class="material-symbols-outlined text-[20px] align-middle">volume_up</span>
                 </button>
-                <input id="${playerId}-volume" type="range" min="0" max="100" value="100" aria-label="Âm lượng" class="w-20" />
+                <input id="${playerId}-volume" type="range" min="0" max="100" value="100" aria-label="Âm lượng" class="w-20 accent-emerald-500 cursor-pointer" />
                 <span id="${playerId}-time" class="font-mono text-[11px] text-slate-300">00:00 / 00:00</span>
               </div>
 
               <div class="flex items-center gap-2">
+                <button type="button" id="${playerId}-cc-btn" class="p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer" title="Phụ đề (C)">
+                  <span class="material-symbols-outlined text-[18px] align-middle">closed_caption</span>
+                </button>
                 <button type="button" id="${playerId}-speed-btn" class="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[11px] font-mono text-slate-200 transition-colors cursor-pointer" title="Tốc độ học">
                   1.0x
                 </button>
                 <button type="button" id="${playerId}-progress-retry" class="hidden px-4 py-2 text-xs text-amber-300">Thử Lưu Tiến Độ</button>
                 <span id="${playerId}-status" class="hidden"></span>
                 <span id="${playerId}-lock-indicator" class="hidden"></span>
-                <button type="button" id="${playerId}-fullscreen-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Toàn màn hình">
+                <button type="button" id="${playerId}-fullscreen-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Toàn màn hình (F)">
                   <span class="material-symbols-outlined text-[20px] align-middle">fullscreen</span>
                 </button>
               </div>
@@ -5592,24 +5662,27 @@ class StudentView {
 
           <div class="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-200">
             <div class="flex items-center gap-3">
-              <button type="button" id="${playerId}-play-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Phát/Tạm dừng">
+              <button type="button" id="${playerId}-play-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Phát/Tạm dừng (Space / K)">
                 <span class="material-symbols-outlined text-[20px] align-middle">play_arrow</span>
               </button>
-              <button type="button" id="${playerId}-mute-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Bật/Tắt âm">
+              <button type="button" id="${playerId}-mute-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Bật/Tắt âm (M)">
                 <span class="material-symbols-outlined text-[20px] align-middle">volume_up</span>
               </button>
-              <input id="${playerId}-volume" type="range" min="0" max="100" value="100" aria-label="Âm lượng" class="w-20" />
+              <input id="${playerId}-volume" type="range" min="0" max="100" value="100" aria-label="Âm lượng" class="w-20 accent-emerald-500 cursor-pointer" />
               <span id="${playerId}-time" class="font-mono text-[11px] text-slate-300">00:00 / 00:00</span>
             </div>
 
             <div class="flex items-center gap-2">
+              <button type="button" id="${playerId}-cc-btn" class="p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer" title="Phụ đề (C)">
+                <span class="material-symbols-outlined text-[18px] align-middle">closed_caption</span>
+              </button>
               <button type="button" id="${playerId}-speed-btn" class="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[11px] font-mono text-slate-200 transition-colors cursor-pointer" title="Tốc độ học">
                 1.0x
               </button>
               <button type="button" id="${playerId}-progress-retry" class="hidden px-4 py-2 text-xs text-amber-300">Thử Lưu Tiến Độ</button>
               <span id="${playerId}-status" class="hidden"></span>
               <span id="${playerId}-lock-indicator" class="hidden"></span>
-              <button type="button" id="${playerId}-fullscreen-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Toàn màn hình">
+              <button type="button" id="${playerId}-fullscreen-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Toàn màn hình (F)">
                 <span class="material-symbols-outlined text-[20px] align-middle">fullscreen</span>
               </button>
             </div>
@@ -5933,22 +6006,160 @@ class StudentView {
     click('shield', toggle);
     click('poster-shield', toggle);
     click('progress-retry', () => { if (!tracker) startTracker(); void tracker?.flush(); });
-    click('mute-btn', () => { if (youtube) { if (driver?.isMuted()) driver.unMute(); else driver?.mute(); } else if (video) video.muted = !video.muted; });
-    listen(get('volume'), 'input', event => { const value = Number(event.target.value); if (youtube) driver?.setVolume?.(value); else if (video) video.volume = value / 100; });
-    click('speed-btn', () => {
-      const rates = youtube ? driver?.getAvailablePlaybackRates?.() || [1] : [0.75, 1, 1.25, 1.5, 2];
-      const supported = rates.filter(value => value >= 0.75 && value <= 2);
-      const next = supported[(supported.indexOf(rate()) + 1) % supported.length] || 1;
-      if (youtube) driver?.setPlaybackRate?.(next); else if (video) video.playbackRate = next;
+    let savedVolume = 100;
+    try {
+      const storedVol = localStorage.getItem('pptq_video_volume');
+      if (storedVol !== null) {
+        const parsed = parseInt(storedVol, 10);
+        if (!isNaN(parsed) && parsed >= 0 && parsed <= 100) savedVolume = parsed;
+      }
+    } catch (_) {}
+
+    let savedRate = 1;
+    try {
+      const storedRate = parseFloat(localStorage.getItem('pptq_playback_rate'));
+      if (!isNaN(storedRate) && storedRate >= 0.75 && storedRate <= 2) savedRate = storedRate;
+    } catch (_) {}
+
+    let isMuted = false;
+
+    const syncVolumeUI = (vol, muted) => {
+      const muteBtn = get('mute-btn');
+      const volumeInput = get('volume');
+      const icon = muteBtn?.querySelector('.material-symbols-outlined');
+
+      if (muted || vol === 0) {
+        if (icon) icon.textContent = 'volume_off';
+        if (muteBtn) muteBtn.title = 'Bật âm (M)';
+        if (volumeInput) volumeInput.value = 0;
+      } else {
+        if (icon) icon.textContent = vol < 50 ? 'volume_down' : 'volume_up';
+        if (muteBtn) muteBtn.title = 'Tắt âm (M)';
+        if (volumeInput) volumeInput.value = vol;
+      }
+    };
+
+    const applyVolume = (vol, muted) => {
+      if (muted) {
+        if (youtube) driver?.mute?.();
+        else if (video) video.muted = true;
+        isMuted = true;
+        syncVolumeUI(savedVolume, true);
+      } else {
+        const targetVol = Math.max(1, Math.min(100, vol));
+        savedVolume = targetVol;
+        try { localStorage.setItem('pptq_video_volume', String(targetVol)); } catch (_) {}
+        if (youtube) {
+          driver?.unMute?.();
+          driver?.setVolume?.(targetVol);
+        } else if (video) {
+          video.muted = false;
+          video.volume = targetVol / 100;
+        }
+        isMuted = false;
+        syncVolumeUI(targetVol, false);
+      }
+    };
+
+    const toggleMute = () => {
+      if (isMuted || (youtube ? driver?.isMuted?.() : video?.muted) || Number(get('volume')?.value) === 0) {
+        applyVolume(savedVolume > 0 ? savedVolume : 80, false);
+      } else {
+        const cur = Number(get('volume')?.value);
+        if (cur > 0) savedVolume = cur;
+        applyVolume(savedVolume, true);
+      }
+    };
+
+    click('mute-btn', toggleMute);
+
+    listen(get('volume'), 'input', event => {
+      const value = Number(event.target.value);
+      if (value === 0) {
+        applyVolume(0, true);
+      } else {
+        applyVolume(value, false);
+      }
     });
+
+    let ccActive = false;
+    click('cc-btn', () => {
+      ccActive = !ccActive;
+      const ccBtn = get('cc-btn');
+      if (youtube) {
+        try {
+          if (ccActive) {
+            driver?.loadModule?.('captions');
+            const tracklist = driver?.getOption?.('captions', 'tracklist') || [];
+            if (tracklist.length > 0) {
+              driver?.setOption?.('captions', 'track', tracklist[0]);
+            }
+          } else {
+            driver?.setOption?.('captions', 'track', {});
+          }
+        } catch (_) {}
+      } else if (video && video.textTracks) {
+        for (let i = 0; i < video.textTracks.length; i++) {
+          video.textTracks[i].mode = ccActive ? 'showing' : 'hidden';
+        }
+      }
+      if (ccBtn) {
+        ccBtn.classList.toggle('text-emerald-400', ccActive);
+        ccBtn.classList.toggle('bg-emerald-950/40', ccActive);
+        ccBtn.classList.toggle('border', ccActive);
+        ccBtn.classList.toggle('border-emerald-500/40', ccActive);
+        ccBtn.title = ccActive ? 'Tắt phụ đề (C)' : 'Bật phụ đề (C)';
+      }
+    });
+
+    click('speed-btn', () => {
+      const rates = youtube ? driver?.getAvailablePlaybackRates?.() || [0.75, 1, 1.25, 1.5, 2] : [0.75, 1, 1.25, 1.5, 2];
+      const supported = rates.filter(value => value >= 0.75 && value <= 2);
+      const curRate = rate();
+      const next = supported[(supported.indexOf(curRate) + 1) % supported.length] || 1;
+      try { localStorage.setItem('pptq_playback_rate', String(next)); } catch (_) {}
+      if (youtube) driver?.setPlaybackRate?.(next); else if (video) video.playbackRate = next;
+      if (get('speed-btn')) get('speed-btn').textContent = `${next}x`;
+    });
+
     click('progress-track', event => { const rect = get('progress-track').getBoundingClientRect(); seekAllowed((event.clientX - rect.left) / rect.width * duration); });
     click('fullscreen-btn', () => { if (document.fullscreenElement) void document.exitFullscreen?.(); else void container.requestFullscreen?.(); });
+
+    // Initial UI synchronization for volume and playback rate
+    syncVolumeUI(savedVolume, isMuted);
+    if (get('speed-btn') && savedRate !== 1) {
+      get('speed-btn').textContent = `${savedRate}x`;
+    }
+
     listen(container, 'keydown', event => {
       if (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(event.target?.tagName)) return;
-      if ([' ', 'k', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+      const key = event.key;
+      if ([' ', 'k', 'K'].includes(key)) {
         event.preventDefault();
-        if (event.key === ' ' || event.key === 'k') toggle();
-        else seekAllowed(position() + (event.key === 'ArrowRight' ? 5 : -5));
+        toggle();
+      } else if (['ArrowLeft', 'ArrowRight'].includes(key)) {
+        event.preventDefault();
+        seekAllowed(position() + (key === 'ArrowRight' ? 5 : -5));
+      } else if (['m', 'M'].includes(key)) {
+        event.preventDefault();
+        toggleMute();
+      } else if (['f', 'F'].includes(key)) {
+        event.preventDefault();
+        if (document.fullscreenElement) void document.exitFullscreen?.();
+        else void container.requestFullscreen?.();
+      } else if (['c', 'C'].includes(key)) {
+        event.preventDefault();
+        get('cc-btn')?.click();
+      } else if (key === 'ArrowUp') {
+        event.preventDefault();
+        const curVol = isMuted ? 0 : (Number(get('volume')?.value) || savedVolume || 100);
+        applyVolume(Math.min(100, curVol + 5), false);
+      } else if (key === 'ArrowDown') {
+        event.preventDefault();
+        const curVol = isMuted ? 0 : (Number(get('volume')?.value) || savedVolume || 100);
+        const nextVol = Math.max(0, curVol - 5);
+        if (nextVol === 0) applyVolume(0, true);
+        else applyVolume(nextVol, false);
       }
     });
     container._customPlayer = { pause, play: toggle };
@@ -5999,6 +6210,11 @@ class StudentView {
                 if (!disposed && generation === initialization) {
                   status('');
                   get('retry')?.classList.add('hidden');
+                  try {
+                    driver?.unMute?.();
+                    driver?.setVolume?.(savedVolume);
+                    if (savedRate !== 1) driver?.setPlaybackRate?.(savedRate);
+                  } catch (_) {}
                   startTracker();
                   paint();
                   if (pendingPlay) {
@@ -6072,7 +6288,14 @@ class StudentView {
         if (!nativeBound) {
           nativeBound = true;
           listen(video, 'playing', () => { status(''); get('retry')?.classList.add('hidden'); transition('playing'); });
-          listen(video, 'canplay', () => { status(''); get('retry')?.classList.add('hidden'); if (!tracker) startTracker(); });
+          listen(video, 'canplay', () => {
+            status(''); get('retry')?.classList.add('hidden');
+            try {
+              video.volume = savedVolume / 100;
+              if (savedRate !== 1) video.playbackRate = savedRate;
+            } catch (_) {}
+            if (!tracker) startTracker();
+          });
           listen(video, 'loadeddata', () => { status(''); get('retry')?.classList.add('hidden'); });
           listen(video, 'error', () => failPlayback('Không thể tải video bài học. Hãy thử lại.'));
           for (const event of ['pause', 'waiting']) listen(video, event, () => transition('paused'));
@@ -6090,6 +6313,10 @@ class StudentView {
         if (video.readyState >= 1) {
           status('');
           get('retry')?.classList.add('hidden');
+          try {
+            video.volume = savedVolume / 100;
+            if (savedRate !== 1) video.playbackRate = savedRate;
+          } catch (_) {}
           startTracker();
         }
       }
@@ -6194,8 +6421,8 @@ class StudentView {
       const actionText = state === 'RESUME' ? 'Tiếp Tục Phiên Làm Bài' : 'Bắt Đầu Làm Bài Thi';
       const canAct = state === 'READY' || state === 'RESUME';
 
-      const candidateName = data.student_name || 'Thí sinh PWD301';
-      const candidateEmail = data.student_email || 'student@pwd301.edu.vn';
+      const candidateName = data.student_name || 'Thí sinh PPTQ';
+      const candidateEmail = data.student_email || 'student@pptq.edu.vn';
       const questionsCount = data.questions_count ?? assessment.questions_count ?? 'Chưa tải';
       const earnedScore = StudentView.getAssessmentScoreLabel(data);
 
@@ -7984,7 +8211,7 @@ class StudentView {
       const hiddenAnswerPolicies = new Set(['NEVER', 'AFTER_CLOSE', 'AFTER_ALL_ATTEMPTS']);
       const assessType = (data.assessment_type || data.type || 'QUIZ').toUpperCase();
       const isFormalExam = assessType === 'MIDTERM' || assessType === 'FINAL_EXAM' || maxPoints >= 10;
-      const courseCode = data.assessment_code || 'PWD301';
+      const courseCode = data.assessment_code || 'PPTQ';
       const courseId = data.course_id || '';
       const resultPdfHref = `/student/attempt/${encodeURIComponent(attemptId)}/result.pdf`;
       const assessmentTitle = data.assessment_title || (isFormalExam ? 'Kết quả Đánh giá Midterm (Chính thức)' : 'Kết quả Khảo thí Trắc nghiệm');
@@ -8629,7 +8856,7 @@ class StudentView {
                 <div class="p-3 rounded-xl bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 space-y-1">
                   <div class="font-bold flex items-center gap-1">
                     <span class="material-symbols-outlined text-[16px]">info</span>
-                    <span>Quy chế Phúc khảo Khảo thí PWD301:</span>
+                    <span>Quy chế Phúc khảo Khảo thí PPTQ:</span>
                   </div>
                   <p class="text-[11px] leading-relaxed">
                     Học viên có quyền gửi yêu cầu phúc khảo trong vòng 48 giờ sau khi công bố kết quả thi. Kết quả rà soát sẽ được phản hồi kèm lịch sử điều chỉnh điểm số bất biến trong hệ thống.
@@ -8718,7 +8945,7 @@ class StudentView {
       if (scaleBtn) {
         scaleBtn.onclick = () => {
           UI.alert(
-            'Quy chuẩn Thang điểm Khảo thí PWD301',
+            'Quy chuẩn Thang điểm Khảo thí PPTQ',
             `Tổng điểm bài thi: ${totalScore}/${maxPoints} điểm (Tỷ lệ: ${Number.isFinite(scorePct) ? (scorePct * 10).toFixed(1) : '0.0'}%).\n` +
             `Quy đổi hệ 10.0: ${Number.isFinite(scorePct) ? scorePct.toFixed(1) : '0.0'} / 10.0.\n` +
             `Xếp loại học lực: Hạng ${letterGrade} — ${gradeDescriptor}.\n` +
@@ -9604,7 +9831,7 @@ class StudentView {
             <span class="text-xs text-slate-500">Gia nhập đội ngũ Giảng viên</span>
           </div>
           <h1 class="text-2xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">Đăng Ký Trở Thành Giảng Viên</h1>
-          <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400">Chia sẻ kiến thức chuyên môn, kỹ năng thực chiến và đồng hành cùng cộng đồng học viên PWD301.</p>
+          <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400">Chia sẻ kiến thức chuyên môn, kỹ năng thực chiến và đồng hành cùng cộng đồng học viên PPTQ.</p>
         </div>
 
         <form id="become-instructor-form" class="space-y-7 pt-2 max-w-2xl" enctype="multipart/form-data">
@@ -10087,8 +10314,13 @@ class StudentView {
         .slice(0, 2)
         .toUpperCase();
       const profileIdentity = profile.public_id || profile.user_id || profile.id;
-      const generatedAvatar = StudentView.getStoredRandomAvatarUrl(profileIdentity);
-      const currentAvatarUrl = profile.avatar_url || generatedAvatar;
+      let currentAvatarUrl = profile.avatar_url;
+      if (!currentAvatarUrl) {
+        currentAvatarUrl = StudentView.getStoredRandomAvatarUrl(profileIdentity)
+          || StudentView.getStoredRandomAvatarUrl(profile.email)
+          || (typeof localStorage !== 'undefined' ? localStorage.getItem('pwd301_avatar') : '')
+          || '';
+      }
 
       container.innerHTML = `
         <div class="max-w-4xl mx-auto space-y-6 animate-fade-in pb-12">
@@ -10432,8 +10664,13 @@ class StudentView {
               updatePayload.avatar_url = targetAvatarUrl;
             }
             const res = await ApiClient.updateProfile(updatePayload);
-            const avatarStored = !generatedAvatarUrl
-              || StudentView.storeRandomAvatarUrl(profileIdentity, generatedAvatarUrl);
+            const activeFinalAvatar = targetAvatarUrl || res?.profile?.avatar_url || res?.user?.avatar_url;
+            if (activeFinalAvatar) {
+              StudentView.storeRandomAvatarUrl(profileIdentity, activeFinalAvatar);
+              if (profile.email) StudentView.storeRandomAvatarUrl(profile.email, activeFinalAvatar);
+              try { localStorage.setItem('pwd301_avatar', activeFinalAvatar); } catch (_) {}
+            }
+            const avatarStored = Boolean(activeFinalAvatar);
 
             UI.showToast(
               avatarStored

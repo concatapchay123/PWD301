@@ -38,6 +38,7 @@ from pwd301.blueprints.api_files import api_file_bp
 from pwd301.blueprints.api_import import api_import_bp
 from pwd301.blueprints.api_lessons import api_lesson_bp
 from pwd301.blueprints.api_notifications import api_notification_bp
+from pwd301.services.realtime_service import events_bp
 from pwd301.blueprints.api_student import api_student_bp
 from pwd301.blueprints.auth import auth_bp
 from pwd301.blueprints.core import core_bp
@@ -858,6 +859,7 @@ def create_app(
     app.register_blueprint(api_import_bp)
     app.register_blueprint(api_notification_bp)
     app.register_blueprint(api_ai_bp)
+    app.register_blueprint(events_bp)
 
     # Exempt REST API and frontend blueprints from CSRF validation (API clients use Bearer JWT)
     csrf.exempt(frontend_bp)
@@ -876,6 +878,7 @@ def create_app(
     csrf.exempt(api_import_bp)
     csrf.exempt(api_notification_bp)
     csrf.exempt(api_ai_bp)
+    csrf.exempt(events_bp)
 
     # Register CLI commands
     register_cli_commands(app)

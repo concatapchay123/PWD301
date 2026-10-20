@@ -201,13 +201,14 @@ Dựa trên toàn bộ lịch sử 304 cuộc trò chuyện và 271 chỉ đạo
   + **Triệt tiêu Lỗi Không Thể Pause (Single Event Listener Invariant)**: Tuyệt đối cấm gán đúp `onclick` và `addEventListener('click')` trên cùng một phần tử điều khiển video. Đảm bảo mỗi thao tác click Play hoặc Pause chỉ kích hoạt duy nhất một sự kiện trạng thái dứt khoát.
   + **Mở Khóa Tua 5 Giây Cuối**: Quy tắc chặn tua quá đoạn đã xem (frontier) có hiệu lực từ phút 00:00 đến $(Duration - 5s)$. Khi video còn $\le 5$ giây (hoặc video ngắn $\le 5s$), hệ thống tự động ghi nhận hoàn thành bài học (`unlocked = true`, `videoWatched = true`) và cho phép học viên tua tự do qua 5 giây cuối mà không bị chặn lại.
   + **Kích Hoạt Realtime Chuyển Bài Tiếp Theo (No F5 Reload)**: Bắt sự kiện kết thúc video `onEnded`. Khi video xem xong và bài trắc nghiệm củng cố đạt chuẩn, nút "Tiếp theo" lập tức sáng xanh ngọc (`bg-emerald-600`) và mở khóa bài tiếp theo trên danh mục bài học mà không cần tải lại trang.
-- **Lá Chắn An Ninh Toàn Hệ Thống & Tự Động Thu Hồi Phiên (Global Security Shield & Session Revocation)**:
-  + Áp dụng thống nhất trên toàn bộ các trang yêu cầu đăng nhập (Học viên, Giảng viên, Quản trị viên).
-  + Chặn phím tắt mở DevTools và xem mã nguồn: `F12`, `Ctrl+Shift+I`, `Ctrl+Shift+J`, `Ctrl+Shift+C`, `Ctrl+U`, `Cmd+Option+I/J/C/U`.
-  + Chặn thao tác chụp màn hình: `PrintScreen`, `Win+Shift+S` (Snipping Tool), `Meta+Shift+S`.
-  + Vô hiệu hóa chuột phải (`contextmenu` / Inspect Element).
-  + Bẫy phát hiện mở DevTools (console timing delta / debugger trap).
-  + Khi phát hiện vi phạm có độ tin cậy cao: Lập tức phủ Blackout Shield che kín toàn màn hình ("🛡️ CẢNH BÁO AN NINH HỆ THỐNG"), gửi yêu cầu thu hồi phiên đăng nhập server (`POST /auth/logout`), xóa token client và chuyển hướng về trang đăng nhập kèm thông báo bảo mật rõ ràng.
+- **Lá Chắn An Ninh Phân Cấp & Chỉ Thu Hồi Phiên Khi Mở DevTools/Cào Dữ Liệu (Layered Security Shield & Strict Threat Lockdown)**:
+  + **Khi học tập/xem bài học thông thường**: Cho phép chuột phải tự do, không hiển thị cảnh báo chụp màn hình (`PrintScreen`, `Win+Shift+S`), tuyệt đối không tự ý đăng xuất người dùng.
+  + **Khi làm bài kiểm tra/khảo thí (Miniquiz, Test chương, Final Exam)**:
+    * Thao tác chụp màn hình (`PrintScreen`, `Win+Shift+S`, `Meta+Shift+S`) và chuột phải (`contextmenu`): Chặn hành vi, xóa sạch bộ nhớ tạm clipboard, hiển thị thông báo cảnh báo Toast, đồng thời ghi log vi phạm và tăng bộ đếm vi phạm kiểm tra (`violations_count` / proctoring events).
+    * **TUYỆT ĐỐI CẤM tự động đăng xuất** đối với thao tác chụp màn hình hoặc chuột phải.
+  + **Hành vi vi phạm an ninh nghiêm trọng (Bắt buộc Thu hồi Phiên & Phủ Blackout Shield)**:
+    * Chỉ áp dụng cho các hành vi: Mở DevTools (`F12`, `Ctrl+Shift+I/J/C`, `Ctrl+U`, `Cmd+Option+I/J/C/U`, `debugger trap` / console timing delta), sử dụng extension trình duyệt để cào dữ liệu (scraping), hoặc can thiệp mã nguồn/tài nguyên hệ thống trái phép.
+    * Khi phát hiện vi phạm nghiêm trọng: Lập tức phủ Blackout Shield che kín toàn màn hình ("🛡️ CẢNH BÁO AN NINH HỆ THỐNG"), gọi `POST /auth/logout` để thu hồi phiên trên server, xóa token client và chuyển hướng về `#/auth/login` kèm cảnh báo bảo mật.
 - **Dung Thứ Lỗi Backend & Fallback Thời Lượng Kiên Cường (Resilient Playback Fallback)**:
   + Khi máy chủ chưa cấu hình `YOUTUBE_API_KEY` hoặc mạng kết nối Google bị gián đoạn/quota/timeout, backend TUYỆT ĐỐI CẤM ném lỗi `LessonValidationError("Trusted YouTube duration is unavailable...")` làm gián đoạn học tập của sinh viên.
   + Tự động áp dụng cơ chế 3-tier fallback kiên cường: Google Data API -> client reported duration -> lesson duration -> safe default 1800.0s (30 phút, tối thiểu 300s). Ghi log cảnh báo và tự động đối soát (reconcile) thời lượng chính xác ở nhịp tim (heartbeat) đầu tiên.
@@ -247,4 +248,30 @@ Dựa trên toàn bộ lịch sử 304 cuộc trò chuyện và 271 chỉ đạo
   6. Báo cáo ngắn gọn 1 dòng: `Đã tự động tiếp quản: Đang ở [Bước X], tiếp tục thực hiện...` và bắt tay vào việc ngay.
 - **An toàn Đa Agent (Multi-Agent Safe Resume)**: Controller Agent tuyệt đối cấm spawn lại các subagent cho những task đã commit thành công. Chỉ spawn duy nhất subagent cho task đang dở dang.
 - **Kỷ luật Tự Lưu Trạng Thái (Auto-State Persistence)**: Agent tự động duy trì file checklist `tasks/CURRENT.md` mỗi khi nhận task lớn từ 2 bước trở lên để đảm bảo luôn có điểm tựa tiếp quản vĩnh viễn trên đĩa.
+
+### 10.15. Bất biến Đăng xuất Toàn bộ Thiết bị khi Đăng nhập Đồng thời (Multi-Device Simultaneous Termination & Realtime Lockdown)
+- **Kiểm tra ngay tại thời điểm Đăng nhập (`POST /auth/login`)**: Hễ tài khoản đang có phiên đăng nhập trước đó còn hiệu lực (chưa hết hạn session và chưa logout) mà có thiết bị thứ 2 đăng nhập vào:
+  + Hệ thống lập tức thu hồi (`revoked_at = utc_now()`) toàn bộ các phiên hoạt động của tài khoản (cả thiết bị cũ A lẫn thiết bị mới B vừa gửi lệnh đăng nhập).
+  + Tăng `user.auth_version` để lập tức vô hiệu hóa phiên ở mọi client/tab.
+  + **Bắn tín hiệu Realtime SSE tức thì**: Phát sự kiện `auth:concurrent_session_revoked` qua kênh SSE tới thiết bị A.
+  + **Phủ Modal Cảnh báo An ninh Toàn màn hình (Dual Blackout Modal)**: Cả 2 màn hình A (đang mở trong hệ thống) và B (vừa bấm đăng nhập) lập tức hiển thị Modal cảnh báo an ninh toàn màn hình: *"🛡️ CẢNH BÁO AN NINH: Tài khoản của bạn được phát hiện đăng nhập đồng thời trên một thiết bị khác. Hệ thống đã tự động đăng xuất trên tất cả thiết bị để bảo vệ an toàn."*, tự động đếm lùi 5 giây hoặc khi bấm nút xác nhận sẽ xóa sạch client state và chuyển hướng về trang Đăng nhập (`#/auth/login`).
+  + Ghi nhận nhật ký an ninh hệ thống `CONCURRENT_LOGIN_TERMINATION`.
+
+### 10.18. Bất biến Bạch tuộc Trợ lý AI Toàn diện (Octopus AI Official Identity & 4096-Token Robustness)
+- **Avatar Bạch tuộc AI Chính thức**: Nghiêm cấm dùng icon robot thô sơ (`smart_toy`). Mọi vị trí đại diện Bạch tuộc Trợ lý AI (tiêu đề chat, tin nhắn AI, typing indicator, outline tab) bắt buộc hiển thị ảnh đại diện chính thức `assets/img/octopus_ai_icon.png` (bo tròn `rounded-full`, viền nhẹ tương thích dark/light mode).
+- **Khóa trần Độ dài & Triệt tiêu Cụt đuôi**: Cấu hình `maxOutputTokens: 4096`. Hàm trích xuất text `_extract_text_from_response` bắt buộc duyệt và ghép toàn bộ các `parts` của Gemini (`"".join(...)`), nghiêm cấm chỉ lấy `parts[0]`. System instruction chuẩn hóa sư phạm: tóm tắt cốt lõi -> giải thích chi tiết -> ví dụ thực tiễn, tuyệt đối không đứt câu giữa chừng.
+- **Nút Gửi Inset Pill Hiện đại (ChatGPT/Gemini Style)**: Ô nhập liệu và nút gửi được thiết kế lồng nhau dạng capsule/pill tinh tế (`Modern Inset Pill`). Nút tròn thanh thoát nằm bên trong góc phải ô input, tự động chuyển trạng thái active khi có ký tự, micro-interaction mượt mà.
+
+### 10.19. Bất biến Đồng bộ Avatar Người dùng 2 Chiều (Single Source of Truth Avatar)
+- **Lưu trữ CSDL Chuẩn mực**: Avatar người dùng được lưu trực tiếp vào trường `avatar_url` của bảng `User` trong CSDL qua API `PUT /auth/profile`.
+- **Đồng bộ hóa Tuyệt đối (Zero-Drift)**: Khung hiển thị ảnh đại diện trong trang Cài đặt tài khoản (`renderSettings`) và góc Topbar (`updateUserUI`) sử dụng cùng logic nạp ưu tiên `profile.avatar_url`, fallback duy nhất khóa chuẩn hóa `pwd301:random-avatar:${id}` và `pwd301_avatar`. Khi người dùng tạo avatar ngẫu nhiên và lưu hồ sơ, Topbar và trang Cài đặt lập tức đồng bộ hiển thị 100% trong 0ms mà không cần F5.
+
+### 10.16. Bất biến Soạn thảo Giáo trình Hiện đại (Modern Curriculum Studio Invariants)
+- **Chỉnh sửa Thông tin Khóa học Trực tiếp (Course Header Inline Edit)**: Cho phép giảng viên chỉnh sửa trực tiếp Mã môn, Tên môn học, Danh mục và Mô tả/Giới thiệu môn học ngay trên trang chỉnh sửa khóa học bằng cách bấm nút "Chỉnh sửa" hoặc nhấp đúp (Double-click) vào từng thành phần. Dữ liệu tự động lưu vào bản nháp staging của khóa học.
+- **Dán Ảnh (Ctrl+V) vào Nội dung Bài học (Fail-Closed Image Paste)**: Trình soạn thảo Word canvas (`.word-editor-canvas`) bắt sự kiện dán ảnh từ clipboard, tự động tải lên backend kiểm tra mã độc qua ClamAV & định dạng tệp (Fail-Closed). Nếu sạch, chèn trực tiếp thẻ `<img>` với URL inline an toàn và kích hoạt autosave.
+- **Gom nhóm Miniquiz thành Khối Session Tinh gọn (Single Miniquiz Session Card & Stepper Tabs)**: Khi giảng viên ấn nút "Câu hỏi" khi khối liền trước là Miniquiz, hệ thống gom toàn bộ các câu hỏi vào duy nhất 01 khối Session Miniquiz, điều hướng qua các tab `[Câu 1] [Câu 2] ... [Câu N]` kèm nút `[+]` thêm nhanh câu mới. Form câu hỏi có nút "Xóa câu này", header có nút "Xóa toàn bộ cụm".
+
+### 10.17. Bất biến Xem trước Trực tiếp trong Tab Mới (Full Student View Preview in New Tab)
+- Nút "Xem trước" trong Soạn thảo giáo trình mở thẳng một Tab trình duyệt mới (`_blank`) trỏ tới giao diện học tập của học sinh (`#/student/lessons/reader?course_id=...&lesson_id=...&preview=1`), đồng bộ 100% video, tài liệu, bài giảng và miniquiz thực tế để giảng viên đối soát trực quan. Loại bỏ hoàn toàn popup modal thu nhỏ cũ.
+
 

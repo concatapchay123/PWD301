@@ -111,13 +111,21 @@ def get_authenticated_actor() -> User | None:
     # REST API clients must supply Bearer JWT.
     # Exception: Safe GET requests to /api/files/<asset_id>/download or /stream allow session cookies
     # for web browser users (safe, idempotent GET per ADR-002 and 09_FILE_IMPORT_API.md).
+    # Also allow safe GET requests to SSE realtime stream endpoints (/api/events/stream).
     if has_request_context() and (request.path == "/api" or request.path.startswith("/api/")):
         is_safe_file_download = (
             request.method == "GET"
             and request.path.startswith("/api/files/")
             and (request.path.endswith("/download") or request.path.endswith("/stream"))
         )
-        if not is_safe_file_download:
+        is_safe_sse = (
+            request.method == "GET"
+            and (
+                request.path in ("/api/events/stream", "/api/notifications/events/stream")
+                or request.path.startswith("/api/events/")
+            )
+        )
+        if not (is_safe_file_download or is_safe_sse):
             return None
 
     if (

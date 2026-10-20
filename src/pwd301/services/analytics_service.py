@@ -817,6 +817,15 @@ def get_student_learning_overview(
             .all()
         )
         for a in assessments:
+            # 1. Condition 1: Must be currently open (open_at <= now <= close_at)
+            open_utc = _ensure_utc(a.open_at)
+            close_utc = _ensure_utc(a.close_at)
+            now_utc = _ensure_utc(now)
+            if open_utc and now_utc < open_utc:
+                continue
+            if close_utc and now_utc > close_utc:
+                continue
+
             student_attempts = (
                 sess.query(AssessmentAttempt)
                 .filter(
@@ -827,22 +836,32 @@ def get_student_learning_overview(
                 .all()
             )
             attempts_count = len(student_attempts)
-            is_limit_reached = bool(
-                a.attempt_limit is not None
-                and a.attempt_limit > 0
-                and attempts_count >= a.attempt_limit
+
+            # 2. Condition 2 & 3: Check prerequisites, lock status, and passed/exhausted state
+            from pwd301.services.assessment_student_service import student_assessment_summary
+            enrollment_obj = next((e for e in active_enrollments if e.course_id == a.course_id), None)
+            summary = student_assessment_summary(
+                actor, a, session=sess, attempts=student_attempts, enrollment=enrollment_obj
             )
-            # If student exhausted all allowed attempts, exclude from urgent to-do
-            if is_limit_reached:
+
+            # Exclude if locked (prerequisite lessons in course not yet completed)
+            if summary.get("locked") or summary.get("is_locked"):
                 continue
 
-            # If student already passed an attempt with released score, exclude from urgent to-do
+            # Exclude if exhausted all attempts
+            if summary.get("is_exhausted") or (
+                a.attempt_limit is not None and a.attempt_limit > 0 and attempts_count >= a.attempt_limit
+            ):
+                continue
+
+            # Exclude if student already passed an attempt with released score
+            if summary.get("score", {}).get("passed") is True:
+                continue
+
             has_released_pass = False
             for att in student_attempts:
                 if att.result and att.result.passed is True:
                     policy = a.score_release_policy
-                    close_utc = _ensure_utc(a.close_at)
-                    now_utc = _ensure_utc(now)
                     after_close_released = bool(
                         policy == "AFTER_CLOSE" and close_utc and now_utc and now_utc >= close_utc
                     )

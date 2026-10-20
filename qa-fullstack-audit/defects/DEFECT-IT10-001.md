@@ -4,7 +4,7 @@
 - **Component:** Backend REST API (`src/pwd301/blueprints/instructor/routes.py`) / Course Management  
 - **Severity:** High (P1)  
 - **Category:** Business Logic / Authorization Desynchronization  
-- **Status:** OPEN  
+- **Status:** VERIFIED / RESOLVED  
 
 ---
 
@@ -105,3 +105,20 @@ def trash_course_route(course_id: str) -> Any:
         200,
     )
 ```
+
+
+---
+
+## 5. Remediation Verification (PASSED)
+- **Implemented Fix:** In [src/pwd301/blueprints/instructor/routes.py](file:///e:/PWD301/src/pwd301/blueprints/instructor/routes.py#L1120-L1135), `trash_course_route` eliminates the post-trash call to `_serialize_course(course)`. It returns a standardized JSON envelope:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "course_id": str(course.public_id),
+      "status": "TRASH",
+      "deleted_at": course.deleted_at.isoformat() if course.deleted_at else None
+    }
+  }
+  ```
+- **Verification Evidence:** Executed in Iteration 10 of `run_fullstack_20_iterations_master.py`. Soft-delete request returned HTTP 200 with `status: TRASH`. Database confirmed `deleted_at` was populated and no HTTP 403 occurred. Result: **PASSED**.

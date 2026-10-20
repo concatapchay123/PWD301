@@ -89,14 +89,17 @@ class AuthView {
 
   static render(runtime = {}) {
     return `
-      <div class="min-h-full w-full flex flex-col justify-center items-center px-4 py-8 sm:py-14 bg-[#FAF9F5] dark:bg-[#191919] font-sans selection:bg-[#ECE8DF] selection:text-[#222120] dark:selection:bg-[#37352F] dark:selection:text-[#EDEDEB]">
+      <div class="min-h-full w-full flex flex-col justify-center items-center px-4 py-8 sm:py-14 bg-[#FAF9F5] dark:bg-[#191919] font-sans selection:bg-[#ECE8DF] selection:text-[#222120] dark:selection:bg-[#37352F] dark:selection:text-[#EDEDEB] relative">
         
-        <!-- Brand Header -->
-        <div class="mb-6 text-center select-none flex flex-col items-center">
-          <h1 class="text-2xl sm:text-3xl font-extrabold text-[#222120] dark:text-[#EDEDEB] tracking-tight">PPTQ LMS</h1>
-        </div>
-
         <div class="w-full max-w-sm">
+          
+          <!-- Brand Logo: Căn chính giữa ngay trên UI cụm đăng nhập -->
+          <div class="flex justify-center items-center mb-6 select-none">
+            <a href="#/" class="inline-flex items-center justify-center transition-transform hover:scale-[1.02] active:scale-[0.98]" title="PPTQ LMS">
+              <img src="/frontend/assets/img/pptq_logo.png" alt="PPTQ Logo" class="h-10 sm:h-11 w-auto object-contain dark:hidden" />
+              <img src="/frontend/assets/img/pptq_logo_dark.png" alt="PPTQ Logo" class="h-10 sm:h-11 w-auto object-contain hidden dark:inline-block" />
+            </a>
+          </div>
           
           <!-- Security Alert Banner (if locked down) -->
           ${(() => {
@@ -160,7 +163,7 @@ class AuthView {
                     name="email"
                     required
                     autocomplete="email"
-                    placeholder="name@pwd301.local"
+                    placeholder="Nhập email..."
                     class="c-input pl-9"
                   />
                 </div>
@@ -358,7 +361,7 @@ class AuthView {
                     name="email"
                     required
                     autocomplete="email"
-                    placeholder="student@example.com"
+                    placeholder="Nhập email..."
                     class="c-input pl-9"
                   />
                 </div>
@@ -485,7 +488,7 @@ class AuthView {
                 <input
                   type="email"
                   id="recovery-email"
-                  placeholder="name@pwd301.local"
+                  placeholder="Nhập email..."
                   class="c-input pl-9"
                 />
               </div>
@@ -532,10 +535,7 @@ class AuthView {
             </div>
           </div>
 
-          <!-- Footer Copyright -->
-          <div class="mt-6 text-center text-[11px] text-[#8F8E8A]">
-            <p>Hệ thống Học tập & Khảo thí PWD301 LMS</p>
-          </div>
+
 
         </div>
       </div>
@@ -818,7 +818,15 @@ class AuthView {
             window.app.redirectToRoleHome();
           }
         } catch (err) {
-          showError(err.message || 'Email hoặc mật khẩu không chính xác.');
+          const isConcurrent = err.code === 'CONCURRENT_LOGIN_DETECTED' || err.status === 409 || (err.message && err.message.includes('đồng thời'));
+          if (isConcurrent && typeof UI !== 'undefined' && typeof UI.showConcurrentSessionModal === 'function') {
+            UI.showConcurrentSessionModal({
+              message: err.message || 'Tài khoản đã bị đăng xuất trên toàn bộ thiết bị do phát hiện đăng nhập đồng thời từ thiết bị khác để bảo vệ an toàn.',
+              isLoginAttempt: true
+            });
+          } else {
+            showError(err.message || 'Email hoặc mật khẩu không chính xác.');
+          }
           if (submitBtn) {
             submitBtn.disabled = false;
             submitBtn.innerHTML = `

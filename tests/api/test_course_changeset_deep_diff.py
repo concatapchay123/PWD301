@@ -61,9 +61,6 @@ def deep_diff_env(app: Flask) -> dict[str, Any]:
         },
         session=sess,
     )
-    course.status = "PUBLISHED"
-    sess.flush()
-
     unit1 = create_learning_unit(
         actor=inst_user,
         course_id=course.id,
@@ -88,6 +85,7 @@ def deep_diff_env(app: Flask) -> dict[str, Any]:
         },
         session=sess,
     )
+    course.status = "PUBLISHED"
     lesson1.status = "PUBLISHED"
     sess.commit()
 
@@ -283,3 +281,117 @@ def test_deep_diff_detects_standalone_file_assets(deep_diff_env: dict[str, Any])
     assert f_change["change_type"] == "ADDED"
     assert f_change["file_name"] == "GiaoTrinh_ChuyenSau.pdf"
     assert diff["total_changes_count"] > 0
+
+
+def test_deep_diff_zero_false_positive_when_rules_and_cover_untouched(
+    deep_diff_env: dict[str, Any],
+) -> None:
+    """When a working draft is created with unchanged metadata and rules, no false positives occur."""
+    sess: Session = db.session
+    inst = deep_diff_env["instructor"]
+    course = deep_diff_env["course"]
+
+    from pwd301.services.course_workflow_service import stage_course_fields, working_changeset
+
+    # Stage metadata with exact same title and completion rules
+    stage_course_fields(
+        actor=inst,
+        course=course,
+        group="course_metadata",
+        fields={
+            "title": course.title,
+            "description": course.description,
+            "thumbnail_file_asset_id": course.thumbnail_file_asset_id,
+        },
+        session=sess,
+    )
+    stage_course_fields(
+        actor=inst,
+        course=course,
+        group="completion_rules",
+        fields={
+            "minimum_progress_percent": 80,
+            "require_all_required_lessons": True,
+            "require_required_assessments": True,
+        },
+        session=sess,
+    )
+    sess.commit()
+
+    diff = get_course_changeset_diff(
+        actor=inst, change_request_id_or_course_id=course.id, session=sess
+    )
+
+    # 1. Total changes must be 0
+    assert diff["total_changes_count"] == 0
+    assert len(diff["metadata_changes"]) == 0
+
+    # 2. Governance rules must not be marked changed
+    gov = diff["governance_rules"]
+    assert gov["is_changed"] is False
+    assert gov["completion_rules_changed"] is False
+    assert gov["cover_image_changed"] is False
+
+    # 3. proposed_cover_url must not be in governance_rules when cover is unchanged
+    assert "proposed_cover_url" not in gov
+    assert gov.get("cover_image_url") is None
+
+    # 4. Academic divisions must be present with all 7 groups
+    assert "academic_divisions" in diff
+    divisions = diff["academic_divisions"]
+    assert "1_curriculum_structure" in divisions
+    assert "2_content_blocks" in divisions
+    assert "3_interactive_quizzes" in divisions
+    assert "4_assessments_and_questions" in divisions
+    assert "5_file_changes" in divisions
+    assert "6_prerequisite_changes" in divisions
+    assert "7_governance_and_metadata" in divisions
+
+
+def test_deep_diff_detects_academic_divisions_and_trailer_contact(
+    deep_diff_env: dict[str, Any],
+) -> None:
+    """Trailer URL, contact info, and completion threshold changes are correctly recognized in division 7."""
+    sess: Session = db.session
+    inst = deep_diff_env["instructor"]
+    course = deep_diff_env["course"]
+
+    from pwd301.services.course_workflow_service import stage_course_fields
+
+    # Stage new trailer_url and changed GPA threshold
+    stage_course_fields(
+        actor=inst,
+        course=course,
+        group="course_metadata",
+        fields={
+            "trailer_url": "https://www.youtube.com/watch?v=TESTTRAILER123",
+            "contact_info": {"email": "instructor@school.edu", "phone": "0987654321"},
+        },
+        session=sess,
+    )
+    stage_course_fields(
+        actor=inst,
+        course=course,
+        group="completion_rules",
+        fields={
+            "minimum_grade_score": 8.0,
+        },
+        session=sess,
+    )
+    sess.commit()
+
+    diff = get_course_changeset_diff(
+        actor=inst, change_request_id_or_course_id=course.id, session=sess
+    )
+
+    # Must detect trailer_url, contact_info, and completion rule change
+    assert diff["total_changes_count"] >= 3
+    gov = diff["governance_rules"]
+    assert gov["is_changed"] is True
+    assert gov["completion_rules_changed"] is True
+
+    # Trailer and contact info in metadata_changes
+    meta_fields = [m["field"] for m in diff["metadata_changes"]]
+    assert "trailer_url" in meta_fields
+    assert "contact_info" in meta_fields
+

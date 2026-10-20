@@ -1813,30 +1813,39 @@ def student_course_detail(course_id: str) -> Any:
     from pwd301.services.file_service import unapproved_course_asset_ids
 
     hidden_assets = unapproved_course_asset_ids(course, db.session)
-    serialized_resources = []
-    for fa in file_assets:
-        if str(fa.public_id) in hidden_assets:
-            continue
-        if fa.virus_scan_status != "CLEAN":
-            continue
-        latest_rev = fa.revisions[-1] if fa.revisions else None
-        rev_name = latest_rev.original_filename if latest_rev else None
-        byte_sz = getattr(latest_rev, "size_bytes", None) if latest_rev else None
-        serialized_resources.append(
-            {
-                "resource_id": str(fa.public_id),
-                "asset_id": str(fa.public_id),
-                "id": str(fa.public_id),
-                "label": fa.display_name or rev_name or "Tài liệu môn học",
-                "filename": rev_name or fa.display_name,
-                "byte_size": byte_sz,
-                "file_size": byte_sz,
-                "file_size_formatted": "Tài liệu giáo trình",
-                "download_url": (
-                    f"/student/courses/{course.public_id}/files/{fa.public_id}/download"
-                ),
-            }
+    is_enrolled_actor = bool(
+        actor is not None
+        and (
+            actor.is_admin
+            or (actor.has_role("INSTRUCTOR") and course.owner_instructor_id == actor.id)
+            or (enrollment is not None and enrollment.status in ["ACTIVE", "COMPLETED"])
         )
+    )
+    serialized_resources = []
+    if is_enrolled_actor:
+        for fa in file_assets:
+            if str(fa.public_id) in hidden_assets:
+                continue
+            if fa.virus_scan_status != "CLEAN":
+                continue
+            latest_rev = fa.revisions[-1] if fa.revisions else None
+            rev_name = latest_rev.original_filename if latest_rev else None
+            byte_sz = getattr(latest_rev, "size_bytes", None) if latest_rev else None
+            serialized_resources.append(
+                {
+                    "resource_id": str(fa.public_id),
+                    "asset_id": str(fa.public_id),
+                    "id": str(fa.public_id),
+                    "label": fa.display_name or rev_name or "Tài liệu môn học",
+                    "filename": rev_name or fa.display_name,
+                    "byte_size": byte_sz,
+                    "file_size": byte_sz,
+                    "file_size_formatted": "Tài liệu giáo trình",
+                    "download_url": (
+                        f"/student/courses/{course.public_id}/files/{fa.public_id}/download"
+                    ),
+                }
+            )
 
     serialized_lessons = []
     for les in lessons:
@@ -2321,7 +2330,7 @@ def submit_attempt_appeal_route(attempt_id: str) -> Any:
     """Submit an appeal / regrading request for a completed attempt."""
     import json
 
-    from pwd301.models.attempt_regrade import AssessmentAttempt
+    from pwd301.models.attempt_regrade import AssessmentAppeal, AssessmentAttempt
     from pwd301.models.notification_audit import AuditEvent
     from pwd301.models.types import utc_now
     from pwd301.services.attempt_service import _resolve_attempt
@@ -2379,17 +2388,15 @@ def submit_attempt_appeal_route(attempt_id: str) -> Any:
     note = str(payload.get("note", "")).strip()
 
     # Enforce idempotency: check if an appeal is already pending review
-    last_event = (
-        db.session.query(AuditEvent)
+    existing_appeal = (
+        db.session.query(AssessmentAppeal)
         .filter(
-            AuditEvent.target_type == "ASSESSMENT_ATTEMPT",
-            AuditEvent.target_id == attempt.id,
-            AuditEvent.action.in_(["STUDENT_ATTEMPT_APPEAL", "INSTRUCTOR_APPEAL_DECISION"]),
+            AssessmentAppeal.assessment_attempt_id == attempt.id,
+            AssessmentAppeal.status == "PENDING",
         )
-        .order_by(AuditEvent.id.desc())
         .first()
     )
-    if last_event and last_event.action == "STUDENT_ATTEMPT_APPEAL":
+    if existing_appeal:
         return (
             jsonify(
                 {
@@ -2403,12 +2410,42 @@ def submit_attempt_appeal_route(attempt_id: str) -> Any:
         )
 
     now = utc_now()
-    appeal_details = {
-        "reason": reason,
-        "note": note,
-        "status": "PENDING",
-        "created_at": now.isoformat(),
-    }
+    orig_score = float(attempt.result.score) if attempt.result and attempt.result.score is not None else float(attempt.total_score or 0.0)
+
+    appeal_record = AssessmentAppeal(
+        assessment_attempt_id=attempt.id,
+        student_user_id=actor.id,
+        course_id=attempt.assessment.course_id,
+        reason=reason,
+        student_note=note or None,
+        status="PENDING",
+        original_score=orig_score,
+        created_at=now,
+    )
+    db.session.add(appeal_record)
+    db.session.flush()
+
+    # Dispatch in-app notification to course managing instructor
+    course = attempt.assessment.course if attempt.assessment else None
+    if course and course.owner_instructor_id:
+        from pwd301.services.notification_service import dispatch_notification
+        student_display = actor.display_name or actor.email
+        exam_title = attempt.assessment.title if attempt.assessment else "Bài thi"
+        try:
+            dispatch_notification(
+                recipient_user=course.owner_instructor_id,
+                event_type="STUDENT_ATTEMPT_APPEAL",
+                title="Đơn phúc khảo mới từ học viên",
+                body=f"Học viên {student_display} vừa gửi đơn phúc khảo cho bài thi '{exam_title}' thuộc khóa học {course.course_code}.",
+                action_url="#/instructor/appeals",
+                category="ASSESSMENT",
+                target_role="INSTRUCTOR",
+                session=db.session,
+            )
+        except Exception:
+            pass
+
+    appeal_details = appeal_record.serialize()
 
     audit_entry = AuditEvent(
         actor_user_id=actor.id,
@@ -2426,6 +2463,7 @@ def submit_attempt_appeal_route(attempt_id: str) -> Any:
     return (
         jsonify(
             {
+                "success": True,
                 "message": "Đơn phúc khảo đã được gửi thành công đến Hội đồng Khảo thí.",
                 "appeal": appeal_details,
             }
@@ -2438,9 +2476,7 @@ def submit_attempt_appeal_route(attempt_id: str) -> Any:
 @student_required
 def get_attempt_appeal_route(attempt_id: str) -> Any:
     """Retrieve current appeal status for an attempt."""
-    import json
-
-    from pwd301.models.notification_audit import AuditEvent
+    from pwd301.models.attempt_regrade import AssessmentAppeal
     from pwd301.services.attempt_service import _resolve_attempt
 
     actor = require_authenticated_actor()
@@ -2450,35 +2486,16 @@ def get_attempt_appeal_route(attempt_id: str) -> Any:
     if attempt.student_user_id != actor.id and not actor.is_instructor and not actor.is_admin:
         return jsonify({"error": {"code": "FORBIDDEN", "message": "Không có quyền truy cập."}}), 403
 
-    event = (
-        db.session.query(AuditEvent)
-        .filter(
-            AuditEvent.target_type == "ASSESSMENT_ATTEMPT",
-            AuditEvent.target_id == attempt.id,
-            AuditEvent.action.in_(["STUDENT_ATTEMPT_APPEAL", "INSTRUCTOR_APPEAL_DECISION"]),
-        )
-        .order_by(AuditEvent.id.desc())
+    appeal = (
+        db.session.query(AssessmentAppeal)
+        .filter(AssessmentAppeal.assessment_attempt_id == attempt.id)
+        .order_by(AssessmentAppeal.id.desc())
         .first()
     )
+    if appeal:
+        return jsonify({"success": True, "appeal": appeal.serialize()}), 200
 
-    if not event or not event.after_json:
-        return jsonify({"appeal": None}), 200
-
-    try:
-        data = json.loads(event.after_json)
-    except Exception:
-        data = {}
-
-    appeal_info = {
-        "status": data.get("status", "PENDING"),
-        "reason": data.get("reason", event.reason),
-        "note": data.get("note", ""),
-        "created_at": data.get("created_at") or event.created_at.isoformat(),
-        "reviewed_at": data.get("reviewed_at"),
-        "reviewer_note": data.get("reviewer_note"),
-        "score_delta": data.get("score_delta"),
-    }
-    return jsonify({"appeal": appeal_info}), 200
+    return jsonify({"success": True, "appeal": None}), 200
 
 
 @student_bp.route("/attempts/<attempt_id>/grade-history", methods=["GET"])

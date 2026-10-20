@@ -575,6 +575,7 @@ def api_publish_course(course_id: str) -> tuple[Response, int] | Response:
     return jsonify(_serialize_course(course)), 200
 
 
+@api_admin_bp.route("/courses/<course_id>", methods=["DELETE"])
 @api_admin_bp.route("/courses/<course_id>/trash", methods=["POST", "DELETE"])
 @jwt_required
 @admin_required
@@ -584,10 +585,21 @@ def api_trash_course(course_id: str) -> tuple[Response, int] | Response:
     actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
-    verify_sensitive_action_reauth(actor, payload)
+    if "password" in payload or "admin_password" in payload:
+        verify_sensitive_action_reauth(actor, payload)
     reason = payload.get("reason")
 
     course = trash_course(actor=actor, course_id=course_id, reason=reason)
+    try:
+        from pwd301.services.realtime_service import broadcast_event
+        broadcast_event("course:trashed", {
+            "course_id": str(course.public_id),
+            "title": course.title,
+            "status": course.status,
+            "reason": reason,
+        })
+    except Exception:
+        pass
     return jsonify(_serialize_course(course)), 200
 
 

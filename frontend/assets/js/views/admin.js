@@ -1636,7 +1636,115 @@ class AdminView {
             </table>
           </div>
         </div>
+
+        <!-- Section 3: Quản lý khóa học (TASK-109 / WF20) -->
+        <div id="admin-active-courses-management" class="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+            <div>
+              <h3 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <span class="material-symbols-outlined text-primary text-[20px]">school</span>
+                <span>Quản lý khóa học</span>
+              </h3>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Danh sách các khóa học đã xuất bản trên hệ thống. Quản trị viên có thể theo dõi và quản lý dữ liệu đào tạo.</p>
+            </div>
+            <span class="px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold" id="admin-active-courses-count">
+              Đang tải...
+            </span>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs sm:text-sm min-w-[900px] table-fixed">
+              <colgroup>
+                <col style="width:140px"><col style="width:300px"><col style="width:180px">
+                <col style="width:140px"><col style="width:140px">
+              </colgroup>
+              <thead class="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 uppercase tracking-wider text-[11px] font-bold">
+                <tr>
+                  <th class="px-3.5 py-3">Mã môn</th>
+                  <th class="px-3.5 py-3">Tên khóa học</th>
+                  <th class="px-3.5 py-3">Giảng viên</th>
+                  <th class="px-3.5 py-3">Trạng thái</th>
+                  <th class="px-3.5 py-3 text-right">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300 font-medium" id="admin-active-courses-tbody">
+                <tr><td colspan="5" class="py-8 text-center text-slate-400 text-xs">Đang tải danh sách khóa học hiện hành...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       `;
+
+      // Load & Render Active Courses for Admin (TASK-109 / WF20)
+      const loadActiveCoursesForAdmin = async () => {
+        const tbody = document.getElementById('admin-active-courses-tbody');
+        const countBadge = document.getElementById('admin-active-courses-count');
+        if (!tbody) return;
+        try {
+          const res = await ApiClient.getAdminCourses();
+          const rawCourses = (res && res.courses) ? res.courses : [];
+          // Filter out all DRAFT courses, only display PUBLISHED courses
+          const courses = rawCourses.filter(c => c.status === 'PUBLISHED');
+          if (countBadge) countBadge.textContent = `${courses.length} khóa học`;
+
+          if (courses.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-slate-400 text-xs">Chưa có khóa học nào đã xuất bản.</td></tr>`;
+            return;
+          }
+
+          tbody.innerHTML = courses.map(c => `
+            <tr class="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
+              <td class="px-3.5 py-3 font-mono font-bold text-primary">${UI.escapeHtml(c.course_code)}</td>
+              <td class="px-3.5 py-3 font-bold text-slate-900 dark:text-slate-100">${UI.escapeHtml(c.title)}</td>
+              <td class="px-3.5 py-3 text-slate-600 dark:text-slate-400">${UI.escapeHtml(c.owner_instructor_name || c.instructor_name || c.instructor?.display_name || c.owner_instructor?.full_name || 'Chưa phân công')}</td>
+              <td class="px-3.5 py-3">${UI.statusBadge(c.status)}</td>
+              <td class="px-3.5 py-3 text-right">
+                <button
+                  type="button"
+                  class="btn-admin-delete-course px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60 text-xs font-bold inline-flex items-center gap-1 cursor-pointer transition-colors"
+                  data-course-id="${c.course_id || c.id}"
+                  data-course-title="${UI.escapeHtml(c.title)}"
+                  data-course-code="${UI.escapeHtml(c.course_code)}"
+                >
+                  <span class="material-symbols-outlined text-[15px]">delete</span>
+                  <span>Xóa</span>
+                </button>
+              </td>
+            </tr>
+          `).join('');
+
+          tbody.querySelectorAll('.btn-admin-delete-course').forEach(btn => {
+            btn.onclick = async () => {
+              const cId = btn.dataset.courseId;
+              const cTitle = btn.dataset.courseTitle;
+              const cCode = btn.dataset.courseCode || '';
+
+              const resModal = await UI.showCourseDelete2FAModal({
+                courseCode: cCode,
+                courseTitle: cTitle,
+                isDraft: false,
+                requireAuditReason: true
+              });
+              if (!resModal || !resModal.confirmed) return;
+
+              try {
+                btn.disabled = true;
+                await ApiClient.deleteAdminCourse(cId, { reason: resModal.reason || 'Admin xóa mềm khóa học vào thùng rác.' });
+                UI.showToast(`Đã chuyển khóa học "${cTitle}" vào thùng rác thành công!`, 'success');
+                if (window.EventBus) window.EventBus.emit('course:trashed', { course_id: cId, title: cTitle });
+                await loadActiveCoursesForAdmin();
+              } catch (err) {
+                UI.showToast(err.message || 'Lỗi khi xóa khóa học.', 'error');
+                btn.disabled = false;
+              }
+            };
+          });
+        } catch (err) {
+          tbody.innerHTML = `<tr><td colspan="5" class="py-6 text-center text-rose-500 text-xs">${UI.escapeHtml(err.message || 'Lỗi khi tải danh mục khóa học.')}</td></tr>`;
+        }
+      };
+
+      loadActiveCoursesForAdmin();
 
       // Event bindings for Courses Review
       box.querySelectorAll('.inspect-course-btn').forEach(btn => {
@@ -1762,12 +1870,12 @@ class AdminView {
                 ${UI.formatDate(r.created_at)}
               </td>
               <td class="px-3.5 py-3.5 text-right space-x-1.5 whitespace-nowrap align-middle">
-                <button type="button" class="px-3.5 py-1.5 rounded-lg ${r.status === 'PENDING' ? 'bg-primary hover:bg-primary-hover text-white' : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200'} text-xs font-bold transition-colors view-diff-cr-btn cursor-pointer inline-flex items-center gap-1" data-req-id="${r.id}" title="Xem chi tiết các điểm thay đổi">
+                <button type="button" class="px-3.5 py-1.5 rounded-lg ${r.status === 'PENDING' ? 'bg-primary hover:bg-primary-hover text-white' : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200'} text-xs font-bold transition-colors view-diff-cr-btn btn-review-diff btn-admin-view-diff cursor-pointer inline-flex items-center gap-1" data-req-id="${r.id}" title="Xem chi tiết các điểm thay đổi">
                   <span class="material-symbols-outlined text-[15px]">visibility</span>
                   <span>Xem</span>
                 </button>
                 ${r.status === 'PENDING' ? `
-                  <button type="button" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-2xs quick-pass-cr-btn cursor-pointer inline-flex items-center gap-1" data-req-id="${r.id}" title="Phê duyệt nhanh">
+                  <button type="button" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-2xs quick-pass-cr-btn btn-approve-course btn-admin-approve cursor-pointer inline-flex items-center gap-1" data-req-id="${r.id}" title="Phê duyệt nhanh">
                     <span class="material-symbols-outlined text-[15px]">check</span>
                     <span>Duyệt</span>
                   </button>

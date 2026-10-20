@@ -199,6 +199,8 @@ SCREEN_METADATA: dict[str, dict[str, str]] = {
 
 
 @frontend_bp.route("/", methods=["GET"])
+@frontend_bp.route("/frontend/", methods=["GET"])
+@frontend_bp.route("/frontend", methods=["GET"])
 def index() -> Response:
     """Serve the SPA Web application index or return JSON for automated API clients."""
     accept = request.headers.get("Accept", "")
@@ -251,6 +253,12 @@ def serve_frontend_assets(filename: str) -> Response:
 
     mime, _ = mimetypes.guess_type(target_path)
     return send_file(target_path, mimetype=mime or "application/octet-stream")
+
+
+@frontend_bp.route("/assets/<path:filename>", methods=["GET"])
+def serve_assets_shortcut(filename: str) -> Response:
+    """Serve assets requested via root-relative /assets/ URL."""
+    return serve_frontend_assets(f"assets/{filename}")
 
 
 @frontend_bp.route("/api/ui/screens", methods=["GET"])

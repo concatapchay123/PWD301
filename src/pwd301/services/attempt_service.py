@@ -2448,6 +2448,19 @@ def submit_assessment_attempt(
     if getattr(attempt, "result", None) and attempt.result.raw_score is not None:
         raw_sc = float(attempt.result.raw_score)
 
+    from pwd301.services.realtime_service import emit_domain_event
+
+    emit_domain_event(
+        "assessment:submitted",
+        {
+            "attempt_id": str(attempt.public_id),
+            "assessment_id": str(attempt.assessment.public_id) if getattr(attempt, "assessment", None) else None,
+            "user_id": attempt.user_id,
+            "status": attempt.status,
+            "raw_score": raw_sc,
+        },
+    )
+
     return {
         "attempt_id": str(attempt.public_id),
         "status": attempt.status,

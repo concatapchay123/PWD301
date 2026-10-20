@@ -208,7 +208,11 @@ class ApiClient {
   // =========================================================================
   static async getCurrentUser() {
     try {
-      const res = await ApiClient.request('/auth/login', { method: 'GET' });
+      // DEFECT-AUTH-02: Use dedicated /auth/session endpoint with fallback
+      let res = await ApiClient.request('/auth/session', { method: 'GET' }).catch(() => null);
+      if (!res || !res.status) {
+        res = await ApiClient.request('/auth/login', { method: 'GET' });
+      }
       if (res && res.csrf_token) {
         ApiClient._cachedCsrf = res.csrf_token;
         const metaTag = document.querySelector('meta[name="csrf-token"]');
@@ -391,6 +395,10 @@ class ApiClient {
       throw new Error('Course ID is required');
     }
     return await ApiClient.request(`/instructor/courses/${courseId}`);
+  }
+
+  static async getInstructorCourse(courseId) {
+    return await ApiClient.getInstructorCourseDetail(courseId);
   }
 
   static async getStudentCourseDetail(courseId) {
@@ -807,11 +815,19 @@ class ApiClient {
     });
   }
 
-  static async getCourseChangesetDiff(idOrCourseId) {
-    if (typeof idOrCourseId === 'number' || /^\d+$/.test(String(idOrCourseId))) {
-      return await ApiClient.request(`/admin/course-changes/${idOrCourseId}/diff`);
+  static async getInstructorCourseChangesetDiff(courseId) {
+    return await ApiClient.request(`/instructor/courses/${courseId}/changeset/diff`);
+  }
+
+  static async getAdminCourseChangesetDiff(changeRequestId) {
+    return await ApiClient.request(`/admin/course-changes/${changeRequestId}/diff`);
+  }
+
+  static async getCourseChangesetDiff(idOrCourseId, forAdmin = null) {
+    if (forAdmin === true || (forAdmin === null && typeof window !== 'undefined' && window.location.hash.startsWith('#/admin'))) {
+      return await ApiClient.getAdminCourseChangesetDiff(idOrCourseId);
     }
-    return await ApiClient.request(`/instructor/courses/${idOrCourseId}/changeset/diff`);
+    return await ApiClient.getInstructorCourseChangesetDiff(idOrCourseId);
   }
 
   static async changeLessonStatus(lessonId, status) {
@@ -879,6 +895,40 @@ class ApiClient {
 
   static async getInstructorPrerequisitePendingCount() {
     return await ApiClient.request('/instructor/prerequisites/incoming-requests/count');
+  }
+
+  // Instructor Grade Appeals Management (TASK-108)
+  static async getInstructorAppeals(params = {}) {
+    const q = new URLSearchParams(params).toString();
+    const url = q ? `/instructor/appeals?${q}` : '/instructor/appeals';
+    return await ApiClient.request(url);
+  }
+
+  static async getInstructorAppealDetail(appealId) {
+    return await ApiClient.request(`/instructor/appeals/${appealId}`);
+  }
+
+  static async resolveInstructorAppeal(appealId, data) {
+    return await ApiClient.request(`/instructor/appeals/${appealId}/resolve`, {
+      method: 'POST',
+      body: data
+    });
+  }
+
+  // Instructor Draft Course Deletion (TASK-108/TASK-109)
+  static async deleteInstructorDraftCourse(courseId, data = {}) {
+    return await ApiClient.request(`/instructor/courses/${courseId}`, {
+      method: 'DELETE',
+      body: data
+    });
+  }
+
+  // Admin Course Deletion (TASK-108/TASK-109)
+  static async deleteAdminCourse(courseId, data = {}) {
+    return await ApiClient.request(`/admin/courses/${courseId}`, {
+      method: 'DELETE',
+      body: data
+    });
   }
 
   static async getInstructorIncomingPrerequisiteRequests() {
