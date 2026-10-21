@@ -1,17 +1,9 @@
-# STLC Phase 1: Test Plan — ITERATION-14
-## Title: Network Resilience, Degraded States & Fallbacks Audit
+# ITERATION 14 TEST PLAN: NETWORK FAILURES, TIMEOUTS & RECOVERY
 
-### 1. Objectives & Scope
-- **Iteration ID:** ITERATION-14 (Iteration #14)
-- **Focus Area:** 3-tier resilient YouTube duration fallback (Google Data API -> client reported -> 1800s default), offline network interruption, and graceful error alerts.
-- **Environment:** http://127.0.0.1:5000 (Pure Headless + Single Page Application)
-- **Browser Automation:** Real Google Chrome (Playwright sync API)
+- **Focus Domain:** 3-Tier Duration Fallback & Heartbeat
+- **Target Module(s):** PWD301 Core Architecture & Workflows
+- **Planned Test Cases:** 6
+- **Execution Mode:** Real Headless Chromium Browser (Playwright 156.0.8078.4)
 
-### 2. Entrance & Exit Criteria
-- **Entrance Criteria:** Target server operational, MSSQL 2022 database responsive, test accounts provisioned.
-- **Exit Criteria:** All defined test cases executed on real browser, visual screenshots captured and annotated, network and console logs inspected, database verified.
-
-### 3. Test Tools & Infrastructure
-- Browser: Google Chrome v155.0.0 via Playwright
-- Image Processing: Pillow (PIL) for test execution banner annotation
-- Backend Engine: Python 3.12, Flask 3.0, Gunicorn, MSSQL Express 2022
+## Objectives
+Empirically verify and stress-test 3-Tier Duration Fallback & Heartbeat via real browser actions, network interception, and database verification.

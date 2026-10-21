@@ -9084,6 +9084,16 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
             <div class="space-y-1 text-xs text-slate-700 dark:text-slate-300">
               <div><strong>Lý do:</strong> ${UI.escapeHtml(appeal.reason || '')}</div>
               <div><strong>Giải trình thí sinh:</strong> <span class="italic">${UI.escapeHtml(appeal.note || 'Không có')}</span></div>
+              ${appeal.evidence_url ? `
+                <div class="mt-2 pt-2 border-t border-slate-200 dark:border-slate-700 flex items-center gap-2 not-italic">
+                  <span class="material-symbols-outlined text-amber-600 text-sm">attachment</span>
+                  <span class="text-xs font-semibold text-slate-700 dark:text-slate-300">Minh chứng đính kèm:</span>
+                  <a href="${UI.escapeHtml(appeal.evidence_url)}" target="_blank" rel="noopener noreferrer" class="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1">
+                    <span>${UI.escapeHtml(appeal.evidence_filename || 'Tệp minh chứng')}</span>
+                    <span class="material-symbols-outlined text-[14px]">open_in_new</span>
+                  </a>
+                </div>
+              ` : ''}
               <div class="text-[11px] text-slate-400">Gửi lúc: ${UI.formatDateTime(appeal.created_at)}</div>
               ${appeal.reviewer_note ? `
                 <div class="mt-2 pt-2 border-t border-slate-200 dark:border-slate-700 font-medium">
@@ -10586,6 +10596,17 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
             <div><strong>Bài kiểm tra:</strong> ${UI.escapeHtml(detail.assessment_title || detail.lesson_title || 'Bài thi')}</div>
             <div class="p-2.5 rounded-lg bg-white dark:bg-[#1E1E1E] border border-[#E8E6DF] dark:border-[#2E2D2B] italic text-slate-700 dark:text-slate-300 mt-2">
               <strong>Lý do của học viên:</strong> "${UI.escapeHtml(detail.reason || 'Không có lý do chi tiết.')}"
+              ${detail.note ? `<div class="mt-1 font-normal not-italic text-[11px] text-slate-600 dark:text-slate-400"><strong>Giải trình chi tiết:</strong> ${UI.escapeHtml(detail.note)}</div>` : ''}
+              ${detail.evidence_url ? `
+                <div class="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2 not-italic">
+                  <span class="material-symbols-outlined text-amber-600 text-sm">attachment</span>
+                  <span class="text-xs font-semibold text-slate-700 dark:text-slate-300">Minh chứng đính kèm:</span>
+                  <a href="${UI.escapeHtml(detail.evidence_url)}" target="_blank" rel="noopener noreferrer" class="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1">
+                    <span>${UI.escapeHtml(detail.evidence_filename || 'Tệp minh chứng')}</span>
+                    <span class="material-symbols-outlined text-[14px]">open_in_new</span>
+                  </a>
+                </div>
+              ` : ''}
             </div>
           </div>
         </div>

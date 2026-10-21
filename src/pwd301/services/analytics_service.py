@@ -744,8 +744,17 @@ def get_student_learning_overview(
     sess = session
     now = utc_now()
 
-    # 1. Student Enrollments & Course Progress
-    enrollments = sess.query(Enrollment).filter(Enrollment.student_user_id == actor.id).all()
+    # 1. Student Enrollments & Course Progress (Excluding soft-deleted/TRASH courses)
+    enrollments = (
+        sess.query(Enrollment)
+        .join(Course, Enrollment.course_id == Course.id)
+        .filter(
+            Enrollment.student_user_id == actor.id,
+            Course.status != "TRASH",
+            Course.deleted_at.is_(None),
+        )
+        .all()
+    )
 
     from pwd301.services.completion_service import calculate_course_progress
 

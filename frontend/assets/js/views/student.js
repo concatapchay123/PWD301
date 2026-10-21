@@ -2682,7 +2682,7 @@ class StudentView {
                     <div class="bg-white dark:bg-slate-800 p-2.5 rounded-2xl rounded-tl-sm border border-slate-200 dark:border-slate-700 shadow-xs max-w-[85%] space-y-1">
                       <div class="font-bold text-slate-800 dark:text-slate-100 text-[11px]">Bạch tuộc trợ lí AI</div>
                       <div class="text-slate-600 dark:text-slate-300 text-[11px] leading-relaxed">
-                        Chào bạn! Mình có thể giải đáp kiến thức trong bài giảng, tóm tắt lý thuyết, giải thích câu hỏi hoặc hướng dẫn giải bài tập thực hành. Hãy đặt câu hỏi cho mình nhé!
+                        Xin chào bạn! Mình là Bạch Tuột, trợ lí AI của hệ thống PPTQ. Mình có thể giúp được gì cho bạn?
                       </div>
                     </div>
                   </div>
@@ -3061,7 +3061,7 @@ class StudentView {
               <div class="bg-white dark:bg-slate-800 p-2.5 rounded-2xl rounded-tl-sm border border-slate-200 dark:border-slate-700 shadow-xs max-w-[85%] space-y-1">
                 <div class="font-bold text-slate-800 dark:text-slate-100 text-[11px]">Bạch tuộc trợ lí AI</div>
                 <div class="text-slate-600 dark:text-slate-300 text-[11px] leading-relaxed">
-                  Đã làm mới phiên thảo luận. Bạn muốn tìm hiểu hoặc cần mình giải đáp phần nào trong bài học này?
+                  Xin chào bạn! Mình là Bạch Tuột, trợ lí AI của hệ thống PPTQ. Mình có thể giúp được gì cho bạn?
                 </div>
               </div>
             </div>
@@ -7568,7 +7568,7 @@ class StudentView {
       // Browser proctoring & focus monitoring (Default 100% active)
       const focusEventStarts = new Map();
       const antiCheat = new ExamAntiCheatManager({
-        watchFullscreen: true,
+        watchFullscreen: false,
         onEvent: event => {
           if (event.phase === 'START') {
             focusEventStarts.set(event.event_id, ApiClient.recordAttemptFocusEvent(attemptId, event)
@@ -7599,12 +7599,9 @@ class StudentView {
             UI.showToast(`Đã quay lại bài thi. Thời gian vắng mặt: ${durationSeconds} giây (Tổng cộng: ${totalAwaySeconds}s - ${count} vi phạm).`, 'warning');
           }
         },
-        onFullscreenExit: () => {
-          getConsoleEl('#exam-fullscreen-lockdown-overlay')?.classList.remove('hidden');
-        },
-        onFullscreenEnter: () => {
-          getConsoleEl('#exam-fullscreen-lockdown-overlay')?.classList.add('hidden');
-        }
+        // Fullscreen lock disabled per specification to allow free browser zooming
+        onFullscreenExit: () => {},
+        onFullscreenEnter: () => {}
       });
 
       antiCheat.start();
@@ -7634,10 +7631,8 @@ class StudentView {
         examArmor = null;
       };
 
-      // Check initial fullscreen state
-      if (!document.fullscreenElement) {
-        getConsoleEl('#exam-fullscreen-lockdown-overlay')?.classList.remove('hidden');
-      }
+      // Check initial fullscreen state - zoom/windowed mode allowed without locking screen
+      // getConsoleEl('#exam-fullscreen-lockdown-overlay')?.classList.remove('hidden');
 
       // Answer selection auto-save handler
       container.querySelectorAll('input[type="radio"], input[type="checkbox"], select.interactive-slot-select').forEach(input => {
@@ -8887,6 +8882,21 @@ class StudentView {
                     placeholder="Vui lòng ghi rõ câu hỏi cần phúc khảo (ví dụ: Câu 3, Câu 7) và giải trình căn cứ của bạn..."
                   ></textarea>
                 </div>
+
+                <div class="space-y-1.5">
+                  <label class="block font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider text-[11px] flex items-center justify-between">
+                    <span>Tệp minh chứng đính kèm (Tùy chọn)</span>
+                    <span class="text-slate-400 font-normal lowercase text-[10px]">Tối đa 10MB (.png, .jpg, .webp, .pdf)</span>
+                  </label>
+                  <div class="border border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-3 bg-slate-50/50 dark:bg-slate-800/30 hover:border-amber-400 transition-colors">
+                    <input
+                      type="file"
+                      id="appeal-evidence-input"
+                      accept=".png,.jpg,.jpeg,.webp,.pdf,image/png,image/jpeg,image/webp,application/pdf"
+                      class="block w-full text-xs text-slate-600 dark:text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-amber-100 dark:file:bg-amber-900/40 file:text-amber-800 dark:file:text-amber-200 hover:file:bg-amber-200 cursor-pointer"
+                    />
+                  </div>
+                </div>
               </div>
             `,
             footerHtml: `
@@ -8919,7 +8929,23 @@ class StudentView {
               submitConfirmBtn.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> Đang gửi đơn...';
 
               try {
-                await ApiClient.submitAttemptAppeal(attemptId, { reason, note });
+                const fileInput = document.getElementById('appeal-evidence-input');
+                const file = fileInput?.files?.[0];
+                if (file) {
+                  if (file.size > 10 * 1024 * 1024) {
+                    UI.showToast('Tệp minh chứng vượt quá dung lượng tối đa 10 MB.', 'warning');
+                    submitConfirmBtn.disabled = false;
+                    submitConfirmBtn.innerHTML = '<span class="material-symbols-outlined text-[16px]">send</span><span>Gửi đơn phúc khảo</span>';
+                    return;
+                  }
+                  const formData = new FormData();
+                  formData.append('reason', reason);
+                  formData.append('note', note);
+                  formData.append('evidence_file', file);
+                  await ApiClient.submitAttemptAppeal(attemptId, formData);
+                } else {
+                  await ApiClient.submitAttemptAppeal(attemptId, { reason, note });
+                }
                 UI.closeModal();
                 UI.showToast('Đơn phúc khảo đã được gửi thành công đến Hội đồng Khảo thí.', 'success');
 
@@ -9539,8 +9565,7 @@ class StudentView {
           <div class="flex gap-3 justify-start animate-fade-in">
             <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Trợ lý AI Bạch tuộc" class="w-8 h-8 rounded-full object-cover shrink-0 text-xs shadow-sm border border-indigo-200 dark:border-indigo-900" />
             <div class="max-w-[85%] rounded-2xl p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm text-slate-800 dark:text-slate-200 text-sm leading-relaxed space-y-2">
-              <p class="font-bold text-slate-900 dark:text-white">Xin chào! Tôi là Bạch tuộc trợ lí AI.</p>
-              <p>Tôi có thể giúp bạn giải đáp các câu hỏi học tập, phân tích cấu trúc dữ liệu, giải thích cú pháp lập trình, hoặc hỗ trợ bạn chuẩn bị cho các kỳ thi khảo thí sắp tới.</p>
+              <p class="font-bold text-slate-900 dark:text-white">Xin chào bạn! Mình là Bạch Tuột, trợ lí AI của hệ thống PPTQ. Mình có thể giúp được gì cho bạn?</p>
               <div class="pt-2">
                 <div class="text-xs font-bold text-slate-500 mb-2">Câu hỏi gợi ý nhanh:</div>
                 <div class="flex flex-wrap gap-2" id="ai-suggestions-chips">

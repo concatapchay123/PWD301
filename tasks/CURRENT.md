@@ -1,53 +1,59 @@
-# TASK-110: SIMULTANEOUS MULTI-DEVICE LOGOUT (SSE DUAL MODAL), OCTOPUS AI IDENTITY & 4096-TOKEN EXPANSION, TWO-WAY AVATAR SYNCHRONIZATION & 20-ROUND REAL-BROWSER AUDIT
+# GOAL-CLEAN-WIPE-REDEPLOY: XÓA SẠCH DỰ ÁN CŨ, PURGE DATABASE & ĐỒNG BỘ TOÀN DIỆN PHIÊN BẢN HIỆN TẠI LÊN VPS
 
-> Workflow authority: [approved replacement contract](../docs/system/PWD301_SYSTEM_SPECIFICATION/implementation/WORKFLOW_SUPERSESSION.md). Historical task completion is not proof of current implementation. All obsolete workflows (WF18–WF25) are permanently superseded.
+> Workflow authority: [WORKFLOW_SUPERSESSION.md](../docs/system/PWD301_SYSTEM_SPECIFICATION/implementation/WORKFLOW_SUPERSESSION.md). Historical task completion is not proof of current implementation.
 
 **Status:** COMPLETED  
-**Execution Mode:** Subagent Orchestration + Real Chrome Browser Verification (20 STLC Rounds, 20 Annotated Screenshots)  
-**Campaign Type:** Multi-Device Simultaneous Session Termination, Octopus AI Official Identity & Robust LLM Extraction, Two-Way Avatar Synchronization, Real Verification Loop  
-**Completion Date:** 2026-10-20  
+**Goal Mode:** FINISHED (/goal)  
+**Target VPS:** `103.28.33.20` (Ubuntu 24.04 LTS, 4 vCPU, 8GB RAM)  
+**Completed At:** 2026-10-21 11:16 (Asia/Ho_Chi_Minh)  
 
 ---
 
-## 1. Scope of Work & Deliverables Summary
-
-| STT | Yêu cầu người dùng | Giải pháp kỹ thuật triển khai | Trạng thái |
-| :---: | :--- | :--- | :---: |
-| 1 | **Xóa sạch đặc tả & bộ nhớ cũ** | Cập nhật `WORKFLOW_SUPERSESSION.md` (WF23, WF24, WF25) và `AGENTS.md` (10.15, 10.18, 10.19). Khóa chặt vĩnh viễn hợp đồng mới toàn hệ thống. | COMPLETED |
-| 2 | **Đăng xuất đồng thời đa thiết bị** | Khi thiết bị B đăng nhập tài khoản đang dùng ở thiết bị A: backend thu hồi toàn bộ session, tăng `auth_version`, phát SSE `auth:concurrent_session_revoked`. Cả 2 màn hình A & B cùng hiện Modal cảnh báo an ninh toàn màn hình ("🛡️ CẢNH BÁO AN NINH: Tài khoản được phát hiện đăng nhập đồng thời...") và đăng xuất cả 2 về `#/auth/login`. | COMPLETED |
-| 3 | **Bạch tuộc Trợ lý AI toàn diện** | Thay thế toàn bộ icon robot bằng ảnh chính thức `octopus_ai_icon.png`. Nâng `maxOutputTokens` lên 4096, ghép toàn bộ `parts` của Gemini (không đứt câu), thiết kế lại nút Gửi và ô input dạng Inset Pill tinh tế (phong cách ChatGPT/Gemini). | COMPLETED |
-| 4 | **Đồng bộ Avatar 2 chiều CSDL** | Lưu `avatar_url` trực tiếp vào model `User` qua API `PUT /auth/profile`. Đồng bộ hóa 100% logic nạp avatar giữa trang Cài đặt và thanh Topbar; cập nhật tức thì khi lưu hồ sơ mà không cần F5. | COMPLETED |
-| 5 | **20 vòng kiểm thử trình duyệt thật** | Mở trình duyệt thật thao tác trực tiếp, chạy vòng lặp 20 vòng (*Fix bug -> Test thực tế -> Chụp ảnh minh chứng -> Audit -> Hoàn thiện*), lưu toàn bộ 20 ảnh chụp màn hình kèm chú thích chi tiết vào `verification/task110_evidence/`. | COMPLETED |
-
----
-
-## 2. STLC Verification Matrix (Target: 20 Rounds - All PASSED 100%)
-
-- [x] Round 01: Thiết bị A đăng nhập thành công vào hệ thống học viên (`round_01_device_a_login_success.png`)
-- [x] Round 02: Thiết bị B đăng nhập cùng tài khoản A (`round_02_device_b_login_attempt.png`)
-- [x] Round 03: Thiết bị B nhận cảnh báo 409 CONCURRENT_LOGIN_DETECTED và hiện Modal cảnh báo an ninh (`round_03_device_b_lockdown_modal.png`)
-- [x] Round 04: Thiết bị A nhận sự kiện SSE realtime tức thì không cần thao tác
-- [x] Round 05: Thiết bị A hiển thị Modal cảnh báo an ninh toàn màn hình (`round_05_device_a_lockdown_modal.png`)
-- [x] Round 06: Thiết bị A & B tự động chuyển hướng về trang đăng nhập và bị xóa sạch phiên (`round_06_device_a_redirected_to_login.png`)
-- [x] Round 07: Thử dùng lại session cũ của A -> Bị từ chối 401 Unauthorized do auth_version đã tăng (`round_07_device_b_redirected_to_login.png`)
-- [x] Round 08: Đăng nhập lại bình thường trên 1 thiết bị -> Hoạt động trơn tru (`round_08_single_device_relogin_success.png`)
-- [x] Round 09: Mở trang học bài (#/student/course/study) -> Mở tab Bạch tuộc Trợ lý AI (`round_09_course_study_ai_tab.png`)
-- [x] Round 10: Kiểm tra Avatar AI tại header chat -> Hiển thị đúng ảnh octopus_ai_icon.png (`round_10_ai_tab_header_octopus_avatar.png`)
-- [x] Round 11: Kiểm tra Avatar AI tại tin nhắn chào mừng và typing indicator -> Hiển thị đúng ảnh (`round_11_ai_welcome_message_octopus_avatar.png`)
-- [x] Round 12: Kiểm tra khung input và nút Send -> Chuẩn Modern Inset Pill tinh tế (`round_12_modern_inset_pill_initial.png`)
-- [x] Round 13: Gõ phím vào ô chat -> Nút Send sáng màu indigo và mở khóa tương tác (`round_13_modern_inset_pill_active.png`)
-- [x] Round 14: Gửi câu hỏi phức tạp yêu cầu tóm tắt và giải thích bài học (`round_14_ai_typing_indicator_active.png`)
-- [x] Round 15: Kiểm tra câu trả lời của AI -> Đầy đủ cấu trúc, không bị cụt câu, không đứt đoạn ở đuôi (`round_15_ai_response_complete_no_cutoff.png`)
-- [x] Round 16: Mở trang Cài đặt tài khoản (#/student/settings) (`round_16_student_settings_page_open.png`)
-- [x] Round 17: Kiểm tra Avatar trong ô Cài đặt -> Trùng khớp 100% với Avatar trên Topbar (`round_17_settings_topbar_avatar_parity.png`)
-- [x] Round 18: Bấm "Tạo ảnh đại diện ngẫu nhiên" -> Avatar xem trước đổi mượt mà (`round_18_random_avatar_preview_generated.png`)
-- [x] Round 19: Bấm "Lưu Thay Đổi Hồ Sơ" -> Lưu thành công vào CSDL và Topbar đổi ngay lập tức không cần F5 (`round_19_saved_avatar_synced_to_topbar.png`)
-- [x] Round 20: Tổng kiểm tra toàn diện Full Regression Audit trên toàn bộ hệ thống (`round_20_final_comprehensive_pass.png`)
+## 1. Mục Tiêu Thực Hiện (Scope & Deliverables)
+1. **Xóa sạch toàn bộ dự án cũ và cơ sở dữ liệu trên VPS**:
+   - Dừng và xóa toàn bộ container Docker (`pwd301-production-*`).
+   - Xóa bỏ triệt để toàn bộ volume dữ liệu MSSQL (`pwd301-production_sql`), file lưu trữ (`pwd301-production_storage`), backups, quarantine, certs.
+   - Xóa sạch thư mục mã nguồn `/opt/apps/pwd301`.
+   - Prune toàn bộ docker volume và network. Xác nhận VPS sạch 100%.
+2. **Đóng gói và truyền tải phiên bản hiện tại (TASK-112)**:
+   - Đóng gói toàn bộ mã nguồn sạch từ `e:\PWD301`.
+   - Tải lên VPS tại `/opt/apps/` và giải nén vào `/opt/apps/pwd301`.
+3. **Cấu hình môi trường Production sạch mới**:
+   - Thiết lập `.env.production` với các secrets và chuỗi kết nối MSSQL mới (tách biệt tài khoản `sa`, `pwd301_migrator`, `pwd301_app`).
+   - Cấu hình `deploy/Caddyfile` hỗ trợ cả HTTP (`:80`) và HTTPS (`:443`) với `default_sni 103.28.33.20`.
+4. **Biên dịch & Khởi tạo CSDL mới (Fresh Database Bootstrap)**:
+   - Build image `pwd301:release` từ mã nguồn mới.
+   - Khởi tạo database mới `PWD301`, thực thi 100% migrations Alembic (21 migrations), khởi tạo roles và admin.
+   - Nạp khóa học an ninh mạng BHE501 (5 chương, 60 bài học, miniquiz, file assets PDF, bài thi).
+5. **Khởi chạy và Xác minh Thực nghiệm (Anti-Hallucination Verification)**:
+   - Khởi chạy toàn bộ cụm container (`web`, `worker`, `db`, `clamav`, `proxy`).
+   - Xác minh liveness probe, course catalog, student login, UI assets, RAM/CPU telemetry.
 
 ---
 
-## 3. Automated Test Evidence
-- **Web Auth Suite**: `tests/api/test_auth_web.py` - **19 / 19 PASSED (100%)**
-- **Realtime SSE Suite**: `tests/test_realtime_sse.py` - **17 / 17 PASSED (100%)**
-- **STLC Browser Test Harness**: `scripts/run_task110_20_round_audit.py` - **20 / 20 Rounds PASSED (100%)**
-- **Visual Artifacts**: 19 screenshots lưu tại `verification/task110_evidence/round_01_*.png` đến `round_20_*.png` kèm báo cáo tổng hợp `verification/task110_evidence/AUDIT_REPORT_20_ROUNDS.json`.
+## 2. Danh mục Công việc (Checklist)
+- [x] 1. Dừng toàn bộ container và xóa sạch volume CSDL, volume lưu trữ, thư mục `/opt/apps/pwd301`.
+- [x] 2. Xác minh VPS sạch sẽ hoàn toàn (0 containers, 0 volumes, `/opt/apps` trống).
+- [x] 3. Đóng gói mã nguồn phiên bản hiện tại từ `e:\PWD301` và tải lên VPS.
+- [x] 4. Giải nén vào `/opt/apps/pwd301` và thiết lập `.env.production`, `Caddyfile`.
+- [x] 5. Rebuild Docker image `pwd301:release` và thực thi release bootstrap CSDL mới.
+- [x] 6. Nạp dữ liệu khóa học BHE501 vào CSDL mới (60 bài học, 5 chương, miniquiz, ebooks PDF).
+- [x] 7. Khởi động toàn bộ cụm 5 container production (`docker compose up -d`).
+- [x] 8. Xác minh thực nghiệm toàn bộ endpoints (HTTP, HTTPS, UI, API, Login, Telemetry).
+- [x] 9. Hoàn thành mục tiêu `/goal` và công bố báo cáo nghiệm thu.
+
+---
+
+## 3. Bằng chứng Thực nghiệm (Empirical Verification Evidence)
+- **Container Health**:
+  - `pwd301-production-clamav-1`: `Up (healthy)`
+  - `pwd301-production-db-1`: `Up (healthy)` (MSSQL 2022)
+  - `pwd301-production-proxy-1`: `Up` (Caddy Cổng 80 và 443)
+  - `pwd301-production-web-1`: `Up (healthy)` (Gunicorn 5000)
+  - `pwd301-production-worker-1`: `Up (healthy)`
+- **Liveness Probe**: `GET http://103.28.33.20/health` & `GET https://103.28.33.20/health` -> HTTP 200 `{"status": "ok", "probe": "liveness", "env": "production"}`
+- **Web UI Single-Page Application**: `GET http://103.28.33.20/` -> HTTP 200, HTML Title: `PPTQ LMS - Học Tập Và Bài Thi`
+- **Course Catalog**: `GET http://103.28.33.20/api/courses` -> HTTP 200, Course `BHE501` ("Kỹ Thuật An Ninh Mạng Mũ Đen: Tor, Dark Web, Lập Trình Khai Thác Rust & Pentest GraphQL")
+- **Authentication**: `POST https://103.28.33.20/auth/login` -> HTTP 200, `Học Viên Trần Minh Quân` (`student1@pwd301.local`)
+- **Student Dashboard**: `GET https://103.28.33.20/student/courses` -> HTTP 200, Enrollment active cho BHE501 (1 enrollment)
+- **VPS Telemetry**: RAM Available: 5.1 GiB / 7.8 GiB, Swap: 1.4 MiB / 11 GiB, Ổ cứng còn trống 22 GB (46% used), CPU < 2%.

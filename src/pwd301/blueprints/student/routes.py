@@ -24,7 +24,7 @@ from flask import (
 
 from pwd301.blueprints.student import student_bp
 from pwd301.extensions import db
-from pwd301.models.course import Enrollment, Lesson, LessonProgress
+from pwd301.models.course import Course, Enrollment, Lesson, LessonProgress
 from pwd301.services.analytics_service import get_student_learning_overview
 from pwd301.services.authorization_service import (
     _resolve_course,
@@ -716,6 +716,7 @@ def student_re_enroll_course(course_id: str) -> Any:
 
 
 @student_bp.route("/enrollments", methods=["GET"])
+@student_bp.route("/courses", methods=["GET"])
 @student_required
 def student_list_enrollments() -> tuple[Response, int] | Response:
     """List all enrollments belonging to the authenticated student."""
@@ -723,7 +724,19 @@ def student_list_enrollments() -> tuple[Response, int] | Response:
 
     status = request.args.get("status")
     enrollments = get_student_enrollments(actor=actor, status=status, session=db.session)
-    return jsonify({"enrollments": [_serialize_enrollment(e) for e in enrollments]}), 200
+    serialized = [_serialize_enrollment(e) for e in enrollments]
+    return (
+        jsonify(
+            {
+                "success": True,
+                "data": {"enrollments": serialized, "courses": serialized},
+                "error": None,
+                "enrollments": serialized,
+                "courses": serialized,
+            }
+        ),
+        200,
+    )
 
 
 @student_bp.route("/courses/<course_id>/completion", methods=["GET"])
@@ -733,7 +746,7 @@ def get_student_course_completion_route(course_id: str) -> tuple[Response, int] 
     actor = require_authenticated_actor()
 
     course = _resolve_course(course_id, session=db.session)
-    if course is None:
+    if course is None or course.status == "TRASH" or course.deleted_at is not None:
         raise ResourceNotFoundError("Course not found.")
 
     summary = get_course_completion_summary(
@@ -784,7 +797,7 @@ def get_student_course_certificate_route(course_id: str) -> tuple[Response, int]
     actor = require_authenticated_actor()
 
     course = _resolve_course(course_id, session=db.session)
-    if course is None:
+    if course is None or course.status == "TRASH" or course.deleted_at is not None:
         raise ResourceNotFoundError("Course not found.")
 
     summary = get_course_completion_summary(
@@ -1082,9 +1095,12 @@ def assessments_view() -> Any:
     overview = get_student_learning_overview(actor, session=sess)
     enrollments = (
         sess.query(Enrollment)
+        .join(Course, Enrollment.course_id == Course.id)
         .filter(
             Enrollment.student_user_id == actor.id,
             Enrollment.status.in_(("ACTIVE", "COMPLETED")),
+            Course.status != "TRASH",
+            Course.deleted_at.is_(None),
         )
         .all()
     )
@@ -1459,11 +1475,26 @@ def student_ai_chat() -> Any:
     try:
         check_ai_rate_limit(actor, role=actor.primary_role, client_ip=request.remote_addr)
     except AIQuotaExceededError as e:
-        resp = jsonify({"error": {"message": str(e), "code": "RATE_LIMIT_EXCEEDED"}})
+        resp = jsonify(
+            {
+                "success": False,
+                "data": None,
+                "error": {"message": str(e), "code": "RATE_LIMIT_EXCEEDED"},
+            }
+        )
         resp.headers["Retry-After"] = str(getattr(e, "retry_after", 60))
         return resp, 429
     except Exception as e:
-        return jsonify({"error": {"message": str(e)}}), 429
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "data": None,
+                    "error": {"message": str(e), "code": "RATE_LIMIT_EXCEEDED"},
+                }
+            ),
+            429,
+        )
 
     if conv is None:
         # Fallback friendly response
@@ -1597,7 +1628,7 @@ def student_course_detail(course_id: str) -> Any:
 
     actor = require_authenticated_actor()
     course = _resolve_course(course_id, session=db.session)
-    if course is None:
+    if course is None or course.status == "TRASH" or course.deleted_at is not None:
         raise ResourceNotFoundError("Course not found.")
     enrollment = (
         db.session.query(Enrollment)
@@ -2410,7 +2441,62 @@ def submit_attempt_appeal_route(attempt_id: str) -> Any:
         )
 
     now = utc_now()
-    orig_score = float(attempt.result.score) if attempt.result and attempt.result.score is not None else float(attempt.total_score or 0.0)
+    orig_score = (
+        float(attempt.result.raw_score)
+        if attempt.result and attempt.result.raw_score is not None
+        else 0.0
+    )
+
+    # Optional evidence attachment handling (image PNG/JPG/WEBP, PDF <= 10MB)
+    evidence_filename = None
+    evidence_url = None
+    upload = request.files.get("file") or request.files.get("evidence_file")
+    if upload and upload.filename and upload.filename.strip():
+        import shutil
+        from pwd301.services.file_service import sanitize_filename
+
+        clean_name = sanitize_filename(upload.filename)
+        ext = Path(clean_name).suffix.lower()
+        allowed_exts = {".png", ".jpg", ".jpeg", ".webp", ".pdf"}
+        if ext not in allowed_exts:
+            return (
+                jsonify(
+                    {
+                        "error": {
+                            "code": "INVALID_FILE_TYPE",
+                            "message": "Định dạng tệp không được hỗ trợ. Chỉ chấp nhận ảnh (PNG, JPG, WEBP) hoặc tài liệu PDF.",
+                        }
+                    }
+                ),
+                400,
+            )
+
+        upload.stream.seek(0, 2)
+        file_sz = upload.stream.tell()
+        upload.stream.seek(0)
+        if file_sz > 10_000_000:
+            return (
+                jsonify(
+                    {
+                        "error": {
+                            "code": "FILE_TOO_LARGE",
+                            "message": "Kích thước tệp minh chứng vượt quá giới hạn 10 MB.",
+                        }
+                    }
+                ),
+                400,
+            )
+
+        appeal_uuid = uuid.uuid4()
+        storage_root = Path(current_app.config.get("FILE_STORAGE_ROOT", "./storage")).resolve()
+        appeal_dir = storage_root / "appeals" / str(appeal_uuid)
+        appeal_dir.mkdir(parents=True, exist_ok=True)
+        dest_path = appeal_dir / clean_name
+        with open(dest_path, "wb") as f_out:
+            shutil.copyfileobj(upload.stream, f_out)
+
+        evidence_filename = clean_name
+        evidence_url = f"/student/attempts/appeals/{appeal_uuid}/evidence"
 
     appeal_record = AssessmentAppeal(
         assessment_attempt_id=attempt.id,
@@ -2420,8 +2506,12 @@ def submit_attempt_appeal_route(attempt_id: str) -> Any:
         student_note=note or None,
         status="PENDING",
         original_score=orig_score,
+        evidence_filename=evidence_filename,
+        evidence_url=evidence_url,
         created_at=now,
     )
+    if 'appeal_uuid' in locals():
+        appeal_record.public_id = appeal_uuid
     db.session.add(appeal_record)
     db.session.flush()
 
@@ -2496,6 +2586,48 @@ def get_attempt_appeal_route(attempt_id: str) -> Any:
         return jsonify({"success": True, "appeal": appeal.serialize()}), 200
 
     return jsonify({"success": True, "appeal": None}), 200
+
+
+@student_bp.route("/attempts/appeals/<appeal_id>/evidence", methods=["GET"])
+def download_attempt_appeal_evidence(appeal_id: str) -> Any:
+    """Download/view uploaded evidence attachment for an appeal."""
+    from pwd301.models.attempt_regrade import AssessmentAppeal
+
+    actor = require_authenticated_actor()
+    sess = db.session
+    appeal = None
+    try:
+        val_uuid = uuid.UUID(appeal_id)
+        appeal = sess.query(AssessmentAppeal).filter(AssessmentAppeal.public_id == val_uuid).first()
+    except (ValueError, TypeError):
+        if str(appeal_id).isdigit():
+            appeal = sess.query(AssessmentAppeal).filter(AssessmentAppeal.id == int(appeal_id)).first()
+
+    if appeal is None:
+        raise ResourceNotFoundError("Đơn phúc khảo không tồn tại.")
+
+    is_owner = (appeal.student_user_id == actor.id)
+    is_instructor_or_admin = (
+        actor.is_admin
+        or (appeal.course and appeal.course.owner_instructor_id == actor.id)
+        or actor.has_role("INSTRUCTOR")
+    )
+    if not is_owner and not is_instructor_or_admin:
+        raise ForbiddenError("Bạn không có quyền truy cập tệp minh chứng này.")
+
+    if not appeal.evidence_filename:
+        raise ResourceNotFoundError("Đơn phúc khảo này không có tệp minh chứng đính kèm.")
+
+    storage_root = Path(current_app.config.get("FILE_STORAGE_ROOT", "./storage")).resolve()
+    file_path = storage_root / "appeals" / str(appeal.public_id) / appeal.evidence_filename
+    if not file_path.exists():
+        raise ResourceNotFoundError("Tệp minh chứng không tồn tại trên hệ thống lưu trữ.")
+
+    return send_file(
+        file_path,
+        as_attachment=False,
+        download_name=appeal.evidence_filename,
+    )
 
 
 @student_bp.route("/attempts/<attempt_id>/grade-history", methods=["GET"])

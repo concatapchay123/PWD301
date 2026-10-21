@@ -182,12 +182,14 @@ def require_roles(*role_codes: str) -> Callable[..., Any]:
                     return (
                         jsonify(
                             {
+                                "success": False,
+                                "data": None,
                                 "error": {
                                     "code": "UNAUTHORIZED",
                                     "message": "Authentication required to access this resource.",
                                     "field_errors": {},
                                     "correlation_id": correlation_id,
-                                }
+                                },
                             }
                         ),
                         401,
@@ -202,12 +204,14 @@ def require_roles(*role_codes: str) -> Callable[..., Any]:
                     return (
                         jsonify(
                             {
+                                "success": False,
+                                "data": None,
                                 "error": {
                                     "code": "FORBIDDEN",
                                     "message": "Access denied: insufficient role permissions.",
                                     "field_errors": {},
                                     "correlation_id": correlation_id,
-                                }
+                                },
                             }
                         ),
                         403,

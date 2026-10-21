@@ -1,0 +1,382 @@
+{
+  "ch1": [
+    {
+      "id": "-QExSMcBvOg",
+      "title": "The Ultimate Beginner's Roadmap to Android App Architecture",
+      "url": "https://www.youtube.com/watch?v=-QExSMcBvOg"
+    },
+    {
+      "id": "UV0lOV6sL6A",
+      "title": "Android Architecture Explained: Layers, Components & Security for Beginners!",
+      "url": "https://www.youtube.com/watch?v=UV0lOV6sL6A"
+    },
+    {
+      "id": "cGPgjIIBrSQ",
+      "title": "Android Architecture Components Tutorial - Part 1",
+      "url": "https://www.youtube.com/watch?v=cGPgjIIBrSQ"
+    },
+    {
+      "id": "WvwQal6WYJ0",
+      "title": "Android Architecture Explained in Detail  #https://aospguru.com/",
+      "url": "https://www.youtube.com/watch?v=WvwQal6WYJ0"
+    },
+    {
+      "id": "sDlCSIDwpDs",
+      "title": "Everything You NEED to Know About WEB APP Architecture",
+      "url": "https://www.youtube.com/watch?v=sDlCSIDwpDs"
+    },
+    {
+      "id": "SJw3Nu_h8kk",
+      "title": "Activities & the Activity Lifecycle - Android Basics 2023",
+      "url": "https://www.youtube.com/watch?v=SJw3Nu_h8kk"
+    },
+    {
+      "id": "F2FmTdLtb_4",
+      "title": "System Design Concepts Course and Interview Prep",
+      "url": "https://www.youtube.com/watch?v=F2FmTdLtb_4"
+    },
+    {
+      "id": "RIX4ufelA58",
+      "title": "Do You Know How Mobile Apps Are Released?",
+      "url": "https://www.youtube.com/watch?v=RIX4ufelA58"
+    },
+    {
+      "id": "ivA0jRWgf5Q",
+      "title": "Android Application Architecture | Android Application Tutorial | Android Jetpack | Intellipaat",
+      "url": "https://www.youtube.com/watch?v=ivA0jRWgf5Q"
+    },
+    {
+      "id": "6_wK_Ud8--0",
+      "title": "The Jetpack Compose Beginner Crash Course   (Android Studio Tutorial)",
+      "url": "https://www.youtube.com/watch?v=6_wK_Ud8--0"
+    },
+    {
+      "id": "yye7rSsiV6k",
+      "title": "The Complete App Development Roadmap",
+      "url": "https://www.youtube.com/watch?v=yye7rSsiV6k"
+    },
+    {
+      "id": "c7nZP6B0oxU",
+      "title": "Android Development Series (Session 1)_ Android Architecture & Application Fundamentals",
+      "url": "https://www.youtube.com/watch?v=c7nZP6B0oxU"
+    },
+    {
+      "id": "TosPS55y_IY",
+      "title": "Full guide to Android App Architecture - MVVM - Clean architecture - Jetpack compose",
+      "url": "https://www.youtube.com/watch?v=TosPS55y_IY"
+    },
+    {
+      "id": "uD8mEER31tg",
+      "title": "Android tutorial1-basics,architecture, application components etc",
+      "url": "https://www.youtube.com/watch?v=uD8mEER31tg"
+    },
+    {
+      "id": "c1fnUCYJcaU",
+      "title": "Now in Android: 60 - Architecture, Android Basics with Compose, and more!",
+      "url": "https://www.youtube.com/watch?v=c1fnUCYJcaU"
+    }
+  ],
+  "ch2": [
+    {
+      "id": "LL2FCZFwNV0",
+      "title": "Lecture 9 - Binder Ipc Security",
+      "url": "https://www.youtube.com/watch?v=LL2FCZFwNV0"
+    },
+    {
+      "id": "e95bOAGt82c",
+      "title": "NDSS 2019 DroidCap: OS Support for Capability-based Permissions in Android",
+      "url": "https://www.youtube.com/watch?v=e95bOAGt82c"
+    },
+    {
+      "id": "_Bz_yvox5Z8",
+      "title": "Binder IPC Explained: Follow One Android System Service Call",
+      "url": "https://www.youtube.com/watch?v=_Bz_yvox5Z8"
+    },
+    {
+      "id": "NS46492qyJ8",
+      "title": "Android Security Underpinnings from Android Builders Summit",
+      "url": "https://www.youtube.com/watch?v=NS46492qyJ8"
+    },
+    {
+      "id": "n0DlYumayGc",
+      "title": "Georgia Weidman Bypassing the Android Permission Model",
+      "url": "https://www.youtube.com/watch?v=n0DlYumayGc"
+    },
+    {
+      "id": "TAwQ4ezgEIo",
+      "title": "OffensiveCon20 - Maddie Stone - Bad Binder: Finding an Android In The Wild 0day",
+      "url": "https://www.youtube.com/watch?v=TAwQ4ezgEIo"
+    },
+    {
+      "id": "Fb4UoqXPEtI",
+      "title": "Operation Binder: Secrets of Inter-Process Communication",
+      "url": "https://www.youtube.com/watch?v=Fb4UoqXPEtI"
+    },
+    {
+      "id": "-35AQ6T8V58",
+      "title": "#HITB2012AMS D2T1 - Georgia Weidman - Bypassing the Android Permission Model",
+      "url": "https://www.youtube.com/watch?v=-35AQ6T8V58"
+    },
+    {
+      "id": "ZM9TML1q5kE",
+      "title": "Security Basics in Android 12 - Ch2 from Android Internals",
+      "url": "https://www.youtube.com/watch?v=ZM9TML1q5kE"
+    },
+    {
+      "id": "QKwQzkvYCWg",
+      "title": "Implementing SePolicy for Vendor Access to Device Binder",
+      "url": "https://www.youtube.com/watch?v=QKwQzkvYCWg"
+    },
+    {
+      "id": "YXVmlmuOxdw",
+      "title": "Man in the Binder: He who controls IPC, controls the Droid",
+      "url": "https://www.youtube.com/watch?v=YXVmlmuOxdw"
+    },
+    {
+      "id": "tKJiSjVk8NA",
+      "title": "Deep Dive into Android Security (Presentation from AnDevCon II)",
+      "url": "https://www.youtube.com/watch?v=tKJiSjVk8NA"
+    },
+    {
+      "id": "e6ykiYNO21I",
+      "title": "Android Security Architecture Explained | Verified Boot, Sandbox & SELinux (Foundation Chapter)",
+      "url": "https://www.youtube.com/watch?v=e6ykiYNO21I"
+    },
+    {
+      "id": "WC0gWRVWKvs",
+      "title": "How Android Apps Talk to Each Other Without Breaking Security",
+      "url": "https://www.youtube.com/watch?v=WC0gWRVWKvs"
+    },
+    {
+      "id": "I1JR_LriyDQ",
+      "title": "Hey, Your Parcel Looks Bad - Fuzzing and Exploiting Parcel -Ization Vulnerabilties in Android",
+      "url": "https://www.youtube.com/watch?v=I1JR_LriyDQ"
+    }
+  ],
+  "ch3": [
+    {
+      "id": "tNIICbyKcro",
+      "title": "How to Decompile Any Android App  Reverse Engineering with Apktool & JADX",
+      "url": "https://www.youtube.com/watch?v=tNIICbyKcro"
+    },
+    {
+      "id": "OwVO3Hk5y9s",
+      "title": "Android- |   | ApkTool, Jadx, Smali",
+      "url": "https://www.youtube.com/watch?v=OwVO3Hk5y9s"
+    },
+    {
+      "id": "uc7eZGE07ps",
+      "title": "Android reversing #1: APK, Smali and ADB",
+      "url": "https://www.youtube.com/watch?v=uc7eZGE07ps"
+    },
+    {
+      "id": "Ra5U4nxORIs",
+      "title": "How To Reverse Engineer / Patch Android Applications (FULL GUIDE 2024)",
+      "url": "https://www.youtube.com/watch?v=Ra5U4nxORIs"
+    },
+    {
+      "id": "5vG6lbBUT9U",
+      "title": "Master APK Reverse Engineering with JADX | Beginners Guide (2024)",
+      "url": "https://www.youtube.com/watch?v=5vG6lbBUT9U"
+    },
+    {
+      "id": "BzpL9d5fAXY",
+      "title": "smali mapping with Java code using jadx-gui and apktool",
+      "url": "https://www.youtube.com/watch?v=BzpL9d5fAXY"
+    },
+    {
+      "id": "QwwLSyRzNwo",
+      "title": "Three Ways to Hack Mobile Apps",
+      "url": "https://www.youtube.com/watch?v=QwwLSyRzNwo"
+    },
+    {
+      "id": "jdxFfG8gICw",
+      "title": "Reverse Engineering and Debugging 3rd Party Android APKs",
+      "url": "https://www.youtube.com/watch?v=jdxFfG8gICw"
+    },
+    {
+      "id": "j8_8xT-RwLk",
+      "title": "3. Reverse Engineering .APK using APKTool to get SMALI Files",
+      "url": "https://www.youtube.com/watch?v=j8_8xT-RwLk"
+    },
+    {
+      "id": "uP5W2hCLar0",
+      "title": "Android Pen-testing - Reversing an Application",
+      "url": "https://www.youtube.com/watch?v=uP5W2hCLar0"
+    },
+    {
+      "id": "d-v_mha8tPU",
+      "title": "Android Reverse Engineering",
+      "url": "https://www.youtube.com/watch?v=d-v_mha8tPU"
+    },
+    {
+      "id": "MwJ2xZB5QWg",
+      "title": "How to Decompile, Modify APK and Recompile using Apktool 2026",
+      "url": "https://www.youtube.com/watch?v=MwJ2xZB5QWg"
+    },
+    {
+      "id": "r5dWS-6KfQU",
+      "title": "Whats Really Inside an Android APK?  | JADX, APKTool & MobSF | Day 5",
+      "url": "https://www.youtube.com/watch?v=r5dWS-6KfQU"
+    },
+    {
+      "id": "RvnHMoN5C8A",
+      "title": "Reversing Android APK packages; Evil Eye",
+      "url": "https://www.youtube.com/watch?v=RvnHMoN5C8A"
+    },
+    {
+      "id": "wMMKqj9Srqg",
+      "title": "Android Reverse Engineer - JADX",
+      "url": "https://www.youtube.com/watch?v=wMMKqj9Srqg"
+    }
+  ],
+  "ch4": [
+    {
+      "id": "VixUGTXVx-U",
+      "title": "Bypass SSL Pinning on a Real Device  Burp Suite + Magisk + Frida (Step-by-Step)",
+      "url": "https://www.youtube.com/watch?v=VixUGTXVx-U"
+    },
+    {
+      "id": "oEv5y313yYk",
+      "title": "Install Burp Suite & Frida on Emulator | SSL Pinning Bypass Part 3",
+      "url": "https://www.youtube.com/watch?v=oEv5y313yYk"
+    },
+    {
+      "id": "W53KNzAz05c",
+      "title": "Android Hacking with FRIDA | Hooking Basics",
+      "url": "https://www.youtube.com/watch?v=W53KNzAz05c"
+    },
+    {
+      "id": "MhaDM9gnAAc",
+      "title": "Install BurpSuite Certificate, Run Frida Server & Bypass SSL Pinning with AndroidAuto | Part 2",
+      "url": "https://www.youtube.com/watch?v=MhaDM9gnAAc"
+    },
+    {
+      "id": "SWaHgji2-D8",
+      "title": "SSL Pinning Bypass on Android with Frida (Step-by-Step Guide)",
+      "url": "https://www.youtube.com/watch?v=SWaHgji2-D8"
+    },
+    {
+      "id": "lgdCM7yPZzI",
+      "title": "Bypass SSL Pinning for Flutter apps using Frida",
+      "url": "https://www.youtube.com/watch?v=lgdCM7yPZzI"
+    },
+    {
+      "id": "lQSBpEJbJaY",
+      "title": "Bypassing SSL Pinning in Flutter iOS App with r2flutter",
+      "url": "https://www.youtube.com/watch?v=lQSBpEJbJaY"
+    },
+    {
+      "id": "k44SkSebo18",
+      "title": "Root Android Emulator with Magisk & Bypass SSL Pinning | Frida + Burp Suite Setup (Android 31)",
+      "url": "https://www.youtube.com/watch?v=k44SkSebo18"
+    },
+    {
+      "id": "lU7BqljOBSo",
+      "title": "Installing FRIDA - SSL Pinning Bypass | Pem7",
+      "url": "https://www.youtube.com/watch?v=lU7BqljOBSo"
+    },
+    {
+      "id": "0IOxEOBseGM",
+      "title": "MEMU Tutorial: Installing Frida Server for Android App Pentesting - SSL Piining & Root Detection.",
+      "url": "https://www.youtube.com/watch?v=0IOxEOBseGM"
+    },
+    {
+      "id": "Hb_6zruoc0I",
+      "title": "Master SSL Pinning Bypass in One Video with AndroidAuto | Complete Course",
+      "url": "https://www.youtube.com/watch?v=Hb_6zruoc0I"
+    },
+    {
+      "id": "1E__6tzcjkI",
+      "title": "How to Bypass SSL Pinning, Root Detection, and Frida Detection on Android.",
+      "url": "https://www.youtube.com/watch?v=1E__6tzcjkI"
+    },
+    {
+      "id": "y4yzq36uwds",
+      "title": "Android Root Detection & SSL Pinning Bypass using Frida",
+      "url": "https://www.youtube.com/watch?v=y4yzq36uwds"
+    },
+    {
+      "id": "Bs6D7kdaiFI",
+      "title": "How to Bypass SSL Pinning | Hack The Box | Frida + JADX-GUI + Burp Suite Tutorial | Pinned",
+      "url": "https://www.youtube.com/watch?v=Bs6D7kdaiFI"
+    },
+    {
+      "id": "2aCAbrAkPbg",
+      "title": "Bypassing SSL Pinning Using Frida | Android Mobiles",
+      "url": "https://www.youtube.com/watch?v=2aCAbrAkPbg"
+    }
+  ],
+  "ch5": [
+    {
+      "id": "DYwn4KciL1U",
+      "title": "Securing Flutter Apps | OWASP Top 10 for mobile & RASP explained",
+      "url": "https://www.youtube.com/watch?v=DYwn4KciL1U"
+    },
+    {
+      "id": "Jzr0Jdnq_EI",
+      "title": "OWASP Top 10 2025: Your complete guide to securing your applications",
+      "url": "https://www.youtube.com/watch?v=Jzr0Jdnq_EI"
+    },
+    {
+      "id": "pCEfcgf8tBg",
+      "title": "Mobile Security Pentesting 101 by Kansiime Joel, A Cyber Security Engineer",
+      "url": "https://www.youtube.com/watch?v=pCEfcgf8tBg"
+    },
+    {
+      "id": "a8Gh7d8GebA",
+      "title": "ANDROID APP SECURITY BASICS (Static analysis - Part 1)",
+      "url": "https://www.youtube.com/watch?v=a8Gh7d8GebA"
+    },
+    {
+      "id": "j7Lgcgfld4M",
+      "title": "Penetration Testing with Android  4 Insecure Data Storage  2021 #8",
+      "url": "https://www.youtube.com/watch?v=j7Lgcgfld4M"
+    },
+    {
+      "id": "9STDmGIAJu4",
+      "title": "Android Bug Bounty Masterclass Find & Exploit Mobile App Vulnerabilities (2026)",
+      "url": "https://www.youtube.com/watch?v=9STDmGIAJu4"
+    },
+    {
+      "id": "-HfIxn2KCRE",
+      "title": "'SecureMe Droid' Android Security Application - Vishal Asthana & Abhineet Jayaraj - AppSecUSA 2015",
+      "url": "https://www.youtube.com/watch?v=-HfIxn2KCRE"
+    },
+    {
+      "id": "67Kfsmy_frM",
+      "title": "SSL/TLS Explained in 7 Minutes",
+      "url": "https://www.youtube.com/watch?v=67Kfsmy_frM"
+    },
+    {
+      "id": "pjEd1cHYhi8",
+      "title": "Cracking Android apps with Frida",
+      "url": "https://www.youtube.com/watch?v=pjEd1cHYhi8"
+    },
+    {
+      "id": "Gz59MezA3r4",
+      "title": "How Easy Is It For Hackers To Brute Force Login Pages?!",
+      "url": "https://www.youtube.com/watch?v=Gz59MezA3r4"
+    },
+    {
+      "id": "2OPVViV-GQk",
+      "title": "SQL Injections are scary!! (hacking tutorial for beginners)",
+      "url": "https://www.youtube.com/watch?v=2OPVViV-GQk"
+    },
+    {
+      "id": "4t4kBkMsDbQ",
+      "title": "Nmap Tutorial to find Network Vulnerabilities",
+      "url": "https://www.youtube.com/watch?v=4t4kBkMsDbQ"
+    },
+    {
+      "id": "B7tTQ272OHE",
+      "title": "Simple Penetration Testing Tutorial for Beginners!",
+      "url": "https://www.youtube.com/watch?v=B7tTQ272OHE"
+    },
+    {
+      "id": "uEndLXB4tfA",
+      "title": "IG Learner Lesson 5: Bypassing certificate pinning/hardcoded ssl certificate/certificate pinning",
+      "url": "https://www.youtube.com/watch?v=uEndLXB4tfA"
+    }
+  ]
+}

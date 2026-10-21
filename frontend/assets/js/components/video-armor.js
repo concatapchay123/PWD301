@@ -450,16 +450,8 @@ class VideoArmor {
       return;
     }
 
-    try {
-      const win = typeof window !== 'undefined' ? window : null;
-      if (win && typeof win.outerWidth === 'number' && typeof win.innerWidth === 'number') {
-        const widthThreshold = win.outerWidth - win.innerWidth > 160;
-        const heightThreshold = win.outerHeight - win.innerHeight > 160;
-        if (widthThreshold || heightThreshold) {
-          this.triggerBlackout('DEVTOOLS_DETECTED');
-        }
-      }
-    } catch (_) {}
+    // Browser zoom (125%, 150%, 200%) causes outerWidth/innerWidth divergence.
+    // Per rule 10.8, window dimension comparison is forbidden to prevent false-positive lockouts.
   }
 
   _attachObserver() {

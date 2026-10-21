@@ -99,7 +99,8 @@ When in doubt, follow the canonical specification rather than this abbreviated l
 
 ## 6. Database and migration rules
 
-- Target: Microsoft SQL Server.
+- Target: Microsoft SQL Server 2022 trong Docker Container (`pwd301_db`).
+- **BẮT BUỘC SỬ DỤNG DOCKER SQL SERVER (MANDATORY DOCKER DB INVARIANT)**: Mọi kết nối CSDL, thao tác tạo bảng, seed bài giảng, kiểm thử và runtime BẮT BUỘC PHẢI lưu trữ và thực thi bên trong container Docker (`pwd301_db` trên `127.0.0.1:1433` với user `sa` / `AdminStrongPassw0rd!`). NGHIÊM CẤM TUYỆT ĐỐI việc cấu hình hoặc lưu dữ liệu vào Microsoft SQL Server cài trên Windows local hay MySQL.
 - Canonical database docs: `docs/database/PWD301_DATABASE_ARCHITECTURE/`.
 - Respect `BIGINT` internal PK, public UUID/GUID strategy, UTC `DATETIME2(3)`, `ROWVERSION`, decimal scoring and documented FK/delete semantics.
 - Use Flask-Migrate/Alembic for application migrations.
@@ -174,10 +175,15 @@ Dựa trên toàn bộ lịch sử 304 cuộc trò chuyện và 271 chỉ đạo
 - Giới hạn video tải lên là `< 1 GB`.
 - Bài thi tuân thủ nghiêm ngặt Single Active Editing Lease (Algorithm 07): chỉ một tab được phép chỉnh sửa tại một thời điểm, submit là idempotent, autosave đảm bảo thứ tự gói tin.
 
-### 10.4. Phòng thủ Zero-Trust cho Trợ lý AI ("Bạch tuộc AI")
-- Trợ lý AI chỉ mang danh xưng duy nhất: **Bạch tuộc trợ lí AI** (Octopus AI Assistant).
+### 10.4. Phòng thủ Zero-Trust cho Trợ lý AI ("Bạch Tuột trợ lí AI PPTQ")
+- Trợ lý AI chỉ mang danh xưng chính thức duy nhất: **Bạch Tuột, trợ lí AI của hệ thống PPTQ**.
+- **Chuẩn hóa 3 mẫu phát ngôn bất biến trên toàn hệ thống**:
+  + *Câu chào mở đầu (khi mở widget chat hoặc làm mới cuộc trò chuyện)*: `"Xin chào bạn! Mình là Bạch Tuột, trợ lí AI của hệ thống PPTQ. Mình có thể giúp được gì cho bạn?"`
+  + *Câu phản hồi khi câu hỏi ngoài lề/không liên quan*: `"Cảm ơn câu hỏi của bạn. Nhưng hiện tại nó đang nằm ngoài phạm vi hiểu biết của mình, mình sẽ ghi nhận câu hỏi này và cải thiện bản thân nhiều hơn để có thể hỗ trợ bạn được nhiều hơn nha"`
+  + *Câu phản hồi khi câu hỏi mang tính chê bai, xúc phạm*: `"Xin lỗi vì đã làm bạn tức giận, không biết mình có thể làm gì để bạn cảm thấy tốt hơn nhỉ?"`
+  + *Câu hỏi liên quan đến bài học/lập trình*: Giữ nguyên cơ chế RAG thông minh kết hợp Gemini để tra cứu bài giảng và giải đáp chuẩn xác.
 - Tuyệt đối không bịa đặt nguồn dữ liệu từ các khóa học không tồn tại (như "giáo trình PWD301").
-- AI phải từ chối lịch sự mọi câu hỏi nằm ngoài phạm vi học vụ/hệ thống và ngăn chặn 100% các nỗ lực Prompt Injection nhằm khai thác thông tin tài khoản, danh sách người dùng hay cấu trúc CSDL nội bộ.
+- AI ngăn chặn 100% các nỗ lực Prompt Injection nhằm khai thác thông tin tài khoản, danh sách người dùng hay cấu trúc CSDL nội bộ.
 
 ### 10.5. Giám sát Phần cứng Thực tế (Authentic Telemetry)
 - Các endpoint giám sát sức khỏe (`/admin/health`, telemetry) phải trích xuất chỉ số thực tế từ hệ điều hành và CPU/RAM máy chủ qua thư viện `psutil`. Nghiêm cấm sử dụng số liệu tính toán giả lập hoặc giá trị cố định.
@@ -206,6 +212,7 @@ Dựa trên toàn bộ lịch sử 304 cuộc trò chuyện và 271 chỉ đạo
   + **Khi làm bài kiểm tra/khảo thí (Miniquiz, Test chương, Final Exam)**:
     * Thao tác chụp màn hình (`PrintScreen`, `Win+Shift+S`, `Meta+Shift+S`) và chuột phải (`contextmenu`): Chặn hành vi, xóa sạch bộ nhớ tạm clipboard, hiển thị thông báo cảnh báo Toast, đồng thời ghi log vi phạm và tăng bộ đếm vi phạm kiểm tra (`violations_count` / proctoring events).
     * **TUYỆT ĐỐI CẤM tự động đăng xuất** đối với thao tác chụp màn hình hoặc chuột phải.
+    * **Tự Do Phóng To / Thu Nhỏ Trình Duyệt (Unrestricted Browser Zoom)**: Học viên được toàn quyền phóng to/thu nhỏ trang web (Ctrl +, Ctrl -, pinch gesture, 100%, 125%, 150%, 200%...) để đọc rõ nội dung câu hỏi và đề thi. **NGHIÊM CẤM TUYỆT ĐỐI** việc sử dụng phép đo chênh lệch kích thước cửa sổ (`outerWidth - innerWidth > 160`) hoặc lớp phủ ép toàn màn hình (`#exam-fullscreen-lockdown-overlay`) gây khóa màn hình hoặc đăng xuất học viên khi zoom trang web.
   + **Hành vi vi phạm an ninh nghiêm trọng (Bắt buộc Thu hồi Phiên & Phủ Blackout Shield)**:
     * Chỉ áp dụng cho các hành vi: Mở DevTools (`F12`, `Ctrl+Shift+I/J/C`, `Ctrl+U`, `Cmd+Option+I/J/C/U`, `debugger trap` / console timing delta), sử dụng extension trình duyệt để cào dữ liệu (scraping), hoặc can thiệp mã nguồn/tài nguyên hệ thống trái phép.
     * Khi phát hiện vi phạm nghiêm trọng: Lập tức phủ Blackout Shield che kín toàn màn hình ("🛡️ CẢNH BÁO AN NINH HỆ THỐNG"), gọi `POST /auth/logout` để thu hồi phiên trên server, xóa token client và chuyển hướng về `#/auth/login` kèm cảnh báo bảo mật.
@@ -273,5 +280,21 @@ Dựa trên toàn bộ lịch sử 304 cuộc trò chuyện và 271 chỉ đạo
 
 ### 10.17. Bất biến Xem trước Trực tiếp trong Tab Mới (Full Student View Preview in New Tab)
 - Nút "Xem trước" trong Soạn thảo giáo trình mở thẳng một Tab trình duyệt mới (`_blank`) trỏ tới giao diện học tập của học sinh (`#/student/lessons/reader?course_id=...&lesson_id=...&preview=1`), đồng bộ 100% video, tài liệu, bài giảng và miniquiz thực tế để giảng viên đối soát trực quan. Loại bỏ hoàn toàn popup modal thu nhỏ cũ.
+
+### 10.20. Bất biến Ẩn Khóa học Đã xóa Khỏi Học viên (Strict Trash Course Concealment)
+- Khi một khóa học bị chuyển vào Thùng rác (`Course.status == 'TRASH'`) hoặc bị soft-delete (`Course.deleted_at IS NOT NULL`), hệ thống bắt buộc phải ẩn hoàn toàn 100% khóa học đó khỏi mọi màn hình của học viên (Bảng điều khiển học tập `/student/dashboard`, Khóa học của tôi `/student/courses`, Danh sách bài tập / bài thi `/student/assessments`, Bảng điểm và Chứng chỉ).
+- Các API truy vấn dữ liệu học vụ của học viên (`get_student_enrollments`, `get_student_learning_overview`, `/student/my-learning`) bắt buộc join với bảng `courses` và lọc chặt `Course.status != 'TRASH'` cùng `Course.deleted_at.is_(None)`.
+
+### 10.21. Bất biến Nộp Đơn Phúc khảo & Tệp Minh chứng (Assessment Appeal & Evidence Policy)
+- **Lấy điểm gốc chuẩn mực**: Endpoint `/student/attempts/<id>/appeal` bắt buộc đọc điểm ban đầu từ `attempt.result.raw_score` (fallback `0.0`). Tuyệt đối cấm truy xuất các thuộc tính không tồn tại như `attempt.total_score` hoặc `attempt.result.score` gây lỗi 500 `AttributeError`.
+- **Đính kèm tệp minh chứng tùy chọn**: Hỗ trợ học viên tải lên 01 tệp minh chứng đính kèm (ảnh PNG, JPG, WEBP hoặc tài liệu PDF) với dung lượng tối đa 10 MB (`10_000_000` bytes). Tệp được lưu trữ an toàn thông qua `FileAsset` và hiển thị trực tiếp cho Giảng viên xem/tải khi chấm phúc khảo tại `#/instructor/appeals`.
+
+### 10.22. Bất biến Phát ngôn Chuẩn mực Bạch Tuột Trợ lí AI PPTQ (Standard AI Persona & Responses)
+- Danh xưng chính thức thống nhất trên toàn hệ thống: **Bạch Tuột, trợ lí AI của hệ thống PPTQ**.
+- Bắt buộc áp dụng 3 câu thoại chuẩn xác 100% từng ký tự:
+  1. *Câu chào mở đầu khi mở hoặc làm mới chat*: `"Xin chào bạn! Mình là Bạch Tuột, trợ lí AI của hệ thống PPTQ. Mình có thể giúp được gì cho bạn?"`
+  2. *Câu phản hồi khi câu hỏi ngoài lề/không liên quan*: `"Cảm ơn câu hỏi của bạn. Nhưng hiện tại nó đang nằm ngoài phạm vi hiểu biết của mình, mình sẽ ghi nhận câu hỏi này và cải thiện bản thân nhiều hơn để có thể hỗ trợ bạn được nhiều hơn nha"`
+  3. *Câu phản hồi khi câu hỏi mang tính xúc phạm, chê bai*: `"Xin lỗi vì đã làm bạn tức giận, không biết mình có thể làm gì để bạn cảm thấy tốt hơn nhỉ?"`
+
 
 

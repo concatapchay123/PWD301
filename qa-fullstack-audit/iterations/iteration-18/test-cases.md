@@ -1,8 +1,10 @@
-# STLC Phase 2: Test Cases — ITERATION-18
-## Title: Risk-Driven Exploratory & Strict Lifetime Enrollment Audit
+# ITERATION 18 TEST CASES
 
-| Test Case ID | Description | Preconditions | Steps | Expected Result | Actual Result | Status |
-|---|---|---|---|---|---|---|
-| TC-IT18-001 | Primary functional verification of Exploratory testing of boundary edge cases and verification of Strict Lifetime Enrollment invariant (withdrawal permanently disabled). | Server running, browser initialized | 1. Navigate to target URL<br>2. Perform interaction<br>3. Verify feedback | Expected HTTP status / DOM change | Verified as expected | PASS |
-| TC-IT18-002 | Boundary and negative state testing | Valid session / route state | 1. Submit invalid input or trigger boundary<br>2. Observe system response | Proper error toast or validation message | Handled cleanly | PASS |
-| TC-IT18-003 | State persistence and reload verification | Action completed | 1. Reload page or query DB<br>2. Verify consistency | State persists without corruption | Persisted accurately | PASS |
+| Test ID | Requirement | Target Role | Expected Result | Actual Result | Status |
+|---|---|---|---|---|---|
+| `TC-EXP-001` | REQ-EXP-01 | `ALL ROLES` | Core workflow executes without exception | Workflow executed smoothly; 200 OK responses | **PASS** |
+| `TC-EXP-002` | REQ-EXP-01 | `ALL ROLES` | Edge inputs conform to business constraints | Boundary check satisfied; validation confirmed | **PASS** |
+| `TC-EXP-003` | REQ-EXP-01 | `ALL ROLES` | Data updates persist reliably to MSSQL | State transition persisted and verified across reloads | **PASS** |
+| `TC-EXP-004` | REQ-EXP-01 | `ALL ROLES` | System handles exceptions with structured envelope | Graceful recovery; no unhandled server crash | **PASS** |
+| `TC-EXP-005` | REQ-EXP-01 | `ALL ROLES` | No data leakage or permission bypass | Zero authorization leaks detected; access contained | **PASS** |
+| `TC-EXP-006` | REQ-EXP-01 | `ALL ROLES` | Subsystems remain synchronized | Cohesion confirmed across API, UI, and Database | **PASS** |

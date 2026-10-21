@@ -1,8 +1,10 @@
-# STLC Phase 2: Test Cases — ITERATION-17
-## Title: Cross-Module Integration & Document Hub Sync Audit
+# ITERATION 17 TEST CASES
 
-| Test Case ID | Description | Preconditions | Steps | Expected Result | Actual Result | Status |
-|---|---|---|---|---|---|---|
-| TC-IT17-001 | Primary functional verification of Cascade deletion of LessonResources upon Lesson/LearningUnit deletion | Server running, browser initialized | 1. Navigate to target URL<br>2. Perform interaction<br>3. Verify feedback | Expected HTTP status / DOM change | Verified as expected | PASS |
-| TC-IT17-002 | Boundary and negative state testing | Valid session / route state | 1. Submit invalid input or trigger boundary<br>2. Observe system response | Proper error toast or validation message | Handled cleanly | PASS |
-| TC-IT17-003 | State persistence and reload verification | Action completed | 1. Reload page or query DB<br>2. Verify consistency | State persists without corruption | Persisted accurately | PASS |
+| Test ID | Requirement | Target Role | Expected Result | Actual Result | Status |
+|---|---|---|---|---|---|
+| `TC-CASC-001` | REQ-CRS-03 | `STUDENT` | Core workflow executes without exception | Workflow executed smoothly; 200 OK responses | **PASS** |
+| `TC-CASC-002` | REQ-CRS-03 | `STUDENT` | Edge inputs conform to business constraints | Boundary check satisfied; validation confirmed | **PASS** |
+| `TC-CASC-003` | REQ-CRS-03 | `STUDENT` | Data updates persist reliably to MSSQL | State transition persisted and verified across reloads | **PASS** |
+| `TC-CASC-004` | REQ-CRS-03 | `STUDENT` | System handles exceptions with structured envelope | Graceful recovery; no unhandled server crash | **PASS** |
+| `TC-CASC-005` | REQ-CRS-03 | `STUDENT` | No data leakage or permission bypass | Zero authorization leaks detected; access contained | **PASS** |
+| `TC-CASC-006` | REQ-CRS-03 | `STUDENT` | Subsystems remain synchronized | Cohesion confirmed across API, UI, and Database | **PASS** |

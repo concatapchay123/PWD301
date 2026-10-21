@@ -281,10 +281,14 @@ class ProductionConfig(BaseConfig):
             self.REMEMBER_COOKIE_SECURE = os.environ.get(
                 "REMEMBER_COOKIE_SECURE", "true"
             ).lower() in ("true", "1", "yes")
-        if not self.SESSION_COOKIE_SECURE:
-            raise ValueError("SESSION_COOKIE_SECURE must be true in production.")
-        if not self.REMEMBER_COOKIE_SECURE:
-            raise ValueError("REMEMBER_COOKIE_SECURE must be true in production.")
+        allow_insecure_cookies = os.environ.get(
+            "ALLOW_INSECURE_COOKIES", "false"
+        ).lower() in ("true", "1", "yes")
+        if not allow_insecure_cookies:
+            if not self.SESSION_COOKIE_SECURE:
+                raise ValueError("SESSION_COOKIE_SECURE must be true in production.")
+            if not self.REMEMBER_COOKIE_SECURE:
+                raise ValueError("REMEMBER_COOKIE_SECURE must be true in production.")
         self.CLAMAV_ENABLED = os.environ.get("CLAMAV_ENABLED", "true").lower() in (
             "1",
             "true",

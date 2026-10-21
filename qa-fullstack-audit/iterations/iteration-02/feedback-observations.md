@@ -1,21 +1,41 @@
-# STLC Phase 4: Active Feedback Observations — ITERATION-02
-## Title: Authentication & Session Lifecycle Audit
+# ITERATION 02 FEEDBACK OBSERVATIONS
 
-### 1. Visual Observations
-- UI renders cleanly without unexpected layout jumps or overlapping elements.
-- CSS transitions and animations complete smoothly without frame stutter.
-- Modals, toasts, and alerts appear at correct z-index layers.
+## 1. Browser Console Observations
+- Total console entries intercepted: 9
+```text
+[warning] cdn.tailwindcss.com should not be used in production. To use Tailwind CSS in production, install it as a PostCSS plugin or use the Tailwind CLI: https://tailwindcss.com/docs/installation
+[error] Failed to load resource: the server responded with a status of 401 (UNAUTHORIZED)
+[error] Failed to load resource: the server responded with a status of 401 (UNAUTHORIZED)
+[warning] [ApiClient] Request to /auth/login failed: Error: Email hoặc mật khẩu không chính xác.
+    at ApiClient.request (http://127.0.0.1:5000/frontend/assets/js/api.js?v=3.2.6:181:21)
+    at async ApiClient.login (http://127.0.0.1:5000/frontend/assets/js/api.js?v=3.2.6:231:17)
+    at async loginForm.onsubmit (http://127.0.0.1:5000/frontend/assets/js/views/auth.js?v=3.2.6:775:23)
+[error] Failed to load resource: the server responded with a status of 401 (UNAUTHORIZED)
+[error] Failed to load resource: the server responded with a status of 401 (UNAUTHORIZED)
+[error] Failed to load resource: the server responded with a status of 401 (UNAUTHORIZED)
+[warning] cdn.tailwindcss.com should not be used in production. To use Tailwind CSS in production, install it as a PostCSS plugin or use the Tailwind CLI: https://tailwindcss.com/docs/installation
+[error] Failed to load resource: the server responded with a status of 401 (UNAUTHORIZED)
+```
 
-### 2. Browser Runtime & Console Feedback
-- Console errors: 0 unexpected JavaScript exceptions.
-- Console warnings: 0 deprecation or mixed-content warnings.
-- Event listeners cleanly unbound on view destruction.
+## 2. Network Observations
+- Total network requests captured: 161
+```text
+-> POST http://127.0.0.1:5000/auth/login
+<- 200 http://127.0.0.1:5000/auth/login (POST)
+-> GET http://127.0.0.1:5000/auth/notifications?role=STUDENT
+-> GET http://127.0.0.1:5000/student/dashboard
+<- 200 http://127.0.0.1:5000/auth/notifications?role=STUDENT (GET)
+<- 200 http://127.0.0.1:5000/student/dashboard (GET)
+-> GET http://127.0.0.1:5000/student/recommendations?limit=2
+-> GET http://127.0.0.1:5000/api/courses/fdef62ea-fe13-4273-827c-563ac0617a99/thumbnail
+<- 200 http://127.0.0.1:5000/student/recommendations?limit=2 (GET)
+<- 200 http://127.0.0.1:5000/api/courses/fdef62ea-fe13-4273-827c-563ac0617a99/thumbnail (GET)
+-> GET http://127.0.0.1:5000/api/events/stream
+<- 200 http://127.0.0.1:5000/api/events/stream (GET)
+-> GET http://127.0.0.1:5000/auth/profile
+-> GET http://127.0.0.1:5000/auth/preferences
+<- 200 http://127.0.0.1:5000/auth/preferences (GET)
+```
 
-### 3. Network Feedback
-- All AJAX / fetch requests return valid JSON envelopes.
-- Content-Type strictly `application/json`.
-- Latency within acceptable bounds for core operational paths.
-
-### 4. Backend & Database Feedback
-- Database commits succeed with proper foreign key integrity.
-- Transaction rollback tested and verified on validation errors.
+## 3. Database State Verification
+User auth_version increment verified in MSSQL AuthSession records.

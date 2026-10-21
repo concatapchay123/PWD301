@@ -6,6 +6,7 @@ error handling, and blueprint registration.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
@@ -698,6 +699,8 @@ def create_app(
             if not (actor and getattr(actor, "is_admin", False)):
                 resp = jsonify(
                     {
+                        "success": False,
+                        "data": None,
                         "error": {
                             "code": "MAINTENANCE_MODE_ACTIVE",
                             "message": (
@@ -706,7 +709,7 @@ def create_app(
                             ),
                             "estimated_end_at": None,
                             "estimated_duration_minutes": 5,
-                        }
+                        },
                     }
                 )
                 resp.status_code = 503
@@ -726,10 +729,12 @@ def create_app(
         if is_active and window is None:
             resp = jsonify(
                 {
+                    "success": False,
+                    "data": None,
                     "error": {
                         "code": "MAINTENANCE_STATUS_UNAVAILABLE",
                         "message": "Cannot verify maintenance status. Please retry shortly.",
-                    }
+                    },
                 }
             )
             resp.status_code = 503
@@ -748,6 +753,8 @@ def create_app(
                 retry_after = str(window.estimated_duration_minutes * 60)
                 resp = jsonify(
                     {
+                        "success": False,
+                        "data": None,
                         "error": {
                             "code": "MAINTENANCE_MODE_ACTIVE",
                             "message": (
@@ -760,7 +767,7 @@ def create_app(
                                 else None
                             ),
                             "estimated_duration_minutes": window.estimated_duration_minutes,
-                        }
+                        },
                     }
                 )
                 resp.status_code = 503
@@ -834,6 +841,47 @@ def create_app(
                 "media-src 'self' data: blob: https:; "
                 f"frame-ancestors {frame_ancestors};"
             )
+
+        # Standardize pure headless JSON envelopes: {"success": bool, "data": ..., "error": ...}
+        if response.is_json and not getattr(response, "direct_passthrough", False):
+            try:
+                json_data = response.get_json(silent=True)
+                if isinstance(json_data, dict):
+                    modified = False
+                    if response.status_code >= 400:
+                        if "success" not in json_data:
+                            json_data["success"] = False
+                            modified = True
+                        if "data" not in json_data:
+                            json_data["data"] = None
+                            modified = True
+                    elif response.status_code in (200, 201, 202):
+                        if "success" not in json_data:
+                            json_data["success"] = True
+                            modified = True
+                        if "error" not in json_data:
+                            json_data["error"] = None
+                            modified = True
+                        if "data" not in json_data:
+                            # Preserve legacy root access while providing canonical data envelope
+                            json_data["data"] = {
+                                k: v
+                                for k, v in json_data.items()
+                                if k not in ("success", "error")
+                            }
+                            modified = True
+                    if modified:
+                        response.set_data(json.dumps(json_data, ensure_ascii=False))
+                elif isinstance(json_data, list) and response.status_code in (200, 201, 202):
+                    response.set_data(
+                        json.dumps(
+                            {"success": True, "data": json_data, "error": None},
+                            ensure_ascii=False,
+                        )
+                    )
+            except Exception:
+                pass
+
         return response
 
     # Centralized error handlers

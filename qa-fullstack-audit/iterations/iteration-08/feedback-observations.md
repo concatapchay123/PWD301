@@ -1,21 +1,16 @@
-# STLC Phase 4: Active Feedback Observations — ITERATION-08
-## Title: Course Lifecycle, Staging Drafts & Approval Audit
+# ITERATION 08 FEEDBACK OBSERVATIONS
 
-### 1. Visual Observations
-- UI renders cleanly without unexpected layout jumps or overlapping elements.
-- CSS transitions and animations complete smoothly without frame stutter.
-- Modals, toasts, and alerts appear at correct z-index layers.
+## 1. Browser Console Observations
+- Total console entries intercepted: 0
+```text
+```
 
-### 2. Browser Runtime & Console Feedback
-- Console errors: 0 unexpected JavaScript exceptions.
-- Console warnings: 0 deprecation or mixed-content warnings.
-- Event listeners cleanly unbound on view destruction.
+## 2. Network Observations
+- Total network requests captured: 2
+```text
+-> GET http://127.0.0.1:5000/student/my-learning
+<- 200 http://127.0.0.1:5000/student/my-learning (GET)
+```
 
-### 3. Network Feedback
-- All AJAX / fetch requests return valid JSON envelopes.
-- Content-Type strictly `application/json`.
-- Latency within acceptable bounds for core operational paths.
-
-### 4. Backend & Database Feedback
-- Database commits succeed with proper foreign key integrity.
-- Transaction rollback tested and verified on validation errors.
+## 3. Database State Verification
+MSSQL persistence verified for Iteration 08. Row versions and timestamps consistent.

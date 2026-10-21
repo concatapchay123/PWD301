@@ -1158,6 +1158,8 @@ class AssessmentAppeal(Base):
     original_score = db.Column(sa.Numeric(6, 2), nullable=False)
     final_score = db.Column(sa.Numeric(6, 2), nullable=True)
     instructor_feedback = db.Column(NVarCharMax, nullable=True)
+    evidence_filename = db.Column(sa.Unicode(255), nullable=True)
+    evidence_url = db.Column(sa.Unicode(500), nullable=True)
     reviewed_by_user_id = db.Column(
         sa.BigInteger,
         sa.ForeignKey("users.id", name="fk_assessment_appeals_reviewed_by_user_id"),
@@ -1209,6 +1211,9 @@ class AssessmentAppeal(Base):
             "student_email": self.student.email if self.student else "",
             "reason": self.reason,
             "student_note": self.student_note,
+            "note": self.student_note,
+            "evidence_filename": self.evidence_filename,
+            "evidence_url": self.evidence_url,
             "status": self.status,
             "original_score": float(self.original_score) if self.original_score is not None else 0.0,
             "final_score": float(self.final_score) if self.final_score is not None else None,

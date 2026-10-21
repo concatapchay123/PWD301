@@ -1106,7 +1106,15 @@ def get_student_enrollments(
     if not actor.is_admin and actor.id != target_student.id:
         raise ForbiddenError("You are not authorized to view this student's enrollments.")
 
-    query = sess.query(Enrollment).filter(Enrollment.student_user_id == target_student.id)
+    query = (
+        sess.query(Enrollment)
+        .join(Course, Enrollment.course_id == Course.id)
+        .filter(
+            Enrollment.student_user_id == target_student.id,
+            Course.status != "TRASH",
+            Course.deleted_at.is_(None),
+        )
+    )
     if status is not None:
         query = query.filter(Enrollment.status == status)
 

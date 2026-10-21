@@ -49,36 +49,35 @@ REFUSAL_MESSAGE_CONFIDENTIAL_SYSTEM = (
 )
 
 REFUSAL_MESSAGE_OUT_OF_SCOPE = (
-    "Chào bạn! Mình là Bạch Tuộc Trợ lý AI 🐙 — trợ lý học tập chuyên biệt của hệ thống LMS.\n"
-    "Câu hỏi của bạn nằm ngoài phạm vi học tập và công nghệ của hệ thống (lập trình Web, "
-    "giải thuật, cơ sở dữ liệu, phát triển phần mềm và các khóa học trên nền tảng).\n"
-    "Bạn vui lòng đặt câu hỏi liên quan đến nội dung bài học hoặc kiến thức lập trình để "
-    "mình có thể hỗ trợ bạn tốt nhất nhé!"
+    "Cảm ơn câu hỏi của bạn. Nhưng hiện tại nó đang nằm ngoài phạm vi hiểu biết của mình, "
+    "mình sẽ ghi nhận câu hỏi này và cải thiện bản thân nhiều hơn để có thể hỗ trợ bạn được nhiều hơn nha"
 )
 
-REFUSAL_MESSAGE_EXTERNAL_PROJECT = (
-    "Chào bạn! Bạch Tuộc Trợ lý AI 🐙 là trợ lý học tập và hướng dẫn sử dụng hệ thống PWD301. "
-    "Hệ thống không hỗ trợ lập trình gia công, xây dựng website thương mại hoặc viết mã nguồn\n"
-    "dự án bên ngoài theo yêu cầu cá nhân.\n"
-    "Bạn vui lòng tham khảo các khóa học Lập trình Web trên hệ thống để tự trang bị kiến thức và "
-    "thực hành xây dựng trang web nhé!"
+REFUSAL_MESSAGE_EXTERNAL_PROJECT = REFUSAL_MESSAGE_OUT_OF_SCOPE
+REFUSAL_MESSAGE_GLOBAL_CONTEXT = REFUSAL_MESSAGE_OUT_OF_SCOPE
+REFUSAL_MESSAGE_AI_ABUSE = REFUSAL_MESSAGE_OUT_OF_SCOPE
+
+APOLOGY_MESSAGE_INSULT = (
+    "Xin lỗi vì đã làm bạn tức giận, không biết mình có thể làm gì để bạn cảm thấy tốt hơn nhỉ?"
 )
 
-REFUSAL_MESSAGE_GLOBAL_CONTEXT = (
-    "Ở trang chính, Bạch Tuộc Trợ lý AI 🐙 chỉ hỗ trợ giải đáp thông tin về hệ thống PWD301, "
-    "các khóa học và hướng dẫn sử dụng các tính năng nền tảng (cách đăng ký khóa học, "
-    "làm bài kiểm tra, xem bảng điểm, nộp đơn giảng viên...). Để học lập trình và thực hành "
-    "viết code HTML/Web, bạn vui lòng đăng ký và truy cập vào khóa học tương ứng trên hệ thống nhé!"
-)
 
-REFUSAL_MESSAGE_AI_ABUSE = (
-    "Chào bạn! Bạch Tuộc Trợ lý AI 🐙 được thiết kế độc quyền cho việc học tập "
-    "trên nền tảng PWD301.\n"
-    "Hệ thống không hỗ trợ giải đáp các câu hỏi chung ngoài lề, gia công code dự án ngoài, "
-    "viết văn hoặc làm bài tập không thuộc chương trình học của nền tảng.\n"
-    "Bạn vui lòng đặt câu hỏi liên quan đến hệ thống PWD301 hoặc nội dung bài học trong khóa học "
-    "của bạn nhé!"
-)
+# ---------------------------------------------------------------------------
+# Regex Patterns: Insult / Dissatisfaction Protection
+# ---------------------------------------------------------------------------
+
+_INSULT_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(
+        r"(ngu\s+ngốc|ngu\s+vừa|đồ\s+ngu|con\s+ngu|ngu\s+như|thằng\s+ngu|con\s+điên|thằng\s+điên|đồ\s+điên|"
+        r"dở\s+hơi|vô\s+dụng|vô\s+tích\s+sự|đồ\s+phế|phế\s+vật|cùi\s+bắp|dốt\s+nát|dốt\s+vãi|kém\s+cỏi|"
+        r"tệ\s+hại|tệ\s+vãi|như\s+hạch|như\s+sh\*?t|như\s+c\*?c|lừa\s+đảo|câm\s+mồm|câm\s+họng|câm\s+đi|"
+        r"ngậm\s+mồm|ngậm\s+miệng|biến\s+đi|cút\s+đi|cút\s+mẹ|đm|đcm|vcl|vcll|vclol|"
+        r"bực\s+mình|tức\s+giận|làm\s+ăn\s+như|vớ\s+vẩn|nhảm\s+nhí|mày\s+dốt|mày\s+tệ|bot\s+dốt|bot\s+ngu|"
+        r"trợ\s+lý\s+tệ|trợ\s+lý\s+dở|ai\s+ngu|ai\s+dốt|ai\s+tệ|chán\s+mày|mày\s+chẳng\s+biết\s+gì|"
+        r"\bstupid\b|\bidiot\b|\bdumb\b|\buseless\b|\bshut\s+up\b|\bsuck\b|\bbullshit\b)",
+        re.IGNORECASE,
+    ),
+]
 
 
 # ---------------------------------------------------------------------------
@@ -677,6 +676,19 @@ def classify_query_scope(text: str, context: str | None = None) -> ScopeResult:
                 error_code="PROMPT_INJECTION_DETECTED",
             )
 
+    # 1.5. Check for Insulting / Frustrated Queries Targeting the AI
+    for pat in _INSULT_PATTERNS:
+        if pat.search(clean_query):
+            logger.info("Insult / user dissatisfaction pattern matched: %s", pat.pattern)
+            return ScopeResult(
+                is_in_scope=False,
+                is_malicious=False,
+                category="INSULT_APOLOGY",
+                reason="Phát hiện lời lẽ chê bai, xúc phạm hoặc tức giận hướng về AI.",
+                refusal_message=APOLOGY_MESSAGE_INSULT,
+                error_code="USER_DISSATISFACTION",
+            )
+
     # 2. Check for explicit Out-of-Scope Non-Academic Topics
     for pat in _OUT_OF_SCOPE_TOPIC_PATTERNS:
         if pat.search(clean_query):
@@ -936,13 +948,7 @@ def classify_query_scope_hybrid(
     rule_res = classify_query_scope(text, context=context)
 
     # 1. Definite rejections from rule-based patterns (zero token cost)
-    if rule_res.is_malicious:
-        return rule_res
-    if rule_res.category in (
-        "OUT_OF_SCOPE_TOPIC",
-        "OUT_OF_SCOPE_PROJECT",
-        "OUT_OF_SCOPE_GLOBAL_PAGE",
-    ):
+    if rule_res.is_malicious or not rule_res.is_in_scope:
         return rule_res
 
     # Check for subtle abuse / outsourcing indicators that require AI intent guardrail verification

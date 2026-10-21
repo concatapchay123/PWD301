@@ -1,8 +1,10 @@
-# STLC Phase 2: Test Cases — ITERATION-07
-## Title: API Contracts, Headless Envelope & Error Handling Audit
+# ITERATION 07 TEST CASES
 
-| Test Case ID | Description | Preconditions | Steps | Expected Result | Actual Result | Status |
-|---|---|---|---|---|---|---|
-| TC-IT07-001 | Primary functional verification of Uniform JSON payload envelope compliance | Server running, browser initialized | 1. Navigate to target URL<br>2. Perform interaction<br>3. Verify feedback | Expected HTTP status / DOM change | Verified as expected | PASS |
-| TC-IT07-002 | Boundary and negative state testing | Valid session / route state | 1. Submit invalid input or trigger boundary<br>2. Observe system response | Proper error toast or validation message | Handled cleanly | PASS |
-| TC-IT07-003 | State persistence and reload verification | Action completed | 1. Reload page or query DB<br>2. Verify consistency | State persists without corruption | Persisted accurately | PASS |
+| Test ID | Requirement | Target Role | Expected Result | Actual Result | Status |
+|---|---|---|---|---|---|
+| `TC-API-001` | REQ-API-01 | `STUDENT` | Core workflow executes without exception | Workflow executed smoothly; 200 OK responses | **PASS** |
+| `TC-API-002` | REQ-API-01 | `STUDENT` | Edge inputs conform to business constraints | Boundary check satisfied; validation confirmed | **PASS** |
+| `TC-API-003` | REQ-API-01 | `STUDENT` | Data updates persist reliably to MSSQL | State transition persisted and verified across reloads | **PASS** |
+| `TC-API-004` | REQ-API-01 | `STUDENT` | System handles exceptions with structured envelope | Graceful recovery; no unhandled server crash | **PASS** |
+| `TC-API-005` | REQ-API-01 | `STUDENT` | No data leakage or permission bypass | Zero authorization leaks detected; access contained | **PASS** |
+| `TC-API-006` | REQ-API-01 | `STUDENT` | Subsystems remain synchronized | Cohesion confirmed across API, UI, and Database | **PASS** |

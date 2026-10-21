@@ -5020,6 +5020,47 @@ def get_instructor_appeal_detail_route(appeal_id: str) -> Any:
     }), 200
 
 
+@instructor_bp.route("/appeals/<appeal_id>/evidence", methods=["GET"])
+@instructor_required
+def download_instructor_appeal_evidence_route(appeal_id: str):
+    """Download/view uploaded evidence attachment for an appeal as an instructor."""
+    from pathlib import Path
+    from flask import current_app, send_file
+    from pwd301.models.attempt_regrade import AssessmentAppeal
+    from pwd301.services.authorization_service import require_authenticated_actor
+    from pwd301.services.exceptions import ForbiddenError, ResourceNotFoundError
+
+    actor = require_authenticated_actor()
+    sess = db.session
+    appeal = None
+    try:
+        val_uuid = uuid.UUID(str(appeal_id))
+        appeal = sess.query(AssessmentAppeal).filter(AssessmentAppeal.public_id == val_uuid).first()
+    except (ValueError, TypeError):
+        if str(appeal_id).isdigit():
+            appeal = sess.query(AssessmentAppeal).filter(AssessmentAppeal.id == int(appeal_id)).first()
+
+    if appeal is None:
+        raise ResourceNotFoundError("Đơn phúc khảo không tồn tại.")
+
+    if not actor.is_admin and (not appeal.course or appeal.course.owner_instructor_id != actor.id) and not actor.has_role("INSTRUCTOR"):
+        raise ForbiddenError("Bạn không có quyền quản lý đơn phúc khảo này.")
+
+    if not appeal.evidence_filename:
+        raise ResourceNotFoundError("Đơn phúc khảo này không có tệp minh chứng đính kèm.")
+
+    storage_root = Path(current_app.config.get("FILE_STORAGE_ROOT", "./storage")).resolve()
+    file_path = storage_root / "appeals" / str(appeal.public_id) / appeal.evidence_filename
+    if not file_path.exists():
+        raise ResourceNotFoundError("Tệp minh chứng không tồn tại trên hệ thống lưu trữ.")
+
+    return send_file(
+        file_path,
+        as_attachment=False,
+        download_name=appeal.evidence_filename,
+    )
+
+
 @instructor_bp.route("/appeals/<appeal_id>/resolve", methods=["POST"])
 @instructor_required
 def resolve_instructor_appeal_route(appeal_id: str) -> Any:

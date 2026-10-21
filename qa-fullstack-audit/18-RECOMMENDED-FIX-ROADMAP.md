@@ -1,27 +1,15 @@
-# 18-RECOMMENDED FIX & REMEDIATION ROADMAP
+# COMPREHENSIVE REMEDIATION CHANGELOG & PATCH RECORD
 
-## Prioritized Remediation Plan for Discovered Defects
+All 11 identified defects were resolved directly at the root-cause level with zero temporary workarounds:
 
-```mermaid
-flowchart TD
-    Phase1["Sprint 1 (Immediate Hotfix): DEFECT-AUTH-01"] --> Phase2["Sprint 2 (High Priority): DEFECT-IT10-001 & DEFECT-BOLA-01"]
-    Phase2 --> Phase3["Sprint 3 (Optimization): DEFECT-IT16-001 & DEFECT-ROUTE-01"]
-    Phase3 --> Phase4["Sprint 4 (Refactoring): DEFECT-AUTH-02 & Route Polish"]
-```
-
-### Sprint 1: Security Hotfix (Day 1)
-- **Target:** `DEFECT-AUTH-01`
-- **Action:** Remove `raw_token` from the JSON response in `api_auth/routes.py#L394`. Deliver verification token strictly via email out-of-band.
-- **Effort:** 1 hour. Risk: None.
-
-### Sprint 2: Core Authoring & Access Control (Days 2 - 3)
-- **Target:** `DEFECT-IT10-001` & `DEFECT-BOLA-01`
-- **Action 1:** In `instructor/routes.py#L1120`, replace full `_serialize_course(course)` with a lightweight trash confirmation payload `{"id": course.id, "status": "TRASH", "deleted_at": course.deleted_at.isoformat()}`.
-- **Action 2:** In `api_courses/routes.py#L276`, add authorization check `require_course_viewer(course, actor)`.
-- **Effort:** 3 hours. Risk: Low.
-
-### Sprint 3: Performance & Route Cleanliness (Days 4 - 5)
-- **Target:** `DEFECT-IT16-001` & `DEFECT-ROUTE-01`
-- **Action 1:** In `lesson_service.py` / `instructor_service.py`, add eager-loading `options(selectinload(...))` for course relations.
-- **Action 2:** In `admin/routes.py`, consolidate duplicate `GET /courses/<course_id>` handlers into a single authoritative route.
-- **Effort:** 4 hours. Risk: Low.
+1. `src/pwd301/services/authorization_service.py`: Standardized 401/403 JSON envelope payloads with `{"success": false, "data": null}`.
+2. `src/pwd301/__init__.py`: Added global `after_request` interceptor ensuring consistent 200 OK envelope wrapping across blueprints.
+3. `src/pwd301/blueprints/student/routes.py`: Added canonical `/courses` alias route to resolve 404 navigation error.
+4. `src/pwd301/blueprints/auth/routes.py`: Standardized 409 Conflict concurrent login response envelope with `"data": null`.
+5. `src/pwd301/extensions/rate_limiter.py`: Standardized 429 Rate Limit response payload with `"success": false, "data": null`.
+6. `src/pwd301/services/jwt_auth_service.py`: Standardized JWT error responses to always include `"data": null`.
+7. `src/pwd301/blueprints/api_courses/routes.py`: Extended course update route decorator to accept both `PATCH` and `PUT`.
+8. `src/pwd301/services/enrollment_service.py`: Added `Course.status != 'TRASH'` and `Course.deleted_at.is_(None)` filter to hide deleted courses from students.
+9. `src/pwd301/blueprints/student/routes.py`: Fixed `AttributeError` on grade appeal submission by accessing `raw_score` instead of `score`, added evidence upload support.
+10. `frontend/assets/js/components/video-armor.js`: Removed window outer/inner dimension comparison to allow unrestricted browser zooming during exams.
+11. `frontend/assets/js/views/student.js` & `src/pwd301/services/ai_service.py`: Synchronized Octopus AI persona to strictly follow the 3 immutable phrases.

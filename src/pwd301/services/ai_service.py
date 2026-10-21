@@ -706,6 +706,8 @@ def _is_refusal_content(content: str | None) -> bool:
         "không hỗ trợ lập trình gia công",
         "Ở trang chính, Bạch Tuộc Trợ lý AI",
         "không hỗ trợ giải đáp các câu hỏi chung ngoài lề",
+        "nằm ngoài phạm vi hiểu biết của mình",
+        "Xin lỗi vì đã làm bạn tức giận",
     )
     return any(marker in content for marker in refusal_markers)
 

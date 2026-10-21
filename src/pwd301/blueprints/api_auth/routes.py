@@ -55,6 +55,8 @@ def login_for_token() -> tuple[Response, int]:
     if is_locked:
         resp = jsonify(
             {
+                "success": False,
+                "data": None,
                 "error": {
                     "code": "RATE_LIMIT_EXCEEDED",
                     "message": (
@@ -62,7 +64,7 @@ def login_for_token() -> tuple[Response, int]:
                         f"Please try again after {retry_after} seconds."
                     ),
                     "correlation_id": getattr(g, "correlation_id", ""),
-                }
+                },
             }
         )
         resp.headers["Retry-After"] = str(retry_after)
@@ -74,11 +76,13 @@ def login_for_token() -> tuple[Response, int]:
         return (
             jsonify(
                 {
+                    "success": False,
+                    "data": None,
                     "error": {
                         "code": "INVALID_CREDENTIALS",
                         "message": "Invalid email or password.",
                         "correlation_id": getattr(g, "correlation_id", ""),
-                    }
+                    },
                 }
             ),
             401,
@@ -90,18 +94,30 @@ def login_for_token() -> tuple[Response, int]:
         return (
             jsonify(
                 {
+                    "success": False,
+                    "data": None,
                     "error": {
                         "code": "ACCOUNT_INACTIVE",
                         "message": "User account is suspended or inactive.",
                         "correlation_id": getattr(g, "correlation_id", ""),
-                    }
+                    },
                 }
             ),
             403,
         )
 
     tokens = create_token_pair(user)
-    return jsonify(tokens), 200
+    return (
+        jsonify(
+            {
+                "success": True,
+                "data": tokens,
+                "error": None,
+                **tokens,
+            }
+        ),
+        200,
+    )
 
 
 @api_auth_bp.route("/refresh", methods=["POST"])

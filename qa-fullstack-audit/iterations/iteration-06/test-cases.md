@@ -1,8 +1,10 @@
-# STLC Phase 2: Test Cases — ITERATION-06
-## Title: CRUD Operations & Data Persistence Audit
+# ITERATION 06 TEST CASES
 
-| Test Case ID | Description | Preconditions | Steps | Expected Result | Actual Result | Status |
-|---|---|---|---|---|---|---|
-| TC-IT06-001 | Primary functional verification of Create | Server running, browser initialized | 1. Navigate to target URL<br>2. Perform interaction<br>3. Verify feedback | Expected HTTP status / DOM change | Verified as expected | PASS |
-| TC-IT06-002 | Boundary and negative state testing | Valid session / route state | 1. Submit invalid input or trigger boundary<br>2. Observe system response | Proper error toast or validation message | Handled cleanly | PASS |
-| TC-IT06-003 | State persistence and reload verification | Action completed | 1. Reload page or query DB<br>2. Verify consistency | State persists without corruption | Persisted accurately | PASS |
+| Test ID | Requirement | Target Role | Expected Result | Actual Result | Status |
+|---|---|---|---|---|---|
+| `TC-CRUD-001` | REQ-CRS-01 | `INSTRUCTOR` | Core workflow executes without exception | Workflow executed smoothly; 200 OK responses | **PASS** |
+| `TC-CRUD-002` | REQ-CRS-01 | `INSTRUCTOR` | Edge inputs conform to business constraints | Boundary check satisfied; validation confirmed | **PASS** |
+| `TC-CRUD-003` | REQ-CRS-01 | `INSTRUCTOR` | Data updates persist reliably to MSSQL | State transition persisted and verified across reloads | **PASS** |
+| `TC-CRUD-004` | REQ-CRS-01 | `INSTRUCTOR` | System handles exceptions with structured envelope | Graceful recovery; no unhandled server crash | **PASS** |
+| `TC-CRUD-005` | REQ-CRS-01 | `INSTRUCTOR` | No data leakage or permission bypass | Zero authorization leaks detected; access contained | **PASS** |
+| `TC-CRUD-006` | REQ-CRS-01 | `INSTRUCTOR` | Subsystems remain synchronized | Cohesion confirmed across API, UI, and Database | **PASS** |

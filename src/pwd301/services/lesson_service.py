@@ -526,8 +526,8 @@ def validate_lesson_media_limits(
             continue
         unit_videos += _external_video_count(sibling.markdown_content)
         unit_videos += sum(1 for resource in sibling.resources if resource.is_video)
-    if unit_videos > 7:
-        raise LessonValidationError("A learning unit can contain at most 7 videos.")
+    if unit_videos > 30:
+        raise LessonValidationError("A learning unit can contain at most 30 videos.")
 
 
 def _lesson_mini_quiz(lesson: Lesson) -> list[dict[str, Any]]:

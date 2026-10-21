@@ -216,10 +216,12 @@ def login() -> Any:
         msg = f"Quá nhiều lần đăng nhập thất bại. Vui lòng thử lại sau {retry_after} giây."
         resp = jsonify(
             {
+                "success": False,
+                "data": None,
                 "error": {
                     "code": "RATE_LIMIT_EXCEEDED",
                     "message": msg,
-                }
+                },
             }
         )
         resp.status_code = 429
@@ -233,10 +235,12 @@ def login() -> Any:
         return (
             jsonify(
                 {
+                    "success": False,
+                    "data": None,
                     "error": {
                         "code": "INVALID_CREDENTIALS",
                         "message": "Email hoặc mật khẩu không chính xác.",
-                    }
+                    },
                 }
             ),
             401,
@@ -249,10 +253,12 @@ def login() -> Any:
         return (
             jsonify(
                 {
+                    "success": False,
+                    "data": None,
                     "error": {
                         "code": "ACCOUNT_INACTIVE",
                         "message": "Tài khoản đã bị tạm khóa hoặc ngừng kích hoạt.",
-                    }
+                    },
                 }
             ),
             403,
@@ -309,6 +315,7 @@ def login() -> Any:
             jsonify(
                 {
                     "success": False,
+                    "data": None,
                     "error": {
                         "code": "CONCURRENT_LOGIN_DETECTED",
                         "message": "Tài khoản đã bị đăng xuất trên toàn bộ thiết bị do phát hiện đăng nhập đồng thời từ thiết bị khác để bảo vệ an toàn.",
@@ -372,31 +379,37 @@ def login() -> Any:
         target_url = next_url
 
     if _is_json_request():
+        login_data = {
+            "status": "ok",
+            "message": "Đăng nhập thành công.",
+            "csrf_token": new_csrf_token,
+            "redirect_url": target_url,
+            "user": {
+                "id": str(user.public_id),
+                "public_id": str(user.public_id),
+                "email": user.email,
+                "display_name": user.display_name,
+                "full_name": getattr(user, "full_name", None)
+                or getattr(user, "display_name", "")
+                or "",
+                "primary_role": getattr(user, "primary_role", "STUDENT"),
+                "active_role": session.get("active_role")
+                or getattr(user, "primary_role", "STUDENT"),
+                "role_codes": sorted(getattr(user, "role_codes", ["STUDENT"])),
+                "admin_sub_role": getattr(user, "admin_sub_role", None),
+                "admin_sub_role_label": getattr(user, "admin_sub_role_label", ""),
+                "is_primary_admin": getattr(user, "is_primary_admin", False),
+                "is_email_verified": getattr(user, "is_email_verified", False),
+                "avatar_url": getattr(user, "avatar_url", None),
+            },
+        }
         resp = make_response(
             jsonify(
                 {
-                    "status": "ok",
-                    "message": "Đăng nhập thành công.",
-                    "csrf_token": new_csrf_token,
-                    "redirect_url": target_url,
-                    "user": {
-                        "id": str(user.public_id),
-                        "public_id": str(user.public_id),
-                        "email": user.email,
-                        "display_name": user.display_name,
-                        "full_name": getattr(user, "full_name", None)
-                        or getattr(user, "display_name", "")
-                        or "",
-                        "primary_role": getattr(user, "primary_role", "STUDENT"),
-                        "active_role": session.get("active_role")
-                        or getattr(user, "primary_role", "STUDENT"),
-                        "role_codes": sorted(getattr(user, "role_codes", ["STUDENT"])),
-                        "admin_sub_role": getattr(user, "admin_sub_role", None),
-                        "admin_sub_role_label": getattr(user, "admin_sub_role_label", ""),
-                        "is_primary_admin": getattr(user, "is_primary_admin", False),
-                        "is_email_verified": getattr(user, "is_email_verified", False),
-                        "avatar_url": getattr(user, "avatar_url", None),
-                    },
+                    "success": True,
+                    "data": login_data,
+                    "error": None,
+                    **login_data,
                 }
             ),
             200,

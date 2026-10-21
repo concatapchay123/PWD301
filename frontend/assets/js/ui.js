@@ -3145,7 +3145,7 @@ class FloatingAITutor {
         <div class="flex gap-2.5 items-start">
           <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc" class="w-7 h-7 rounded-lg object-cover shrink-0 border border-[#E8E6DF] dark:border-[#2E2D2B] shadow-2xs" />
           <div class="bg-[#F4F1EA] dark:bg-[#262524] text-[#222120] dark:text-[#EDEDEB] p-3 rounded-xl rounded-tl-none max-w-[85%] border border-[#E8E6DF] dark:border-[#2E2D2B]">
-            Đã làm mới cuộc hội thoại! Bạn có thể đặt câu hỏi mới về khóa học hoặc kiến thức lập trình nhé.
+            Xin chào bạn! Mình là Bạch Tuột, trợ lí AI của hệ thống PPTQ. Mình có thể giúp được gì cho bạn?
           </div>
         </div>
       `;

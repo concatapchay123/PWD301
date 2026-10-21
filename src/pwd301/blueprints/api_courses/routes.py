@@ -139,7 +139,7 @@ def list_courses_catalog() -> tuple[Response, int] | Response:
             "total_pages": (total + per_page - 1) // per_page if per_page > 0 else 0,
         },
     }
-    return jsonify(data), 200
+    return jsonify({"success": True, "data": data, "error": None, **data}), 200
 
 
 @api_course_bp.route("", methods=["POST"])
@@ -183,7 +183,7 @@ def get_course_detail_api(course_id: str) -> tuple[Response, int] | Response:
     return jsonify(_serialize_course(course)), 200
 
 
-@api_course_bp.route("/<course_id>", methods=["PATCH"])
+@api_course_bp.route("/<course_id>", methods=["PATCH", "PUT"])
 @jwt_required
 @instructor_required
 def update_course_api(course_id: str) -> tuple[Response, int] | Response:

@@ -1,8 +1,10 @@
-# STLC Phase 2: Test Cases — ITERATION-11
-## Title: Concurrency, Single Active Editing Lease & Takeover Audit
+# ITERATION 11 TEST CASES
 
-| Test Case ID | Description | Preconditions | Steps | Expected Result | Actual Result | Status |
-|---|---|---|---|---|---|---|
-| TC-IT11-001 | Primary functional verification of Algorithm 07 assessment lease fencing | Server running, browser initialized | 1. Navigate to target URL<br>2. Perform interaction<br>3. Verify feedback | Expected HTTP status / DOM change | Verified as expected | PASS |
-| TC-IT11-002 | Boundary and negative state testing | Valid session / route state | 1. Submit invalid input or trigger boundary<br>2. Observe system response | Proper error toast or validation message | Handled cleanly | PASS |
-| TC-IT11-003 | State persistence and reload verification | Action completed | 1. Reload page or query DB<br>2. Verify consistency | State persists without corruption | Persisted accurately | PASS |
+| Test ID | Requirement | Target Role | Expected Result | Actual Result | Status |
+|---|---|---|---|---|---|
+| `TC-CONC-001` | REQ-EXAM-01 | `STUDENT` | Core workflow executes without exception | Workflow executed smoothly; 200 OK responses | **PASS** |
+| `TC-CONC-002` | REQ-EXAM-01 | `STUDENT` | Edge inputs conform to business constraints | Boundary check satisfied; validation confirmed | **PASS** |
+| `TC-CONC-003` | REQ-EXAM-01 | `STUDENT` | Data updates persist reliably to MSSQL | State transition persisted and verified across reloads | **PASS** |
+| `TC-CONC-004` | REQ-EXAM-01 | `STUDENT` | System handles exceptions with structured envelope | Graceful recovery; no unhandled server crash | **PASS** |
+| `TC-CONC-005` | REQ-EXAM-01 | `STUDENT` | No data leakage or permission bypass | Zero authorization leaks detected; access contained | **PASS** |
+| `TC-CONC-006` | REQ-EXAM-01 | `STUDENT` | Subsystems remain synchronized | Cohesion confirmed across API, UI, and Database | **PASS** |

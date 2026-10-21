@@ -526,11 +526,13 @@ def jwt_required(f: Callable[..., Any]) -> Callable[..., Any]:
             return (
                 jsonify(
                     {
+                        "success": False,
+                        "data": None,
                         "error": {
                             "code": "UNAUTHORIZED",
                             "message": "Missing Authorization header with Bearer token.",
                             "correlation_id": getattr(g, "correlation_id", ""),
-                        }
+                        },
                     }
                 ),
                 401,
@@ -541,11 +543,13 @@ def jwt_required(f: Callable[..., Any]) -> Callable[..., Any]:
             return (
                 jsonify(
                     {
+                        "success": False,
+                        "data": None,
                         "error": {
                             "code": "UNAUTHORIZED",
                             "message": "Authorization header must be Bearer <token>.",
                             "correlation_id": getattr(g, "correlation_id", ""),
-                        }
+                        },
                     }
                 ),
                 401,
@@ -558,11 +562,13 @@ def jwt_required(f: Callable[..., Any]) -> Callable[..., Any]:
             return (
                 jsonify(
                     {
+                        "success": False,
+                        "data": None,
                         "error": {
                             "code": "TOKEN_EXPIRED",
                             "message": str(exc),
                             "correlation_id": getattr(g, "correlation_id", ""),
-                        }
+                        },
                     }
                 ),
                 401,
@@ -571,11 +577,13 @@ def jwt_required(f: Callable[..., Any]) -> Callable[..., Any]:
             return (
                 jsonify(
                     {
+                        "success": False,
+                        "data": None,
                         "error": {
                             "code": "TOKEN_REVOKED",
                             "message": str(exc),
                             "correlation_id": getattr(g, "correlation_id", ""),
-                        }
+                        },
                     }
                 ),
                 401,
@@ -584,11 +592,13 @@ def jwt_required(f: Callable[..., Any]) -> Callable[..., Any]:
             return (
                 jsonify(
                     {
+                        "success": False,
+                        "data": None,
                         "error": {
                             "code": "AUTH_VERSION_MISMATCH",
                             "message": str(exc),
                             "correlation_id": getattr(g, "correlation_id", ""),
-                        }
+                        },
                     }
                 ),
                 401,
@@ -597,11 +607,13 @@ def jwt_required(f: Callable[..., Any]) -> Callable[..., Any]:
             return (
                 jsonify(
                     {
+                        "success": False,
+                        "data": None,
                         "error": {
                             "code": "ACCOUNT_INACTIVE",
                             "message": str(exc),
                             "correlation_id": getattr(g, "correlation_id", ""),
-                        }
+                        },
                     }
                 ),
                 403,
@@ -610,11 +622,13 @@ def jwt_required(f: Callable[..., Any]) -> Callable[..., Any]:
             return (
                 jsonify(
                     {
+                        "success": False,
+                        "data": None,
                         "error": {
                             "code": "INVALID_TOKEN",
                             "message": str(exc),
                             "correlation_id": getattr(g, "correlation_id", ""),
-                        }
+                        },
                     }
                 ),
                 401,
@@ -623,11 +637,13 @@ def jwt_required(f: Callable[..., Any]) -> Callable[..., Any]:
             return (
                 jsonify(
                     {
+                        "success": False,
+                        "data": None,
                         "error": {
                             "code": "UNAUTHORIZED",
                             "message": f"Authentication failed: {exc}",
                             "correlation_id": getattr(g, "correlation_id", ""),
-                        }
+                        },
                     }
                 ),
                 401,

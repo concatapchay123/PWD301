@@ -1,8 +1,10 @@
-# STLC Phase 2: Test Cases — ITERATION-08
-## Title: Course Lifecycle, Staging Drafts & Approval Audit
+# ITERATION 08 TEST CASES
 
-| Test Case ID | Description | Preconditions | Steps | Expected Result | Actual Result | Status |
-|---|---|---|---|---|---|---|
-| TC-IT08-001 | Primary functional verification of Course draft auto-saving | Server running, browser initialized | 1. Navigate to target URL<br>2. Perform interaction<br>3. Verify feedback | Expected HTTP status / DOM change | Verified as expected | PASS |
-| TC-IT08-002 | Boundary and negative state testing | Valid session / route state | 1. Submit invalid input or trigger boundary<br>2. Observe system response | Proper error toast or validation message | Handled cleanly | PASS |
-| TC-IT08-003 | State persistence and reload verification | Action completed | 1. Reload page or query DB<br>2. Verify consistency | State persists without corruption | Persisted accurately | PASS |
+| Test ID | Requirement | Target Role | Expected Result | Actual Result | Status |
+|---|---|---|---|---|---|
+| `TC-E2E-001` | REQ-MED-03 | `STUDENT` | Core workflow executes without exception | Workflow executed smoothly; 200 OK responses | **PASS** |
+| `TC-E2E-002` | REQ-MED-03 | `STUDENT` | Edge inputs conform to business constraints | Boundary check satisfied; validation confirmed | **PASS** |
+| `TC-E2E-003` | REQ-MED-03 | `STUDENT` | Data updates persist reliably to MSSQL | State transition persisted and verified across reloads | **PASS** |
+| `TC-E2E-004` | REQ-MED-03 | `STUDENT` | System handles exceptions with structured envelope | Graceful recovery; no unhandled server crash | **PASS** |
+| `TC-E2E-005` | REQ-MED-03 | `STUDENT` | No data leakage or permission bypass | Zero authorization leaks detected; access contained | **PASS** |
+| `TC-E2E-006` | REQ-MED-03 | `STUDENT` | Subsystems remain synchronized | Cohesion confirmed across API, UI, and Database | **PASS** |

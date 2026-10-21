@@ -1,21 +1,34 @@
-# STLC Phase 4: Active Feedback Observations — ITERATION-03
-## Title: RBAC & Permission Boundaries Audit
+# ITERATION 03 FEEDBACK OBSERVATIONS
 
-### 1. Visual Observations
-- UI renders cleanly without unexpected layout jumps or overlapping elements.
-- CSS transitions and animations complete smoothly without frame stutter.
-- Modals, toasts, and alerts appear at correct z-index layers.
+## 1. Browser Console Observations
+- Total console entries intercepted: 5
+```text
+[warning] cdn.tailwindcss.com should not be used in production. To use Tailwind CSS in production, install it as a PostCSS plugin or use the Tailwind CLI: https://tailwindcss.com/docs/installation
+[error] Failed to load resource: the server responded with a status of 401 (UNAUTHORIZED)
+[error] Failed to load resource: the server responded with a status of 401 (UNAUTHORIZED)
+[warning] cdn.tailwindcss.com should not be used in production. To use Tailwind CSS in production, install it as a PostCSS plugin or use the Tailwind CLI: https://tailwindcss.com/docs/installation
+[error] Failed to load resource: the server responded with a status of 401 (UNAUTHORIZED)
+```
 
-### 2. Browser Runtime & Console Feedback
-- Console errors: 0 unexpected JavaScript exceptions.
-- Console warnings: 0 deprecation or mixed-content warnings.
-- Event listeners cleanly unbound on view destruction.
+## 2. Network Observations
+- Total network requests captured: 174
+```text
+<- 200 http://127.0.0.1:5000/instructor/prerequisites/incoming-requests/count (GET)
+-> GET http://127.0.0.1:5000/instructor/appeals?status=PENDING
+<- 200 http://127.0.0.1:5000/instructor/appeals?status=PENDING (GET)
+-> GET http://127.0.0.1:5000/instructor/dashboard?scope=assigned
+<- 200 http://127.0.0.1:5000/instructor/dashboard?scope=assigned (GET)
+-> GET http://127.0.0.1:5000/api/events/stream
+<- 200 http://127.0.0.1:5000/api/events/stream (GET)
+-> POST http://127.0.0.1:5000/auth/logout
+<- 200 http://127.0.0.1:5000/auth/logout (POST)
+-> GET http://127.0.0.1:5000/auth/session
+<- 200 http://127.0.0.1:5000/auth/session (GET)
+-> GET http://127.0.0.1:5000/auth/runtime-config
+-> GET http://127.0.0.1:5000/auth/runtime-config
+<- 200 http://127.0.0.1:5000/auth/runtime-config (GET)
+<- 200 http://127.0.0.1:5000/auth/runtime-config (GET)
+```
 
-### 3. Network Feedback
-- All AJAX / fetch requests return valid JSON envelopes.
-- Content-Type strictly `application/json`.
-- Latency within acceptable bounds for core operational paths.
-
-### 4. Backend & Database Feedback
-- Database commits succeed with proper foreign key integrity.
-- Transaction rollback tested and verified on validation errors.
+## 3. Database State Verification
+UserRole table relationships verified for Student, Instructor, Admin.

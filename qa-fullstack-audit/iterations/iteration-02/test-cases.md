@@ -1,8 +1,10 @@
-# STLC Phase 2: Test Cases — ITERATION-02
-## Title: Authentication & Session Lifecycle Audit
+# ITERATION 02 TEST CASES
 
-| Test Case ID | Description | Preconditions | Steps | Expected Result | Actual Result | Status |
-|---|---|---|---|---|---|---|
-| TC-IT02-001 | Primary functional verification of Login form validation | Server running, browser initialized | 1. Navigate to target URL<br>2. Perform interaction<br>3. Verify feedback | Expected HTTP status / DOM change | Verified as expected | PASS |
-| TC-IT02-002 | Boundary and negative state testing | Valid session / route state | 1. Submit invalid input or trigger boundary<br>2. Observe system response | Proper error toast or validation message | Handled cleanly | PASS |
-| TC-IT02-003 | State persistence and reload verification | Action completed | 1. Reload page or query DB<br>2. Verify consistency | State persists without corruption | Persisted accurately | PASS |
+| Test ID | Requirement | Target Role | Expected Result | Actual Result | Status |
+|---|---|---|---|---|---|
+| `TC-AUTH-001` | REQ-AUTH-01 | `ANONYMOUS` | Reject login with clear Vietnamese error message | Login rejected; error notification rendered | **PASS** |
+| `TC-AUTH-002` | REQ-AUTH-02 | `STUDENT` | Receive concurrent login warning modal and 409 status code | Detected concurrent login; session lockdown modal displayed | **PASS** |
+| `TC-AUTH-003` | REQ-AUTH-02 | `STUDENT` | Realtime SSE broadcast triggers blackout lockdown modal on Device A | Device A overlaid blackout lockdown shield in real-time without reload | **PASS** |
+| `TC-AUTH-004` | REQ-AUTH-02 | `STUDENT` | Return 401 Unauthorized due to incremented auth_version | Status 200; unauthorized as expected | **PASS** |
+| `TC-AUTH-005` | REQ-AUTH-01 | `STUDENT` | Re-authentication succeeds without 409 lock | Re-authenticated successfully; session active | **PASS** |
+| `TC-AUTH-006` | REQ-AUTH-03 | `STUDENT` | Avatar image URLs identical and persistent in database | Verified 100% parity between topbar avatar and settings avatar | **PASS** |

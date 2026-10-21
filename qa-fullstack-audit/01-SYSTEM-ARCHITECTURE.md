@@ -1,85 +1,53 @@
-# PWD301 PLATFORM ARCHITECTURE & QUALITY ASSURANCE BASELINE
+# SYSTEM ARCHITECTURE & COMPONENT TAXONOMY
 
-## 1. High-Level Architectural Model
+## 1. Overview
+PWD301 is a pure headless Enterprise Learning Management System (LMS) with high-stakes online examinations, secure DRM video delivery, Bloom taxonomy assessment matrices, and real-time AI pedagogical assistance (Octopus AI Assistant).
 
-PWD301 is an enterprise-grade Learning Management System (LMS) and Assessment Platform designed specifically for advanced software development and cybersecurity education. Following the 2026-10-15 architectural transition, PWD301 operates strictly as a **Pure Headless Backend & REST API Platform** paired with an autonomous **Single-Page Application (SPA)** client:
-
-```mermaid
-graph TD
-    Client["Browser SPA Client (Vanilla JS ES2022 + Tailwind CSS)"] -->|Session Auth + CSRF / AJAX| Web["Gunicorn WSGI / Flask 3.0 Backend"]
-    ExtClient["REST API Client (Postman / SDK / Mobile)"] -->|Bearer JWT| Web
-    Web -->|SQLAlchemy 2.0 ORM / PyODBC| DB[("Microsoft SQL Server 2022 Express")]
-    Web -->|STREAM socket / clamd| AV["ClamAV 1.4.3 Antivirus Engine"]
-    Web -->|Encrypted Segment Streaming AES-128| HLS["Private Video Delivery Pipeline"]
-    Web -->|Iframe Responsive 16:9 Viewport| YT["YouTube Unlisted Player"]
-    Web -->|google-genai SDK| Gemini["Octopus AI Assistant (Gemini 3.8)"]
+```
++----------------------------------------------------------------------------------------------------+
+|                                    CLIENT APPLICATION LAYER                                        |
+|  Pure Single-Page Application (SPA) / Vanilla Modern JS + Tailwind CSS + FontAwesome + KaTeX       |
+|  Routes: #/auth, #/student/*, #/instructor/*, #/admin/*                                           |
++----------------------------------------------------------------------------------------------------+
+                                             |
+                   HTTP / REST / Server-Sent Events (SSE)
+                                             |
++----------------------------------------------------------------------------------------------------+
+|                                    APPLICATION SERVER LAYER                                        |
+|  Flask 3.x WSGI Application running on Gunicorn (Port 5000)                                       |
+|  - Auth & Session Management (Session Cookies + CSRF + AuthVersion multi-device revocation)        |
+|  - RBAC: Student, Instructor, Admin (Primary, Audit, System Monitoring)                             |
+|  - Single Active Editing Lease Engine (Algorithm 07)                                               |
+|  - Video Pacing & DRM Token Minting (12h TTL, HLS fail-closed, YouTube standard 16:9)              |
+|  - ClamAV Integration: Fail-closed virus scanner, 50MB non-archive attachment enforcement          |
+|  - Octopus AI Assistant: Gemini Flash API (maxOutputTokens=4096, RAG retrieval with auth scoping)   |
++----------------------------------------------------------------------------------------------------+
+                                             |
+                  SQLAlchemy 2.x ORM / pyodbc (ODBC Driver 18)
+                                             |
++----------------------------------------------------------------------------------------------------+
+|                                      DATA PERSISTENCE LAYER                                        |
+|  Microsoft SQL Server 2022 (Docker container 'pwd301_db', Port 1433)                               |
+|  - 78 Relational Tables across 6 Core Domains                                                      |
+|  - BIGINT PKs, UUID/GUID public identifiers, UTC DATETIME2(3), ROWVERSION concurrency tokens      |
++----------------------------------------------------------------------------------------------------+
 ```
 
----
-
-## 2. Platform Core Invariants & Guardrails
-
-### 2.1. Pure Headless Transition (Anti-Regression Invariant)
-- **Zero Legacy Templates:** All Jinja template directories (`src/pwd301/templates/`), static CSS/JS directories (`src/pwd301/static/`), and prototyping folders (`frontend-preview/`) are permanently eliminated.
-- **Machine-Readable JSON Envelopes:** All 432 endpoints across 17 blueprints serve uniform JSON payloads:
-  ```json
-  {
-    "success": true,
-    "data": { ... },
-    "error": null
-  }
-  ```
-  On failure:
-  ```json
-  {
-    "success": false,
-    "data": null,
-    "error": {
-      "code": "INVALID_CREDENTIALS",
-      "message": "Email hoặc mật khẩu không chính xác.",
-      "field_errors": {},
-      "correlation_id": "a98dfb..."
-    }
-  }
-  ```
-
-### 2.2. Dual Authentication Mechanism
-1. **Web SPA Sessions:** Authenticated via HttpOnly, SameSite=Lax Flask session cookies with cryptographic CSRF token validation (`X-CSRFToken` header / cookie token synchronization).
-2. **REST API Clients:** Authenticated via short-lived PyJWT Bearer tokens issued via `/api/auth/token` with cryptographic signing and revocation tracking.
-
-### 2.3. Anti-Tamper Security Shield & Fail-Closed Protection
-- **Global Key Interception:** Interception of F12, Ctrl+Shift+I/J/C, Ctrl+U, PrintScreen, and Win+Shift+S across all authenticated views.
-- **Automated Revocation:** High-confidence tampering confirmation displays a full-screen Blackout Shield ("🛡️ CẢNH BÁO AN NINH HỆ THỐNG"), triggers server-side session revocation (`POST /auth/logout`), clears local storage/tokens, and redirects to `#/auth`.
-
-### 2.4. Video Protection & Standard 16:9 Player Viewport
-- Standard 16:9 aspect ratio (`aspect-video`, 100% width, 100% height, zero crop) across Student Learning, Instructor Preview, Course Hero Trailer, and Admin Review.
-- Cover Poster Shield concealing players prior to explicit user interaction.
-- Pacing engine allowing seek unlock in the final 5 seconds ($currentTime \ge Duration - 5s$).
-- 12-hour short-lived AES-128 DRM streaming keys.
-
-### 2.5. Strict 50MB Non-Archive Attachment Policy
-- Maximum attachment size: 50 MB (`50_000_000` bytes).
-- Permitted types: PDF, Word (.docx/.doc), Excel (.xlsx/.xls), PowerPoint (.pptx/.ppt), Plain Text (.txt), CAD (.dwg/.dxf), 3D Models (.obj/.fbx/.stl/.blend/.step/.stp/.gltf/.glb).
-- Forbidden types: `.zip`, `.rar`, `.7z`, `.tar`, `.gz`, `.bz2`, `.xz`, `.iso` rejected with exact Vietnamese message:
-  `"Hệ thống không hỗ trợ tệp nén (.zip, .rar, .7z...). Vui lòng tải trực tiếp tài liệu học tập (PDF, Word, Excel, CAD, 3D...)"`.
-
-### 2.6. Single Active Editing Lease (Algorithm 07)
-- Exclusive single-tab editing leases with cryptographic tokens for all assessment attempts.
-- Multi-tab takeover immediately fences stale browser instances.
-- Ordered autosave sequence enforcement (`client_sequence`).
-- Idempotent submission guarantee.
-
----
-
-## 3. Technology Stack & Runtime Matrix
-
-| Layer | Component | Version / Specification | Configuration / Role |
-|---|---|---|---|
-| **Runtime OS** | Windows 11 / Ubuntu 22.04 LTS (Container) | Docker Desktop 28.0 | Containerized Production Staging |
-| **Backend Framework** | Flask (Python 3.12) | Flask 3.0.3, SQLAlchemy 2.0.35 | Pure Headless REST API |
-| **WSGI Server** | Gunicorn | Gunicorn 22.0.0 | High-performance multi-worker server |
-| **Database** | Microsoft SQL Server Express 2022 | CU27-ubuntu-22.04 (Port 1433) | Relational Storage & Rowversion Locks |
-| **Antivirus Scanner**| ClamAV Daemon | ClamAV 1.4.3 (Port 3310) | Realtime fail-closed file scanning |
-| **Frontend Client** | Single-Page Application (SPA) | Vanilla JS ES2022 + Tailwind CSS CDN | Warm Editorial Typography & UI Components |
-| **Browser Engine** | Google Chrome | Chrome 155 via Playwright Sync API | Real Browser E2E Automation Engine |
-| **AI Integration** | Octopus AI Assistant | Google Gemini 3.8 (`google-genai`) | RAG-assisted contextual tutor |
+## 2. Key Non-Negotiable Architectural Invariants
+1. **Pure Headless Backend**: All endpoints strictly serve standardized JSON envelopes:
+   ```json
+   {
+     "success": true,
+     "data": { ... },
+     "error": null
+   }
+   ```
+2. **Multi-Device Concurrent Logout**: When user logs in on Device B while active on Device A, Device A receives real-time SSE `auth:concurrent_session_revoked`, both devices display a full-screen blackout modal ("CẢNH BÁO AN NINH HỆ THỐNG"), sessions are revoked, and users are redirected to `#/auth/login`.
+3. **Single Active Editing Lease**: Only one active editing lease controls an attempt at any time; takeover requires lease expiry/loss and continues the same attempt.
+4. **Strict 50MB Non-Archive Policy**: Maximum 50 MB for lesson attachments. Archive files (.zip, .rar, .7z, etc.) are strictly rejected with: *"Hệ thống không hỗ trợ tệp nén (.zip, .rar, .7z...). Vui lòng tải trực tiếp tài liệu học tập (PDF, Word, Excel, CAD, 3D...)"*.
+5. **Fail-Closed Virus Scanning**: Unscanned or quarantined files are inaccessible.
+6. **YouTube Standard 16:9 Viewport**: Responsive 100% width/height without distortion across all 4 touchpoints.
+7. **Pacing Engine & 5-Second Seek Unlock**: Anti-forward seek restriction is strictly enforced from 00:00 up to (Duration - 5s). At <= 5s, the system unlocks video completion and allows free scrubbing.
+8. **Realtime Next-Lesson Unlock**: Video end + miniquiz passing dynamically lights up the "Tiếp theo" button without requiring F5 reload.
+9. **Two-Tier Broadcast RBAC**: Only Primary Admin may broadcast any category; System Monitoring Admin is strictly locked to `SYSTEM` broadcasts; other admins have broadcast UI hidden and API blocked.
+10. **Global Anti-Tamper Lockdown**: Unauthorized DevTools opening (F12, Ctrl+Shift+I, etc.) overlays the Blackout Shield, revokes the session on server, and redirects to login.
