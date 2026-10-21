@@ -92,3 +92,34 @@ frontend/pwd301_*/
 # Scratch files
 scratch/
 audit-results/
+
+
+# Audits, QA runs, verification artifacts, execution reports, and showcase media
+audit/
+qa-audit/
+qa-fullstack-audit/
+execution-reports/
+verification/
+showcase/
+.media/
+
+# Internal agent tasks and historical audit/proof docs
+tasks/
+docs/audits/
+docs/proofs/
+docs/archive/
+docs/tasks/
+
+# Ephemeral root reports, inventories, and plans
+/CAPTURE_PLAN.md
+/CLEANUP_REPORT.md
+/FINAL_PROJECT_REPAIR_REPORT.md
+/LMS_FEATURE_INVENTORY.md
+/PROJECT.md
+/REFERENCE_ANALYSIS.md
+/REMEDIATION_PROGRESS.md
+/SCREEN_INVENTORY.md
+/SYSTEM_DATA_SYNCHRONIZATION_AUDIT*.md
+/SYSTEM_DATA_SYNCHRONIZATION_REMEDIATION_REPORT*.md
+/SYSTEM_SYNC_REMEDIATION_PROGRESS*.md
+/VIDEO_STORYBOARD.md

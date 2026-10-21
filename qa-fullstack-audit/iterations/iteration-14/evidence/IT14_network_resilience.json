@@ -1,4 +1,0 @@
-{
-  "youtube_duration_fallback": "3-tier resilient fallback active (Google API -> client -> 1800s default)",
-  "offline_sync_recovery": "VERIFIED"
-}

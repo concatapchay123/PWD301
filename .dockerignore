@@ -1,8 +1,10 @@
 # Git & Worktrees
-.git
+.git/
 .gitignore
 .gitattributes
 .worktrees/
+.agents/
+.superpowers/
 
 # Virtual Environments
 .venv/
@@ -17,6 +19,7 @@ package-lock.json
 
 # Python caches and bytecode
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 *.so
@@ -35,35 +38,64 @@ tests/
 docs/
 tasks/
 audit/
+audit-results/
+qa-audit/
+qa-fullstack-audit/
+graphify-out/
+artifacts/
+verification/
+output/
+execution-reports/
 showcase/
+frontend-preview/
 scratch/
 skill-observations/
 ROUND_*.md
 SYSTEM_DATA_*.md
 FINAL_PROJECT_*.md
 *.log
+**/*.log
 chrome.log
+test_run.log
+*.md
 
 # LLM context bundles and large dumps
 PROJECT_CONTEXT_FOR_GEMINI.md
 PROJECT_CONTEXT_FOR_GEMINI_AI.md
 
+# Seeds and Heavy Sample Data (75MB+)
+seeds/
+scripts/course_data/
+scripts/android_course_data/
+
 # Media, Assets & Videos (Served via Cloud/Volume/CDN)
 *.mp4
+**/*.mp4
 *.webm
+**/*.webm
 *.ts
+**/*.ts
 *.m3u8
+**/*.m3u8
 *.png
+**/*.png
 *.jpg
+**/*.jpg
 *.jpeg
+**/*.jpeg
 !frontend/**/*.png
 !frontend/**/*.jpg
 !frontend/**/*.jpeg
 *.docx
+**/*.docx
 *.pdf
+**/*.pdf
 *.zip
+**/*.zip
 *.tar
+**/*.tar
 *.gz
+**/*.gz
 
 # Local runtime directories & uploads (persisted via Docker volumes instead)
 storage/*
@@ -82,10 +114,13 @@ desktop.ini
 
 # Archives & Temporary files
 *.bak
+**/*.bak
 *.tmp
+**/*.tmp
 *.temp
+**/*.temp
 .env
 .env.*
 !.env.example
 !.env.production.example
-.superpowers/
+api/

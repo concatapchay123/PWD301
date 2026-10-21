@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # ==============================================================================
 # PWD301 Online Course Management Platform - Production Multi-Stage Dockerfile
 # ==============================================================================
@@ -60,9 +61,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy pre-compiled wheels from builder stage and install
-COPY --from=builder /build/wheels /wheels
-RUN pip install --no-cache-dir /wheels/* && rm -rf /wheels
+# Install pre-compiled wheels from builder stage using bind mount (avoids intermediate layer)
+RUN --mount=type=bind,from=builder,source=/build/wheels,target=/wheels \
+    pip install --no-cache-dir /wheels/*
+
+# Isolated Node binary and mathjax node_modules for local server-side MathJax SVG rendering
 COPY --from=math-builder /usr/local/bin/node /usr/local/bin/node
 COPY --from=math-builder /math/node_modules /app/tools/pdf-math/node_modules
 
@@ -71,13 +74,19 @@ RUN groupadd -g 10001 appgroup && \
     useradd -u 10001 -g appgroup -s /bin/bash -m appuser
 
 # Create persistent storage directories with proper permissions
-RUN mkdir -p /app/storage /app/quarantine /app/backups /app/exports /app/instance && \
+RUN mkdir -p /app/storage /app/quarantine /app/backups /app/exports /app/instance /app/scripts /app/tools/pdf-math && \
     chown -R appuser:appgroup /app
 
-# Copy application code into container
-COPY --chown=appuser:appgroup . /app
-
-# PYTHONPATH points to the immutable source; no editable install or build backend at runtime.
+# Selective Copy: Copy ONLY necessary runtime files into container (Preventing Docker bloat)
+COPY --chown=appuser:appgroup src/ /app/src/
+COPY --chown=appuser:appgroup migrations/ /app/migrations/
+COPY --chown=appuser:appgroup frontend/ /app/frontend/
+COPY --chown=appuser:appgroup wsgi.py pyproject.toml /app/
+COPY --chown=appuser:appgroup tools/pdf-math/render.cjs tools/pdf-math/package.json /app/tools/pdf-math/
+COPY --chown=appuser:appgroup scripts/docker-entrypoint.sh \
+     scripts/wait_for_db.py \
+     scripts/run_worker.py \
+     scripts/worker_healthcheck.py /app/scripts/
 
 # Ensure entrypoint script is executable
 RUN chmod +x /app/scripts/docker-entrypoint.sh

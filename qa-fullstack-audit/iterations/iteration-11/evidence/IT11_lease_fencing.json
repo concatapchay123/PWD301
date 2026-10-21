@@ -1,5 +1,0 @@
-{
-  "algorithm": "Algorithm 07 - Single Active Editing Lease",
-  "idempotency_guaranteed": true,
-  "client_sequence_enforced": true
-}
