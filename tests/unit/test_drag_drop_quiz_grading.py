@@ -36,6 +36,14 @@ from pwd301.services.question_bank_service import create_question
 from pwd301.services.user_service import assign_role_to_user, register_user
 
 
+@pytest.fixture(autouse=True)
+def _enable_assessment_authoring(app: Flask):
+    """Enable direct assessment authoring & live publishing in drag drop unit tests."""
+    db.session.info["course_workflow_applying"] = True
+    yield
+    db.session.info.pop("course_workflow_applying", None)
+
+
 @pytest.fixture
 def drag_drop_env(app: Flask) -> dict[str, Any]:
     """Setup instructor, student, and assessment with drag-and-drop grouped question."""

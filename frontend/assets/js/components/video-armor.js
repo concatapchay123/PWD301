@@ -71,7 +71,9 @@ class VideoArmor {
         if (typeof e.preventDefault === 'function') e.preventDefault();
         if (typeof e.stopPropagation === 'function') e.stopPropagation();
         VideoArmor._clearClipboardStatic();
-        VideoArmor.triggerGlobalLockdown(violation);
+        if (isExam) {
+          VideoArmor.triggerGlobalLockdown(violation);
+        }
       }
     };
 
@@ -106,28 +108,7 @@ class VideoArmor {
     }
 
     // 3. Periodic DevTools check
-    if (win && win.setInterval) {
-      VideoArmor._globalDevToolsTimer = win.setInterval(() => {
-        if (VideoArmor._isGlobalLocked) return;
-        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
-        // In local development, avoid aggressive 1-second debugger pause loop
-        const isLocalHost = Boolean(win && win.location && (win.location.hostname === 'localhost' || win.location.hostname === '127.0.0.1'));
-        if (isLocalHost) return;
-
-        const start = Date.now();
-        try {
-          (function() { debugger; })();
-        } catch (_) {}
-        const delta = Date.now() - start;
-        if (delta > 100) {
-          VideoArmor.triggerGlobalLockdown('DEVTOOLS_DETECTED');
-        }
-      }, 1000);
-
-      if (VideoArmor._globalDevToolsTimer && typeof VideoArmor._globalDevToolsTimer.unref === 'function') {
-        VideoArmor._globalDevToolsTimer.unref();
-      }
-    }
+    // TASK-123: Disabled periodic debugger timing delta to eliminate false-positive lockouts on slow networks/CPU spikes.
   }
 
   static uninstallGlobalShield() {
@@ -216,6 +197,23 @@ class VideoArmor {
   }
 
   static async triggerGlobalLockdown(reason = 'DEVTOOLS_DETECTED') {
+    const isExamActive = () => {
+      const win = (typeof window !== 'undefined') ? window : null;
+      if (win && win.ExamAntiCheatManager && win.ExamAntiCheatManager.activeInstance && win.ExamAntiCheatManager.activeInstance.isActive) {
+        return true;
+      }
+      const doc = (typeof document !== 'undefined') ? document : null;
+      if (doc && (doc.getElementById('questions-viewport') || doc.getElementById('lockdown-violation-count'))) {
+        return true;
+      }
+      return false;
+    };
+
+    if (!isExamActive()) {
+      console.warn('VideoArmor global lockdown ignored in non-exam context:', reason);
+      return;
+    }
+
     if (VideoArmor._isGlobalLocked) return;
     VideoArmor._isGlobalLocked = true;
 
@@ -419,17 +417,8 @@ class VideoArmor {
   }
 
   _startDevtoolsDetection() {
-    if (this.options.disableDevtoolsCheck) return;
-    const win = (typeof window !== 'undefined') ? window : global;
-    if (!win || !win.setInterval) return;
-
-    this.devtoolsCheckTimer = win.setInterval(() => {
-      this._checkDevTools();
-    }, 1000);
-
-    if (this.devtoolsCheckTimer && typeof this.devtoolsCheckTimer.unref === 'function') {
-      this.devtoolsCheckTimer.unref();
-    }
+    // TASK-123: Disabled periodic debugger check to eliminate false-positive lockouts
+    return;
   }
 
   _checkDevTools() {
@@ -538,7 +527,12 @@ class VideoArmor {
     }
 
     if (tampered) {
-      this.triggerBlackout('DOM_TAMPER');
+      // TASK-123: Re-create watermark gracefully without kicking user out
+      try {
+        if (!this.watermarkEl || this.watermarkEl.parentElement !== this.container) {
+          this._createWatermark();
+        }
+      } catch (_) {}
     }
   }
 

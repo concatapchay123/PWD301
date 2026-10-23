@@ -71,8 +71,23 @@ DEMO_PASSWORD: str = "Password123!"
 
 DEMO_USERS_CONFIG: list[dict[str, Any]] = [
     {
-        "email": "admin@pwd301.local",
-        "display_name": "Quản trị viên Hệ thống",
+        "email": "tqtphamnguyenhoangphuc@gmail.com",
+        "display_name": "Hoàng Phúc",
+        "roles": ["STUDENT", "INSTRUCTOR", "ADMIN"],
+    },
+    {
+        "email": "vinhphu2020.nt@gmail.com",
+        "display_name": "Vĩnh Phú",
+        "roles": ["STUDENT", "INSTRUCTOR", "ADMIN"],
+    },
+    {
+        "email": "danglyquan@gmail.com",
+        "display_name": "Đặng Lý Quân",
+        "roles": ["STUDENT", "INSTRUCTOR", "ADMIN"],
+    },
+    {
+        "email": "callmewin06@gmail.com",
+        "display_name": "Hữu Thắng",
         "roles": ["STUDENT", "INSTRUCTOR", "ADMIN"],
     },
     {
@@ -207,7 +222,7 @@ def seed_demo(session: Session | scoped_session[Any]) -> dict[str, Any]:
 
         users_by_email[norm_email] = user
 
-    admin_user = users_by_email["admin@pwd301.local"]
+    admin_user = users_by_email["tqtphamnguyenhoangphuc@gmail.com"]
     instructor1 = users_by_email["instructor1@pwd301.local"]
     instructor2 = users_by_email["instructor2@pwd301.local"]
     student1 = users_by_email["student1@pwd301.local"]
@@ -1228,7 +1243,7 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
 
     # 12. Sample In-App Notifications (Enriched & Personalized per User & Role)
     demo_notification_configs = [
-        # Admin User (admin@pwd301.local)
+        # Admin User (tqtphamnguyenhoangphuc@gmail.com)
         (
             admin_user,
             "ADMIN",

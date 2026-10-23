@@ -80,6 +80,11 @@ _AUDIT_ACTION_PREFIXES_BY_ADMIN_ROLE = {
         "COURSE_OWNER_REASSIGNED",
         "COURSE_ASSIGN",
     ),
+    "ADMIN_FINANCIAL": (
+        "WALLET_",
+        "PAYMENT_",
+        "CASHFLOW_",
+    ),
 }
 
 

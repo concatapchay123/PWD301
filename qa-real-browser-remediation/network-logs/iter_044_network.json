@@ -1,0 +1,266 @@
+[
+  {
+    "url": "http://127.0.0.1:5000/",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:24.552161+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/img/octopus_ai_icon.png?v=2",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:24.568433+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/img/pptq_icon.png",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:24.568433+00:00"
+  },
+  {
+    "url": "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:24.944317+00:00"
+  },
+  {
+    "url": "https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:24.944317+00:00"
+  },
+  {
+    "url": "https://cdn.tailwindcss.com/?plugins=forms,container-queries",
+    "status": 302,
+    "method": "GET",
+    "time": "2026-10-23T03:41:25.022478+00:00"
+  },
+  {
+    "url": "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:25.038929+00:00"
+  },
+  {
+    "url": "https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:25.057934+00:00"
+  },
+  {
+    "url": "https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:25.103472+00:00"
+  },
+  {
+    "url": "https://cdn.tailwindcss.com/3.4.17?plugins=forms@0.5.10,container-queries@0.1.1",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:25.143473+00:00"
+  },
+  {
+    "url": "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:25.171536+00:00"
+  },
+  {
+    "url": "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:25.171536+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/js/exam-store.js?v=3.2.6",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:25.265835+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/js/realtime.js?v=3.2.6",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:25.265835+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/js/components/video-armor.js?v=3.2.6",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:25.265835+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/js/api.js?v=3.2.6",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:25.266836+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/js/ui.js?v=3.2.6",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:25.266836+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/js/views/auth.js?v=3.2.6",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:25.266836+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/js/router.js?v=3.2.6",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:25.266836+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/js/views/instructor-exams.js?v=3.2.6",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:25.266836+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/js/views/admin.js?v=3.2.6",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:25.267835+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/js/views/instructor.js?v=3.2.6",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:25.268835+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/js/views/student.js?v=3.2.6",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:25.268835+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/auth/session",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:25.286233+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/img/pptq_logo_dark.png",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:25.303119+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/img/pptq_logo.png",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:25.303119+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/auth/runtime-config",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:25.303119+00:00"
+  },
+  {
+    "url": "https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko20yw.woff2",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:25.732905+00:00"
+  },
+  {
+    "url": "https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko50yyygA.woff2",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:25.778006+00:00"
+  },
+  {
+    "url": "https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko40yyygA.woff2",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:25.795536+00:00"
+  },
+  {
+    "url": "https://fonts.gstatic.com/s/materialsymbolsoutlined/v380/kJEPBvYX7BgnkSrUwT8OhrdQw4oELdPIeeII9v6oDMzBwG-RpA6RzaxHMPdY40KH8nGzv3fzfVJO1Q.woff2",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:25.871524+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/auth/login",
+    "status": 200,
+    "method": "POST",
+    "time": "2026-10-23T03:41:25.943774+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/auth/notifications?role=STUDENT",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:26.008265+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/api/events/stream",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:26.008784+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/student/dashboard",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:26.008784+00:00"
+  },
+  {
+    "url": "https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbv2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKwBNntkaToggR7BYRbKPxDcwg.woff2",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:26.039712+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/student/recommendations?limit=2",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:26.039712+00:00"
+  },
+  {
+    "url": "https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbv2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKwBNntkaToggR7BYRbKPx_cwhsk.woff2",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:26.045342+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/student/courses/20002/learn/progress",
+    "status": 404,
+    "method": "GET",
+    "time": "2026-10-23T03:41:27.406634+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/student/courses/20002/learn",
+    "status": 404,
+    "method": "GET",
+    "time": "2026-10-23T03:41:27.406634+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/student/courses/20002/learn",
+    "status": 404,
+    "method": "GET",
+    "time": "2026-10-23T03:41:27.414397+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/api/courses/20002/learn",
+    "status": 404,
+    "method": "GET",
+    "time": "2026-10-23T03:41:27.421073+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/student/courses/20002/learn",
+    "status": 404,
+    "method": "GET",
+    "time": "2026-10-23T03:41:27.431357+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/instructor/courses/20002/learn",
+    "status": 404,
+    "method": "GET",
+    "time": "2026-10-23T03:41:27.443938+00:00"
+  }
+]

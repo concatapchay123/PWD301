@@ -674,6 +674,45 @@ def api_admin_broadcast_notifications() -> tuple[Response, int] | Response:
     return jsonify({"success": True, "data": response_data, **response_data}), 200
 
 
+@api_admin_bp.route("/notifications/broadcasts", methods=["GET"])
+@jwt_required
+@admin_required
+def api_admin_list_broadcasts() -> tuple[Response, int] | Response:
+    """List system broadcast history with recipient counts and auto-cleanup expired notifications."""
+    from pwd301.services.notification_service import (
+        cleanup_expired_notifications,
+        list_admin_broadcasts,
+    )
+
+    actor = require_authenticated_actor()
+    cleanup_result = cleanup_expired_notifications(days=15, session=db.session)
+    broadcasts = list_admin_broadcasts(actor=actor, session=db.session)
+    return jsonify({
+        "success": True,
+        "data": broadcasts,
+        "broadcasts": broadcasts,
+        "cleanup": cleanup_result,
+    }), 200
+
+
+@api_admin_bp.route("/notifications/broadcasts/<event_key>", methods=["DELETE"])
+@api_admin_bp.route("/notifications/broadcasts/<event_key>/delete", methods=["POST"])
+@jwt_required
+@admin_required
+def api_admin_hard_delete_broadcast(event_key: str) -> tuple[Response, int] | Response:
+    """Hard delete a broadcast NotificationEvent and all associated notification records."""
+    from pwd301.services.notification_service import hard_delete_broadcast
+
+    actor = require_authenticated_actor()
+    result = hard_delete_broadcast(actor=actor, event_key_or_id=event_key, session=db.session)
+    return jsonify({
+        "success": True,
+        "data": result,
+        "message": "Đã xóa cứng thông báo phát sóng thành công.",
+        **result,
+    }), 200
+
+
 @api_admin_bp.route("/emails/retry-failed", methods=["POST"])
 @jwt_required
 @admin_required

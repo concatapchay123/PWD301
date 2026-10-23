@@ -25,9 +25,32 @@ BASELINE_ROLES: list[dict[str, str]] = [
     {"code": "ADMIN", "name": "System Administrator"},
 ]
 
-DEFAULT_ADMIN_EMAIL: str = "admin@pwd301.local"
-DEFAULT_ADMIN_NAME: str = "System Administrator"
-DEFAULT_ADMIN_PASSWORD: str = "Admin@123456"
+DEFAULT_PRIMARY_ADMINS: list[dict[str, str]] = [
+    {
+        "email": "vinhphu2020.nt@gmail.com",
+        "display_name": "Vĩnh Phú",
+        "password": "Password123!",
+    },
+    {
+        "email": "danglyquan@gmail.com",
+        "display_name": "Đặng Lý Quân",
+        "password": "Password123!",
+    },
+    {
+        "email": "tqtphamnguyenhoangphuc@gmail.com",
+        "display_name": "Hoàng Phúc",
+        "password": "Password123!",
+    },
+    {
+        "email": "callmewin06@gmail.com",
+        "display_name": "Hữu Thắng",
+        "password": "Password123!",
+    },
+]
+
+DEFAULT_ADMIN_EMAIL: str = "tqtphamnguyenhoangphuc@gmail.com"
+DEFAULT_ADMIN_NAME: str = "Hoàng Phúc"
+DEFAULT_ADMIN_PASSWORD: str = "Password123!"
 
 
 def seed_baseline(session: Session | scoped_session[Any]) -> dict[str, Any]:
@@ -41,7 +64,7 @@ def seed_baseline(session: Session | scoped_session[Any]) -> dict[str, Any]:
     """
     if os.environ.get("APP_ENV") == "production":
         password = os.environ.get("ADMIN_PASSWORD", "")
-        if len(password) < 12 or password == DEFAULT_ADMIN_PASSWORD:
+        if len(password) < 12:
             raise ValueError("ADMIN_PASSWORD must be supplied securely for production bootstrap.")
         if not os.environ.get("ADMIN_EMAIL"):
             raise ValueError("ADMIN_EMAIL must be supplied for production bootstrap.")
@@ -66,60 +89,72 @@ def seed_baseline(session: Session | scoped_session[Any]) -> dict[str, Any]:
             role_map[existing_role.code] = existing_role
             summary["roles_existing"].append(existing_role.code)
 
-    # 2. Seed root administrator
-    admin_email = os.environ.get("ADMIN_EMAIL", DEFAULT_ADMIN_EMAIL).strip()
-    admin_name = os.environ.get("ADMIN_DISPLAY_NAME", DEFAULT_ADMIN_NAME).strip()
-    admin_password = os.environ.get("ADMIN_PASSWORD", DEFAULT_ADMIN_PASSWORD)
+    # 2. Determine administrators to seed
+    if os.environ.get("ADMIN_EMAIL"):
+        admins_to_seed = [
+            {
+                "email": os.environ.get("ADMIN_EMAIL", "").strip(),
+                "display_name": os.environ.get("ADMIN_DISPLAY_NAME", DEFAULT_ADMIN_NAME).strip(),
+                "password": os.environ.get("ADMIN_PASSWORD", DEFAULT_ADMIN_PASSWORD),
+            }
+        ]
+    else:
+        admins_to_seed = DEFAULT_PRIMARY_ADMINS
 
-    admin_user = (
-        session.query(User).filter(User.email_normalized == admin_email.lower()).one_or_none()
-    )
-    if admin_user is None:
-        admin_user = User(
-            email=admin_email,
-            password_hash=generate_password_hash(admin_password),
-            display_name=admin_name,
-            status="ACTIVE",
-            auth_version=1,
-            email_verified_at=utc_now(),
+    # 3. Seed administrator accounts & assign role hierarchy (STUDENT + INSTRUCTOR + ADMIN)
+    for admin_info in admins_to_seed:
+        admin_email = admin_info["email"].strip()
+        admin_name = admin_info["display_name"].strip()
+        admin_password = admin_info["password"]
+
+        admin_user = (
+            session.query(User).filter(User.email_normalized == admin_email.lower()).one_or_none()
         )
-        session.add(admin_user)
-        session.flush()
-        summary["admin_created"] = True
-
-    # 3. Assign role hierarchy (STUDENT + INSTRUCTOR + ADMIN)
-    for code in ["STUDENT", "INSTRUCTOR", "ADMIN"]:
-        target_role = role_map.get(code)
-        if target_role is None:
-            continue
-
-        existing_link = (
-            session.query(UserRole)
-            .filter(
-                UserRole.user_id == admin_user.id,
-                UserRole.role_id == target_role.id,
+        if admin_user is None:
+            admin_user = User(
+                email=admin_email,
+                password_hash=generate_password_hash(admin_password),
+                display_name=admin_name,
+                status="ACTIVE",
+                auth_version=1,
+                email_verified_at=utc_now(),
             )
-            .one_or_none()
-        )
-        if existing_link is None:
-            link = UserRole(
-                user_id=admin_user.id,
-                role_id=target_role.id,
-                assigned_by_user_id=admin_user.id,
-                assignment_reason=(
+            session.add(admin_user)
+            session.flush()
+            summary["admin_created"] = True
+
+        for code in ["STUDENT", "INSTRUCTOR", "ADMIN"]:
+            target_role = role_map.get(code)
+            if target_role is None:
+                continue
+
+            existing_link = (
+                session.query(UserRole)
+                .filter(
+                    UserRole.user_id == admin_user.id,
+                    UserRole.role_id == target_role.id,
+                )
+                .one_or_none()
+            )
+            if existing_link is None:
+                link = UserRole(
+                    user_id=admin_user.id,
+                    role_id=target_role.id,
+                    assigned_by_user_id=admin_user.id,
+                    assignment_reason=(
+                        "SUB_ROLE:ADMIN_PRIMARY | Baseline root administrator initialization"
+                        if code == "ADMIN"
+                        else "Baseline root administrator initialization"
+                    ),
+                )
+                session.add(link)
+                summary["admin_roles_assigned"].append(code)
+            elif code == "ADMIN" and "SUB_ROLE:ADMIN_PRIMARY" not in (
+                existing_link.assignment_reason or ""
+            ):
+                existing_link.assignment_reason = (
                     "SUB_ROLE:ADMIN_PRIMARY | Baseline root administrator initialization"
-                    if code == "ADMIN"
-                    else "Baseline root administrator initialization"
-                ),
-            )
-            session.add(link)
-            summary["admin_roles_assigned"].append(code)
-        elif code == "ADMIN" and "SUB_ROLE:ADMIN_PRIMARY" not in (
-            existing_link.assignment_reason or ""
-        ):
-            existing_link.assignment_reason = (
-                "SUB_ROLE:ADMIN_PRIMARY | Baseline root administrator initialization"
-            )
+                )
 
     try:
         session.commit()

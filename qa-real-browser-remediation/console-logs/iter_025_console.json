@@ -1,0 +1,158 @@
+[
+  {
+    "type": "warning",
+    "text": "cdn.tailwindcss.com should not be used in production. To use Tailwind CSS in production, install it as a PostCSS plugin or use the Tailwind CLI: https://tailwindcss.com/docs/installation",
+    "location": {
+      "url": "https://cdn.tailwindcss.com/?plugins=forms,container-queries",
+      "line": 63,
+      "column": 13404,
+      "lineNumber": 63,
+      "columnNumber": 13404
+    },
+    "time": "2026-10-23T03:38:27.330016+00:00"
+  },
+  {
+    "type": "error",
+    "text": "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "location": {
+      "url": "http://127.0.0.1:5000/student/courses/20002/learn",
+      "line": 0,
+      "column": 0,
+      "lineNumber": 0,
+      "columnNumber": 0
+    },
+    "time": "2026-10-23T03:38:29.563974+00:00"
+  },
+  {
+    "type": "error",
+    "text": "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "location": {
+      "url": "http://127.0.0.1:5000/student/courses/20002/learn/progress",
+      "line": 0,
+      "column": 0,
+      "lineNumber": 0,
+      "columnNumber": 0
+    },
+    "time": "2026-10-23T03:38:29.563974+00:00"
+  },
+  {
+    "type": "warning",
+    "text": "[ApiClient] Request to /student/courses/20002/learn failed: Error: Không tìm thấy tài nguyên yêu cầu.\n    at ApiClient.request (http://127.0.0.1:5000/frontend/assets/js/api.js?v=3.2.6:181:21)\n    at async ApiClient.getStudentCourseDetail (http://127.0.0.1:5000/frontend/assets/js/api.js?v=3.2.6:408:12)\n    at async Promise.all (index 0)\n    at async StudentView.renderCourseConsole (http://127.0.0.1:5000/frontend/assets/js/views/student.js?v=3.2.6:2156:42)\n    at async AppRouter.dispatchRoute (http://127.0.0.1:5000/frontend/assets/js/router.js?v=3.2.6:751:7)\n    at async AppRouter.renderRoute (http://127.0.0.1:5000/frontend/assets/js/router.js?v=3.2.6:656:7)\n    at async http://127.0.0.1:5000/frontend/assets/js/router.js?v=3.2.6:435:11",
+    "location": {
+      "url": "http://127.0.0.1:5000/frontend/assets/js/api.js?v=3.2.6",
+      "line": 200,
+      "column": 14,
+      "lineNumber": 200,
+      "columnNumber": 14
+    },
+    "time": "2026-10-23T03:38:29.566503+00:00"
+  },
+  {
+    "type": "warning",
+    "text": "[ApiClient] Request to /student/courses/20002/learn/progress failed: Error: Không tìm thấy tài nguyên yêu cầu.\n    at ApiClient.request (http://127.0.0.1:5000/frontend/assets/js/api.js?v=3.2.6:181:21)\n    at async ApiClient.getStudentCourseProgress (http://127.0.0.1:5000/frontend/assets/js/api.js?v=3.2.6:422:12)\n    at async Promise.all (index 1)\n    at async StudentView.renderCourseConsole (http://127.0.0.1:5000/frontend/assets/js/views/student.js?v=3.2.6:2156:42)\n    at async AppRouter.dispatchRoute (http://127.0.0.1:5000/frontend/assets/js/router.js?v=3.2.6:751:7)\n    at async AppRouter.renderRoute (http://127.0.0.1:5000/frontend/assets/js/router.js?v=3.2.6:656:7)\n    at async http://127.0.0.1:5000/frontend/assets/js/router.js?v=3.2.6:435:11",
+    "location": {
+      "url": "http://127.0.0.1:5000/frontend/assets/js/api.js?v=3.2.6",
+      "line": 200,
+      "column": 14,
+      "lineNumber": 200,
+      "columnNumber": 14
+    },
+    "time": "2026-10-23T03:38:29.567505+00:00"
+  },
+  {
+    "type": "error",
+    "text": "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "location": {
+      "url": "http://127.0.0.1:5000/student/courses/20002/learn",
+      "line": 0,
+      "column": 0,
+      "lineNumber": 0,
+      "columnNumber": 0
+    },
+    "time": "2026-10-23T03:38:29.575520+00:00"
+  },
+  {
+    "type": "warning",
+    "text": "[ApiClient] Request to /student/courses/20002/learn failed: Error: Không tìm thấy tài nguyên yêu cầu.\n    at ApiClient.request (http://127.0.0.1:5000/frontend/assets/js/api.js?v=3.2.6:181:21)\n    at async ApiClient.getCourseDetail (http://127.0.0.1:5000/frontend/assets/js/api.js?v=3.2.6:373:16)\n    at async Promise.all (index 0)\n    at async StudentView.renderCourseConsole (http://127.0.0.1:5000/frontend/assets/js/views/student.js?v=3.2.6:2156:42)\n    at async AppRouter.dispatchRoute (http://127.0.0.1:5000/frontend/assets/js/router.js?v=3.2.6:751:7)\n    at async AppRouter.renderRoute (http://127.0.0.1:5000/frontend/assets/js/router.js?v=3.2.6:656:7)\n    at async http://127.0.0.1:5000/frontend/assets/js/router.js?v=3.2.6:435:11",
+    "location": {
+      "url": "http://127.0.0.1:5000/frontend/assets/js/api.js?v=3.2.6",
+      "line": 200,
+      "column": 14,
+      "lineNumber": 200,
+      "columnNumber": 14
+    },
+    "time": "2026-10-23T03:38:29.575520+00:00"
+  },
+  {
+    "type": "error",
+    "text": "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "location": {
+      "url": "http://127.0.0.1:5000/api/courses/20002/learn",
+      "line": 0,
+      "column": 0,
+      "lineNumber": 0,
+      "columnNumber": 0
+    },
+    "time": "2026-10-23T03:38:29.582632+00:00"
+  },
+  {
+    "type": "warning",
+    "text": "[ApiClient] Request to /api/courses/20002/learn failed: Error: Không tìm thấy tài nguyên yêu cầu.\n    at ApiClient.request (http://127.0.0.1:5000/frontend/assets/js/api.js?v=3.2.6:181:21)\n    at async ApiClient.getCourseDetail (http://127.0.0.1:5000/frontend/assets/js/api.js?v=3.2.6:379:14)\n    at async Promise.all (index 0)\n    at async StudentView.renderCourseConsole (http://127.0.0.1:5000/frontend/assets/js/views/student.js?v=3.2.6:2156:42)\n    at async AppRouter.dispatchRoute (http://127.0.0.1:5000/frontend/assets/js/router.js?v=3.2.6:751:7)\n    at async AppRouter.renderRoute (http://127.0.0.1:5000/frontend/assets/js/router.js?v=3.2.6:656:7)\n    at async http://127.0.0.1:5000/frontend/assets/js/router.js?v=3.2.6:435:11",
+    "location": {
+      "url": "http://127.0.0.1:5000/frontend/assets/js/api.js?v=3.2.6",
+      "line": 200,
+      "column": 14,
+      "lineNumber": 200,
+      "columnNumber": 14
+    },
+    "time": "2026-10-23T03:38:29.582632+00:00"
+  },
+  {
+    "type": "error",
+    "text": "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "location": {
+      "url": "http://127.0.0.1:5000/student/courses/20002/learn",
+      "line": 0,
+      "column": 0,
+      "lineNumber": 0,
+      "columnNumber": 0
+    },
+    "time": "2026-10-23T03:38:29.589672+00:00"
+  },
+  {
+    "type": "warning",
+    "text": "[ApiClient] Request to /student/courses/20002/learn failed: Error: Không tìm thấy tài nguyên yêu cầu.\n    at ApiClient.request (http://127.0.0.1:5000/frontend/assets/js/api.js?v=3.2.6:181:21)\n    at async ApiClient.getCourseDetail (http://127.0.0.1:5000/frontend/assets/js/api.js?v=3.2.6:382:16)\n    at async Promise.all (index 0)\n    at async StudentView.renderCourseConsole (http://127.0.0.1:5000/frontend/assets/js/views/student.js?v=3.2.6:2156:42)\n    at async AppRouter.dispatchRoute (http://127.0.0.1:5000/frontend/assets/js/router.js?v=3.2.6:751:7)\n    at async AppRouter.renderRoute (http://127.0.0.1:5000/frontend/assets/js/router.js?v=3.2.6:656:7)\n    at async http://127.0.0.1:5000/frontend/assets/js/router.js?v=3.2.6:435:11",
+    "location": {
+      "url": "http://127.0.0.1:5000/frontend/assets/js/api.js?v=3.2.6",
+      "line": 200,
+      "column": 14,
+      "lineNumber": 200,
+      "columnNumber": 14
+    },
+    "time": "2026-10-23T03:38:29.589672+00:00"
+  },
+  {
+    "type": "error",
+    "text": "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "location": {
+      "url": "http://127.0.0.1:5000/instructor/courses/20002/learn",
+      "line": 0,
+      "column": 0,
+      "lineNumber": 0,
+      "columnNumber": 0
+    },
+    "time": "2026-10-23T03:38:29.597571+00:00"
+  },
+  {
+    "type": "warning",
+    "text": "[ApiClient] Request to /instructor/courses/20002/learn failed: Error: Không tìm thấy tài nguyên yêu cầu.\n    at ApiClient.request (http://127.0.0.1:5000/frontend/assets/js/api.js?v=3.2.6:181:21)\n    at async ApiClient.getCourseDetail (http://127.0.0.1:5000/frontend/assets/js/api.js?v=3.2.6:385:18)\n    at async Promise.all (index 0)\n    at async StudentView.renderCourseConsole (http://127.0.0.1:5000/frontend/assets/js/views/student.js?v=3.2.6:2156:42)\n    at async AppRouter.dispatchRoute (http://127.0.0.1:5000/frontend/assets/js/router.js?v=3.2.6:751:7)\n    at async AppRouter.renderRoute (http://127.0.0.1:5000/frontend/assets/js/router.js?v=3.2.6:656:7)\n    at async http://127.0.0.1:5000/frontend/assets/js/router.js?v=3.2.6:435:11",
+    "location": {
+      "url": "http://127.0.0.1:5000/frontend/assets/js/api.js?v=3.2.6",
+      "line": 200,
+      "column": 14,
+      "lineNumber": 200,
+      "columnNumber": 14
+    },
+    "time": "2026-10-23T03:38:29.598085+00:00"
+  }
+]

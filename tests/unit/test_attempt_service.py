@@ -32,6 +32,7 @@ from pwd301.services.attempt_service import (
     start_assessment_attempt,
 )
 from pwd301.services.course_service import change_course_status, create_course
+from pwd301.services.course_workflow_service import applying_review
 from pwd301.services.enrollment_service import enroll_student, leave_course
 from pwd301.services.exceptions import (
     ActiveAttemptExistsError,
@@ -166,52 +167,53 @@ def _create_published_assessment(
     if close_at is _UNSET:
         close_at = now + timedelta(days=2)
 
-    payload = {
-        "title": "Algorithms Midterm Exam",
-        "description": "Comprehensive midterm",
-        "assessment_type": "MIDTERM",
-        "scoring_policy": "HIGHEST",
-        "score_release_policy": "AFTER_CLOSE",
-        "time_limit_minutes": time_limit_minutes,
-        "attempt_limit": attempt_limit,
-        "passing_percent": 60.0,
-        "shuffle_questions": shuffle_questions,
-        "shuffle_choices": shuffle_choices,
-        "open_at": open_at.isoformat() if open_at else None,
-        "close_at": close_at.isoformat() if close_at else None,
-    }
-    assessment = create_assessment(instructor, course.id, payload, session=db.session)
+    with applying_review(db.session):
+        payload = {
+            "title": "Algorithms Midterm Exam",
+            "description": "Comprehensive midterm",
+            "assessment_type": "MIDTERM",
+            "scoring_policy": "HIGHEST",
+            "score_release_policy": "AFTER_CLOSE",
+            "time_limit_minutes": time_limit_minutes,
+            "attempt_limit": attempt_limit,
+            "passing_percent": 60.0,
+            "shuffle_questions": shuffle_questions,
+            "shuffle_choices": shuffle_choices,
+            "open_at": open_at.isoformat() if open_at else None,
+            "close_at": close_at.isoformat() if close_at else None,
+        }
+        assessment = create_assessment(instructor, course.id, payload, session=db.session)
 
-    sec = create_section(
-        instructor,
-        assessment.public_id,
-        {"title": "Section 1: Basics", "position": 1},
-        session=db.session,
-    )
+        sec = create_section(
+            instructor,
+            assessment.public_id,
+            {"title": "Section 1: Basics", "position": 1},
+            session=db.session,
+        )
 
-    q1 = _make_mcq_question(instructor, course, content="What is O(1)?")
-    q2 = _make_mcq_question(
-        instructor,
-        course,
-        content="Which is a linear structure?",
-        fixed_choice_content="None of the above",
-    )
+        q1 = _make_mcq_question(instructor, course, content="What is O(1)?")
+        q2 = _make_mcq_question(
+            instructor,
+            course,
+            content="Which is a linear structure?",
+            fixed_choice_content="None of the above",
+        )
 
-    assign_question(
-        instructor,
-        assessment.public_id,
-        {"question_id": str(q1.public_id), "section_id": sec.id, "points": 5.0},
-        session=db.session,
-    )
-    assign_question(
-        instructor,
-        assessment.public_id,
-        {"question_id": str(q2.public_id), "section_id": sec.id, "points": 10.0},
-        session=db.session,
-    )
+        assign_question(
+            instructor,
+            assessment.public_id,
+            {"question_id": str(q1.public_id), "section_id": sec.id, "points": 5.0},
+            session=db.session,
+        )
+        assign_question(
+            instructor,
+            assessment.public_id,
+            {"question_id": str(q2.public_id), "section_id": sec.id, "points": 10.0},
+            session=db.session,
+        )
 
-    publish_assessment(instructor, assessment.public_id, session=db.session)
-    db.session.commit()
+        publish_assessment(instructor, assessment.public_id, session=db.session)
+        db.session.commit()
     return assessment, [q1, q2]
 
 

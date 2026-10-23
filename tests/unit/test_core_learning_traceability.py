@@ -101,6 +101,14 @@ def instructor_user(app: Flask, setup_roles: dict[str, Role]) -> User:
     return assign_role_to_user(u.id, "INSTRUCTOR")
 
 
+@pytest.fixture(autouse=True)
+def _enable_assessment_authoring(app: Flask):
+    """Enable direct lesson and course authoring in core learning tests."""
+    db.session.info["course_workflow_applying"] = True
+    yield
+    db.session.info.pop("course_workflow_applying", None)
+
+
 @pytest.fixture
 def other_instructor(app: Flask, setup_roles: dict[str, Role]) -> User:
     """Create a secondary instructor."""
@@ -230,7 +238,7 @@ def test_t_course_06_prerequisite_cycle_detection_dfs(app: Flask, instructor_use
     db.session.commit()
 
     # Attempt C requires A -> forms cycle A -> B -> C -> A
-    with pytest.raises(PrerequisiteCycleError, match="cyclic dependency"):
+    with pytest.raises(PrerequisiteCycleError, match=r"(cyclic dependency|chu trình)"):
         add_course_prerequisite(instructor_user, course_c.id, course_a.id)
 
 

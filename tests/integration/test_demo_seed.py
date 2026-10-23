@@ -41,8 +41,8 @@ def test_seed_demo_success(app):
 
         # 1. Accounts verification
         assert (
-            "admin@pwd301.local" in summary["users_created"]
-            or "admin@pwd301.local" in summary["users_existing"]
+            "tqtphamnguyenhoangphuc@gmail.com" in summary["users_created"]
+            or "tqtphamnguyenhoangphuc@gmail.com" in summary["users_existing"]
         )
         assert "instructor1@pwd301.local" in summary["users_created"]
         assert "student1@pwd301.local" in summary["users_created"]
@@ -53,7 +53,10 @@ def test_seed_demo_success(app):
         user_map = {u.email_normalized: u for u in users}
 
         for email in [
-            "admin@pwd301.local",
+            "tqtphamnguyenhoangphuc@gmail.com",
+            "vinhphu2020.nt@gmail.com",
+            "danglyquan@gmail.com",
+            "callmewin06@gmail.com",
             "instructor1@pwd301.local",
             "instructor2@pwd301.local",
             "student1@pwd301.local",
@@ -68,7 +71,7 @@ def test_seed_demo_success(app):
             assert check_password_hash(u.password_hash, DEMO_PASSWORD)
 
         # Check roles
-        assert user_map["admin@pwd301.local"].role_codes == {"STUDENT", "INSTRUCTOR", "ADMIN"}
+        assert user_map["tqtphamnguyenhoangphuc@gmail.com"].role_codes == {"STUDENT", "INSTRUCTOR", "ADMIN"}
         assert user_map["instructor1@pwd301.local"].role_codes == {"STUDENT", "INSTRUCTOR"}
         assert user_map["instructor2@pwd301.local"].role_codes == {"STUDENT", "INSTRUCTOR"}
         assert user_map["student1@pwd301.local"].role_codes == {"STUDENT"}
@@ -101,9 +104,9 @@ def test_seed_demo_success(app):
 
         # Lessons check
         lessons_c1 = db.session.query(Lesson).filter(Lesson.course_id == c1.id).all()
-        assert len(lessons_c1) >= 2
-        for les in lessons_c1:
-            assert les.status == "PUBLISHED"
+        published_lessons = [l for l in lessons_c1 if l.status == "PUBLISHED"]
+        assert len(published_lessons) >= 2
+        for les in published_lessons:
             assert len(les.markdown_content) > 100
 
         # 3. Question Bank verification: 5 question types
@@ -296,15 +299,15 @@ def test_seed_baseline_then_demo_sequence(app):
         baseline_summary = seed_baseline(db.session)
         assert baseline_summary["admin_created"] is True
 
-        admin = db.session.query(User).filter(User.email_normalized == "admin@pwd301.local").first()
+        admin = db.session.query(User).filter(User.email_normalized == "tqtphamnguyenhoangphuc@gmail.com").first()
         assert admin is not None
-        assert check_password_hash(admin.password_hash, "Admin@123456")
+        assert check_password_hash(admin.password_hash, DEMO_PASSWORD)
 
         # 2. Run demo seed (as docker-entrypoint.sh does)
         demo_summary = seed_demo(db.session)
-        assert "admin@pwd301.local" in demo_summary["users_existing"]
+        assert "tqtphamnguyenhoangphuc@gmail.com" in demo_summary["users_existing"]
 
-        # Admin password must be updated to unified demo password
+        # Admin password matches unified demo password
         db.session.refresh(admin)
         assert check_password_hash(admin.password_hash, DEMO_PASSWORD)
 

@@ -1,8 +1,61 @@
-{$PWD301_DOMAIN} {
+{
+    email {$ACME_EMAIL:admin@pptq.id.vn}
+}
+
+# Redirect HTTP IP traffic to HTTPS domain
+http://{$SERVER_IP:127.0.0.1} {
+    @health path /health
+    handle @health {
+        reverse_proxy web:5000
+    }
+    handle {
+        redir https://pptq.id.vn{uri} permanent
+    }
+}
+
+# Redirect www to apex domain
+www.pptq.id.vn {
+    redir https://pptq.id.vn{uri} permanent
+}
+
+# Primary HTTPS production domain
+pptq.id.vn {
     encode zstd gzip
-    reverse_proxy web:5000
+
+    # Fast Static Asset Delivery via Caddy (Offload static assets from Gunicorn)
+    handle_path /frontend/* {
+        root * /var/www/frontend
+        file_server
+        header Cache-Control "public, max-age=3600, must-revalidate"
+    }
+
+    handle /assets/* {
+        root * /var/www/frontend
+        file_server
+        header Cache-Control "public, max-age=3600, must-revalidate"
+    }
+
+    handle /favicon.ico {
+        root * /var/www/frontend
+        file_server
+        header Cache-Control "public, max-age=86400"
+    }
+
+    # Realtime SSE Streaming with instant flush (no buffering)
+    @sse path /api/events/stream /auth/events/stream /events/stream /api/notifications/events/stream
+    handle @sse {
+        reverse_proxy web:5000 {
+            flush_interval -1
+        }
+    }
+
+    # Dynamic API & Application Requests
+    handle {
+        reverse_proxy web:5000
+    }
+
     header {
-        Strict-Transport-Security "max-age=31536000"
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
         X-Content-Type-Options nosniff
         Referrer-Policy strict-origin-when-cross-origin
     }

@@ -38,6 +38,8 @@ x-environment: &environment
   EXPORT_ROOT: /app/exports
   FILE_MIN_FREE_BYTES: "1073741824"
   GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  GEMINI_MODEL_NAME: ${GEMINI_MODEL_NAME:-gemini-2.5-flash}
+  GEMINI_TIMEOUT_SECONDS: ${GEMINI_TIMEOUT_SECONDS:-30}
   MAIL_HOST: ${MAIL_HOST:-}
   MAIL_USERNAME: ${MAIL_USERNAME:-}
   MAIL_PASSWORD: ${MAIL_PASSWORD:-}
@@ -54,6 +56,10 @@ x-app: &app
     - quarantine:/app/quarantine
     - backups:/var/opt/mssql/backups
     - exports:/app/exports
+    - ../scripts:/app/scripts:ro
+    - ../src:/app/src:ro
+    - ../frontend:/app/frontend:ro
+    - ../migrations:/app/migrations:ro
   networks: [private]
   logging: *logging
   restart: unless-stopped
@@ -130,7 +136,7 @@ services:
     mem_limit: 600m
   web:
     <<: *app
-    command: [gunicorn, --bind, "0.0.0.0:5000", --workers, "2", --threads, "4", --max-requests, "1000", --max-requests-jitter, "100", --timeout, "120", "wsgi:app"]
+    command: [gunicorn, --bind, "0.0.0.0:5000", --workers, "3", --threads, "16", --worker-class, "gthread", --max-requests, "2000", --max-requests-jitter, "200", --timeout, "120", "wsgi:app"]
     mem_limit: 600m
     depends_on:
       db: {condition: service_healthy}
@@ -155,6 +161,7 @@ services:
     ports: ["80:80", "443:443", "443:443/udp"]
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../frontend:/var/www/frontend:ro
       - tls:/data
       - caddy_config:/config
     networks: [private]

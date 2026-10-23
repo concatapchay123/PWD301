@@ -8,6 +8,7 @@ from flask.testing import FlaskClient
 
 from pwd301.extensions import db
 from pwd301.models.identity import AuthSession, User
+from pwd301.models.types import utc_now
 from pwd301.seeds.baseline import seed_baseline
 from pwd301.services.user_service import change_password, register_user, suspend_user
 
@@ -16,11 +17,14 @@ from pwd301.services.user_service import change_password, register_user, suspend
 def web_user(app: Flask) -> User:
     """Create a standard test user with seeded roles."""
     seed_baseline(db.session)
-    return register_user(
+    user = register_user(
         email="student@demo.local",
         password="Password123!",
         display_name="Student Demo",
     )
+    user.email_verified_at = utc_now()
+    db.session.commit()
+    return user
 
 
 class TestWebAuth:
@@ -407,3 +411,72 @@ class TestWebAuth:
         )
         assert login_resp.status_code == 200
         assert login_resp.get_json()["status"] == "ok"
+
+    def test_login_unverified_email_blocked_403(self, client: FlaskClient) -> None:
+        """Unverified accounts are blocked at login with 403 EMAIL_NOT_VERIFIED."""
+        seed_baseline(db.session)
+        unverified_user = register_user(
+            email="unverified@domain.com",
+            password="SecurePassword123!",
+            display_name="Unverified User",
+        )
+        assert unverified_user.email_verified_at is None
+
+        # Attempt login before email verification
+        resp = client.post(
+            "/auth/login",
+            json={"email": "unverified@domain.com", "password": "SecurePassword123!"},
+        )
+        assert resp.status_code == 403
+        data = resp.get_json()
+        assert data["error"]["code"] == "EMAIL_NOT_VERIFIED"
+        assert data["data"]["requires_verification"] is True
+
+    def test_verify_email_flow_enables_login(self, client: FlaskClient) -> None:
+        """Calling /auth/verify-email/<token> verifies the account and permits subsequent login."""
+        from pwd301.services.user_service import generate_email_verification_token
+
+        seed_baseline(db.session)
+        user = register_user(
+            email="activateme@domain.com",
+            password="SecurePassword123!",
+            display_name="Activate Me",
+        )
+        assert user.email_verified_at is None
+
+        # Generate verification token
+        token = generate_email_verification_token(user.id)
+        assert token is not None
+
+        # Call verify-email endpoint
+        verify_resp = client.get(f"/auth/verify-email/{token}")
+        assert verify_resp.status_code == 200
+        assert verify_resp.get_json()["status"] == "ok"
+
+        # Check DB reflects verification
+        db.session.refresh(user)
+        assert user.email_verified_at is not None
+
+        # Now login should succeed
+        login_resp = client.post(
+            "/auth/login",
+            json={"email": "activateme@domain.com", "password": "SecurePassword123!"},
+        )
+        assert login_resp.status_code == 200
+        assert login_resp.get_json()["status"] == "ok"
+
+    def test_resend_verification_endpoint(self, client: FlaskClient) -> None:
+        """POST /auth/resend-verification succeeds idempotently."""
+        seed_baseline(db.session)
+        register_user(
+            email="resendme@domain.com",
+            password="SecurePassword123!",
+            display_name="Resend User",
+        )
+
+        resp = client.post(
+            "/auth/resend-verification",
+            json={"email": "resendme@domain.com"},
+        )
+        assert resp.status_code == 200
+        assert resp.get_json()["status"] == "ok"

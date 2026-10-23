@@ -34,7 +34,7 @@ def rbac_env(app: Flask) -> dict[str, Any]:
     seed_baseline(sess)
 
     # 1. Primary Admin (seeded by baseline as canonical super admin)
-    primary_admin = sess.query(User).filter_by(email="admin@pwd301.local").one()
+    primary_admin = sess.query(User).filter_by(email="tqtphamnguyenhoangphuc@gmail.com").one()
 
     # 2. System Monitoring Admin
     sys_admin = register_user(

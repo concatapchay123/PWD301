@@ -147,6 +147,19 @@ class AuthView {
               <span id="auth-error-text" class="flex-1 leading-snug"></span>
             </div>
 
+            <!-- Unverified Email Alert -->
+            <div id="login-unverified-alert" class="hidden p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-900/60 text-amber-900 dark:text-amber-200 text-xs space-y-2">
+              <div class="flex items-start gap-2">
+                <span class="material-symbols-outlined text-[18px] text-amber-600 dark:text-amber-400 shrink-0">mark_email_unread</span>
+                <span id="login-unverified-text" class="flex-1 font-medium leading-relaxed">Tài khoản của bạn chưa được xác thực email.</span>
+              </div>
+              <div class="flex items-center gap-2 pt-1">
+                <button type="button" id="btn-login-resend-verification" class="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold text-[11.5px] cursor-pointer shadow-xs transition-colors">
+                  Gửi lại email xác thực
+                </button>
+              </div>
+            </div>
+
             <form id="auth-login-form" class="space-y-3.5" novalidate>
               <!-- Email Input -->
               <div class="space-y-1">
@@ -535,6 +548,77 @@ class AuthView {
             </div>
           </div>
 
+          <!-- SECONDARY CARD: CHỜ XÁC THỰC EMAIL -->
+          <div id="auth-tab-verification-pending" class="hidden c-card p-6 space-y-5 bg-[#FFFFFF] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] text-center">
+            <div class="w-14 h-14 mx-auto rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shadow-xs">
+              <span class="material-symbols-outlined text-[32px]">mark_email_read</span>
+            </div>
+            <div class="space-y-1">
+              <h2 class="text-base sm:text-lg font-bold text-[#222120] dark:text-[#EDEDEB]">Kiểm tra hộp thư của bạn</h2>
+              <p class="text-xs text-[#8F8E8A] max-w-sm mx-auto leading-relaxed">
+                Chúng tôi đã gửi một liên kết xác nhận kích hoạt tài khoản đến địa chỉ:
+              </p>
+              <p id="verify-pending-email-display" class="font-bold text-xs text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 py-1.5 px-3 rounded-lg inline-block break-all border border-emerald-200 dark:border-emerald-800/50 mt-1">
+                email@example.com
+              </p>
+            </div>
+            <p class="text-xs text-[#5C5B57] dark:text-[#9E9D99] leading-relaxed max-w-xs mx-auto">
+              Vui lòng mở email và nhấn vào nút <strong>"Xác nhận kích hoạt tài khoản"</strong> để hoàn tất đăng ký và bắt đầu đăng nhập.
+            </p>
+            <div class="space-y-2 pt-2">
+              <button type="button" id="btn-pending-resend" class="w-full c-btn c-btn-secondary c-btn-md justify-center">
+                <span class="material-symbols-outlined text-[16px]">forward_to_inbox</span>
+                <span>Gửi lại email xác thực</span>
+              </button>
+              <button type="button" id="btn-pending-back-login" class="w-full c-btn c-btn-primary c-btn-md justify-center">
+                Đến trang Đăng nhập
+              </button>
+            </div>
+          </div>
+
+          <!-- SECONDARY CARD: TRẠNG THÁI XÁC THỰC EMAIL TỪ TOKEN -->
+          <div id="auth-tab-verify-action" class="hidden c-card p-6 space-y-5 bg-[#FFFFFF] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] text-center">
+            <!-- Loading state -->
+            <div id="verify-action-loading" class="space-y-4 py-4">
+              <div class="w-12 h-12 mx-auto rounded-full border-4 border-emerald-500 border-t-transparent animate-spin"></div>
+              <div>
+                <h3 class="text-sm font-bold text-[#222120] dark:text-[#EDEDEB]">Đang xác thực tài khoản...</h3>
+                <p class="text-xs text-[#8F8E8A] mt-1">Vui lòng đợi trong giây lát</p>
+              </div>
+            </div>
+            <!-- Success state -->
+            <div id="verify-action-success" class="hidden space-y-4 py-2">
+              <div class="w-14 h-14 mx-auto rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                <span class="material-symbols-outlined text-[32px]">check_circle</span>
+              </div>
+              <div class="space-y-1">
+                <h3 class="text-base font-bold text-emerald-800 dark:text-emerald-300">Xác thực email thành công!</h3>
+                <p class="text-xs text-[#8F8E8A] leading-relaxed">Tài khoản của bạn đã được kích hoạt. Bạn có thể đăng nhập ngay bây giờ.</p>
+              </div>
+              <button type="button" id="btn-verify-success-login" class="w-full c-btn c-btn-primary c-btn-md justify-center mt-2">
+                Đăng nhập ngay
+              </button>
+            </div>
+            <!-- Error state -->
+            <div id="verify-action-error" class="hidden space-y-4 py-2">
+              <div class="w-14 h-14 mx-auto rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+                <span class="material-symbols-outlined text-[32px]">error</span>
+              </div>
+              <div class="space-y-1">
+                <h3 class="text-base font-bold text-rose-800 dark:text-rose-300">Xác thực không thành công</h3>
+                <p id="verify-action-error-msg" class="text-xs text-[#8F8E8A] leading-relaxed">Liên kết xác thực không hợp lệ hoặc đã hết hạn.</p>
+              </div>
+              <div class="space-y-2 pt-2">
+                <button type="button" id="btn-verify-error-resend" class="w-full c-btn c-btn-secondary c-btn-md justify-center">
+                  Gửi lại email kích hoạt mới
+                </button>
+                <button type="button" id="btn-verify-error-login" class="w-full c-btn c-btn-ghost c-btn-md justify-center">
+                  Quay lại Đăng nhập
+                </button>
+              </div>
+            </div>
+          </div>
+
 
 
         </div>
@@ -623,6 +707,8 @@ class AuthView {
       register: document.getElementById('auth-tab-register'),
       recovery: document.getElementById('auth-tab-recovery'),
       twofa: document.getElementById('auth-tab-twofa'),
+      verificationPending: document.getElementById('auth-tab-verification-pending'),
+      verifyAction: document.getElementById('auth-tab-verify-action'),
     };
 
     const updateNavState = (tabName) => {
@@ -727,6 +813,8 @@ class AuthView {
 
     const hideError = () => {
       if (errorAlert) errorAlert.classList.add('hidden');
+      const unverifiedAlert = document.getElementById('login-unverified-alert');
+      if (unverifiedAlert) unverifiedAlert.classList.add('hidden');
     };
 
     const showRegisterError = (msg) => {
@@ -815,15 +903,22 @@ class AuthView {
             } else {
               await window.app.refreshCurrentUser();
             }
+            if (window.RealtimeEngine && typeof window.RealtimeEngine.reconnect === 'function') {
+              window.RealtimeEngine.reconnect();
+            }
             window.app.redirectToRoleHome();
           }
         } catch (err) {
-          const isConcurrent = err.code === 'CONCURRENT_LOGIN_DETECTED' || err.status === 409 || (err.message && err.message.includes('đồng thời'));
-          if (isConcurrent && typeof UI !== 'undefined' && typeof UI.showConcurrentSessionModal === 'function') {
-            UI.showConcurrentSessionModal({
-              message: err.message || 'Tài khoản đã bị đăng xuất trên toàn bộ thiết bị do phát hiện đăng nhập đồng thời từ thiết bị khác để bảo vệ an toàn.',
-              isLoginAttempt: true
-            });
+          if (err.code === 'EMAIL_NOT_VERIFIED' || (err.message && err.message.includes('chưa được xác thực email'))) {
+            const unverifiedAlert = document.getElementById('login-unverified-alert');
+            const unverifiedText = document.getElementById('login-unverified-text');
+            if (unverifiedAlert) {
+              if (unverifiedText) unverifiedText.textContent = err.message || 'Tài khoản chưa được xác thực email. Vui lòng kiểm tra hộp thư hoặc bấm gửi lại.';
+              unverifiedAlert.classList.remove('hidden');
+              if (errorAlert) errorAlert.classList.add('hidden');
+            } else {
+              showError(err.message);
+            }
           } else {
             showError(err.message || 'Email hoặc mật khẩu không chính xác.');
           }
@@ -906,11 +1001,19 @@ class AuthView {
         }
 
         try {
-          await ApiClient.register(name, email, password);
-          UI.showToast('Đăng ký tài khoản thành công! Vui lòng đăng nhập.', 'success');
-          if (emailInput) emailInput.value = email;
-          if (passInput) passInput.value = password;
-          switchTab('login');
+          const regRes = await ApiClient.register(name, email, password);
+          if (regRes && regRes.requires_email_verification) {
+            UI.showToast('Đăng ký thành công! Vui lòng kiểm tra email để kích hoạt.', 'success');
+            const displayBox = document.getElementById('verify-pending-email-display');
+            if (displayBox) displayBox.textContent = email;
+            if (emailInput) emailInput.value = email;
+            switchTab('verificationPending');
+          } else {
+            UI.showToast('Đăng ký tài khoản thành công! Vui lòng đăng nhập.', 'success');
+            if (emailInput) emailInput.value = email;
+            if (passInput) passInput.value = password;
+            switchTab('login');
+          }
         } catch (err) {
           showRegisterError(err.message || 'Không thể đăng ký tài khoản. Vui lòng kiểm tra lại thông tin.');
         } finally {
@@ -955,6 +1058,112 @@ class AuthView {
           window.app.redirectToRoleHome();
         }
       };
+    }
+
+    // Wire Email Verification Handlers
+    const btnLoginResend = document.getElementById('btn-login-resend-verification');
+    if (btnLoginResend) {
+      btnLoginResend.onclick = async () => {
+        const email = emailInput?.value?.trim();
+        if (!email) {
+          UI.showToast('Vui lòng nhập địa chỉ email.', 'warning');
+          return;
+        }
+        btnLoginResend.disabled = true;
+        btnLoginResend.textContent = 'Đang gửi...';
+        try {
+          await ApiClient.resendVerification(email);
+          UI.showToast('Đã gửi lại email xác thực! Vui lòng kiểm tra hộp thư.', 'success');
+        } catch (e) {
+          UI.showToast(e.message || 'Không thể gửi lại email xác thực.', 'error');
+        } finally {
+          btnLoginResend.disabled = false;
+          btnLoginResend.textContent = 'Gửi lại email xác thực';
+        }
+      };
+    }
+
+    const btnPendingResend = document.getElementById('btn-pending-resend');
+    if (btnPendingResend) {
+      btnPendingResend.onclick = async () => {
+        const email = document.getElementById('verify-pending-email-display')?.textContent?.trim() || registerEmailInput?.value?.trim() || emailInput?.value?.trim();
+        if (!email) {
+          UI.showToast('Vui lòng nhập địa chỉ email.', 'warning');
+          return;
+        }
+        btnPendingResend.disabled = true;
+        btnPendingResend.innerHTML = '<span class="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></span><span>Đang gửi...</span>';
+        try {
+          await ApiClient.resendVerification(email);
+          UI.showToast('Đã gửi email kích hoạt mới! Vui lòng kiểm tra hộp thư.', 'success');
+        } catch (e) {
+          UI.showToast(e.message || 'Không thể gửi email kích hoạt.', 'error');
+        } finally {
+          setTimeout(() => {
+            btnPendingResend.disabled = false;
+            btnPendingResend.innerHTML = '<span class="material-symbols-outlined text-[16px]">forward_to_inbox</span><span>Gửi lại email xác thực</span>';
+          }, 3000);
+        }
+      };
+    }
+
+    const btnPendingBackLogin = document.getElementById('btn-pending-back-login');
+    if (btnPendingBackLogin) {
+      btnPendingBackLogin.onclick = () => switchTab('login');
+    }
+
+    const btnVerifySuccessLogin = document.getElementById('btn-verify-success-login');
+    if (btnVerifySuccessLogin) {
+      btnVerifySuccessLogin.onclick = () => switchTab('login');
+    }
+
+    const btnVerifyErrorLogin = document.getElementById('btn-verify-error-login');
+    if (btnVerifyErrorLogin) {
+      btnVerifyErrorLogin.onclick = () => switchTab('login');
+    }
+
+    const btnVerifyErrorResend = document.getElementById('btn-verify-error-resend');
+    if (btnVerifyErrorResend) {
+      btnVerifyErrorResend.onclick = () => switchTab('login');
+    }
+
+    // Process direct URL Hash triggers for verification
+    const hash = window.location.hash || '';
+    if (hash.includes('verify-email')) {
+      let token = '';
+      if (hash.includes('token=')) {
+        const queryPart = hash.split('?')[1] || '';
+        const params = new URLSearchParams(queryPart);
+        token = params.get('token') || '';
+      }
+      if (token) {
+        switchTab('verifyAction');
+        const loadingBox = document.getElementById('verify-action-loading');
+        const successBox = document.getElementById('verify-action-success');
+        const errorBox = document.getElementById('verify-action-error');
+        const errorMsg = document.getElementById('verify-action-error-msg');
+
+        ApiClient.verifyEmail(token)
+          .then(() => {
+            if (loadingBox) loadingBox.classList.add('hidden');
+            if (successBox) successBox.classList.remove('hidden');
+            UI.showToast('Xác thực tài khoản thành công! Bạn có thể đăng nhập ngay.', 'success');
+            setTimeout(() => {
+              switchTab('login');
+            }, 3000);
+          })
+          .catch(err => {
+            if (loadingBox) loadingBox.classList.add('hidden');
+            if (errorBox) errorBox.classList.remove('hidden');
+            if (errorMsg) errorMsg.textContent = err.message || 'Liên kết xác thực không hợp lệ hoặc đã hết hạn.';
+          });
+      }
+    } else if (hash.includes('verified=1')) {
+      UI.showToast('Email đã được xác thực thành công! Vui lòng đăng nhập.', 'success');
+      switchTab('login');
+    } else if (hash.includes('verification_failed=1')) {
+      showError('Liên kết xác thực email không hợp lệ hoặc đã hết hạn.');
+      switchTab('login');
     }
   }
 }

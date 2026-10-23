@@ -83,6 +83,9 @@ Never silently violate these rules:
 - Unified Staging Draft: After first approval all legal instructor changes auto-save continuously into one existing `COURSE_VERSION_CHANGESET`/`DRAFT` aggregate (semantic `STAGING_DRAFT`), submitted once for atomic all-or-nothing Admin review. Manual per-lesson save buttons are eliminated. Changeset diff modal compares "Hiện tại" vs "Sau chỉnh sửa" with full operation details.
 - Anti-Leak Exam Security & Header Navigation: No right/wrong indicators during active exams; slots remain neutral; post-submission review renders granular green/red indicators with target answers. `#console-course-progress-badge` is removed from the header entirely; header displays only title and exit navigation. Course progress is displayed only in course outline/overview, eliminating obsolete header badge dynamic calculation.
 - Two-Tier Broadcast Notification RBAC: Only Primary Admin may broadcast any category; System Monitoring Admin is strictly locked to `SYSTEM` broadcasts only (backend 403 on other categories); all other sub-admins have broadcast UI hidden and API blocked.
+- Student Dashboard Cleanliness: Student home dashboard (`student.js`) strictly excludes the legacy '#dashboard-recommendations-section' ('Gợi ý khóa học tiếp theo'). All course discovery is exclusively handled via Course Catalog (`#/student/courses/catalog`).
+- Large-Scale Payment QR & Lightbox: Payment QR codes (course direct purchase and wallet deposit) must render in large high-definition viewports (minimum 288px-320px, `w-72 sm:w-80`), equipped with hover zoom indicator and interactive Lightbox modal (`UI.showQrLightbox`) for effortless scanning across devices.
+- Admin Course Pricing Governance & Notification: In the Admin 'Quản lý khóa học' table, Admin has direct access to edit course tuition fees ('Sửa giá'). Any price change requires an audit reason, creates an append-only `AuditEvent` with old and new price snapshots, and automatically dispatches a system notification to the assigned instructor.
 
 When in doubt, follow the canonical specification rather than this abbreviated list.
 
@@ -207,15 +210,24 @@ Dựa trên toàn bộ lịch sử 304 cuộc trò chuyện và 271 chỉ đạo
   + **Triệt tiêu Lỗi Không Thể Pause (Single Event Listener Invariant)**: Tuyệt đối cấm gán đúp `onclick` và `addEventListener('click')` trên cùng một phần tử điều khiển video. Đảm bảo mỗi thao tác click Play hoặc Pause chỉ kích hoạt duy nhất một sự kiện trạng thái dứt khoát.
   + **Mở Khóa Tua 5 Giây Cuối**: Quy tắc chặn tua quá đoạn đã xem (frontier) có hiệu lực từ phút 00:00 đến $(Duration - 5s)$. Khi video còn $\le 5$ giây (hoặc video ngắn $\le 5s$), hệ thống tự động ghi nhận hoàn thành bài học (`unlocked = true`, `videoWatched = true`) và cho phép học viên tua tự do qua 5 giây cuối mà không bị chặn lại.
   + **Kích Hoạt Realtime Chuyển Bài Tiếp Theo (No F5 Reload)**: Bắt sự kiện kết thúc video `onEnded`. Khi video xem xong và bài trắc nghiệm củng cố đạt chuẩn, nút "Tiếp theo" lập tức sáng xanh ngọc (`bg-emerald-600`) và mở khóa bài tiếp theo trên danh mục bài học mà không cần tải lại trang.
-- **Lá Chắn An Ninh Phân Cấp & Chỉ Thu Hồi Phiên Khi Mở DevTools/Cào Dữ Liệu (Layered Security Shield & Strict Threat Lockdown)**:
-  + **Khi học tập/xem bài học thông thường**: Cho phép chuột phải tự do, không hiển thị cảnh báo chụp màn hình (`PrintScreen`, `Win+Shift+S`), tuyệt đối không tự ý đăng xuất người dùng.
+- **Lá Chắn An Ninh Tôn Trọng Người Dùng & Triệt Tiêu Cảnh Báo Nhầm (Human-First Security Shield & Anti-False-Positive Invariant)**:
+  + **Khi học tập, duyệt web và quản trị thông thường**: Tuyệt đối cấm tự động đăng xuất người dùng khi đang duyệt web, chuyển trang, mở tab, hoặc khi hệ thống/máy chủ đang tải dữ liệu. Cho phép chuột phải tự do, không hiển thị cảnh báo chụp màn hình (`PrintScreen`, `Win+Shift+S`), không bao giờ thu hồi session của người dùng thật.
+  + **Xóa bỏ vĩnh viễn bẫy `debugger` và bẫy `DOM_TAMPER` diện rộng**: Nghiêm cấm tuyệt đối mọi hình thức đo độ trễ `(function() { debugger; })()` timing delta (>100ms) vì cơ chế này gây báo động giả khi CPU tải nặng hoặc khi mạng chậm. Nghiêm cấm việc coi việc thay đổi DOM/CSS (như `.route-render-stage`, `visibility: hidden`, unmount element khi chuyển route) là hành vi can thiệp mã nguồn.
   + **Khi làm bài kiểm tra/khảo thí (Miniquiz, Test chương, Final Exam)**:
     * Thao tác chụp màn hình (`PrintScreen`, `Win+Shift+S`, `Meta+Shift+S`) và chuột phải (`contextmenu`): Chặn hành vi, xóa sạch bộ nhớ tạm clipboard, hiển thị thông báo cảnh báo Toast, đồng thời ghi log vi phạm và tăng bộ đếm vi phạm kiểm tra (`violations_count` / proctoring events).
     * **TUYỆT ĐỐI CẤM tự động đăng xuất** đối với thao tác chụp màn hình hoặc chuột phải.
     * **Tự Do Phóng To / Thu Nhỏ Trình Duyệt (Unrestricted Browser Zoom)**: Học viên được toàn quyền phóng to/thu nhỏ trang web (Ctrl +, Ctrl -, pinch gesture, 100%, 125%, 150%, 200%...) để đọc rõ nội dung câu hỏi và đề thi. **NGHIÊM CẤM TUYỆT ĐỐI** việc sử dụng phép đo chênh lệch kích thước cửa sổ (`outerWidth - innerWidth > 160`) hoặc lớp phủ ép toàn màn hình (`#exam-fullscreen-lockdown-overlay`) gây khóa màn hình hoặc đăng xuất học viên khi zoom trang web.
-  + **Hành vi vi phạm an ninh nghiêm trọng (Bắt buộc Thu hồi Phiên & Phủ Blackout Shield)**:
-    * Chỉ áp dụng cho các hành vi: Mở DevTools (`F12`, `Ctrl+Shift+I/J/C`, `Ctrl+U`, `Cmd+Option+I/J/C/U`, `debugger trap` / console timing delta), sử dụng extension trình duyệt để cào dữ liệu (scraping), hoặc can thiệp mã nguồn/tài nguyên hệ thống trái phép.
-    * Khi phát hiện vi phạm nghiêm trọng: Lập tức phủ Blackout Shield che kín toàn màn hình ("🛡️ CẢNH BÁO AN NINH HỆ THỐNG"), gọi `POST /auth/logout` để thu hồi phiên trên server, xóa token client và chuyển hướng về `#/auth/login` kèm cảnh báo bảo mật.
+  + **Chỉ xử lý khóa an ninh đối với hành vi tấn công cố ý trong kỳ thi**: Chỉ khi học viên trong phòng thi cố tình mở DevTools (phím F12, Ctrl+Shift+I trong chế độ thi cử) mới kích hoạt màn hình cảnh báo thi cử, và không bao giờ đăng xuất nhầm ở các màn hình ngoài bài thi.
+- **Tối Ưu Hiệu Năng Topbar & Bộ Nhớ Đệm SWR (SWR Caching & Instant Topbar Navigation)**:
+  + Mọi thao tác bấm chuyển trang trên Topbar/Sidebar phải phản hồi tức thì dưới 100ms thông qua Khung xương tải trang (Skeleton Loading) kết hợp Bộ nhớ đệm SWR (Stale-While-Revalidate, cache 2–5 phút trên frontend).
+  + Backend cung cấp endpoint tổng hợp `/admin/governance/summary` để lấy toàn bộ KPI hàng đợi duyệt trong duy nhất 01 request, thay thế việc frontend phải gọi 3–4 API rời rạc.
+  + Tối ưu truy vấn SQL Server, diệt trừ N+1 queries trên các endpoint danh sách. Tự động vô hiệu hóa/làm mới cache khi phát sinh thao tác ghi (CUD).
+- **Giới Hạn Request Phân Tầng Chống Quá Tải (Tiered Rate Limiting Invariant)**:
+  + Áp dụng Rate Limiter phân tầng theo rủi ro ở backend: Mặc định toàn hệ thống 120 req/phút/IP; API xác thực nhạy cảm (Đăng nhập, Đăng ký, Quên mật khẩu) giới hạn 5–10 req/phút/IP; API nặng (Tải tệp, AI Chat) giới hạn 20 req/phút/IP.
+  + Khi vượt ngưỡng, hệ thống trả HTTP 429 Too Many Requests kèm JSON envelope chuẩn và header `Retry-After`. Frontend ApiClient bắt mã 429 và hiển thị thông báo Toast thân thiện, không làm sập giao diện.
+- **Quản Lý & Định Giá Khóa Học Linh Hoạt (Course Pricing Invariant)**:
+  + Giảng viên có quyền cấu hình giá tiền khóa học (0 VNĐ = Miễn phí, hoặc số tiền VNĐ tùy ý) ngay lúc tạo khóa học mới và trong trang Cài đặt khóa học.
+  + Admin có quyền sửa đổi giá trực tiếp trên cả giao diện Duyệt khóa học và Quản lý dòng tiền/Khóa học, cập nhật tức thì vào CSDL mà không làm gián đoạn học viên đang học.
 - **Dung Thứ Lỗi Backend & Fallback Thời Lượng Kiên Cường (Resilient Playback Fallback)**:
   + Khi máy chủ chưa cấu hình `YOUTUBE_API_KEY` hoặc mạng kết nối Google bị gián đoạn/quota/timeout, backend TUYỆT ĐỐI CẤM ném lỗi `LessonValidationError("Trusted YouTube duration is unavailable...")` làm gián đoạn học tập của sinh viên.
   + Tự động áp dụng cơ chế 3-tier fallback kiên cường: Google Data API -> client reported duration -> lesson duration -> safe default 1800.0s (30 phút, tối thiểu 300s). Ghi log cảnh báo và tự động đối soát (reconcile) thời lượng chính xác ở nhịp tim (heartbeat) đầu tiên.
@@ -256,22 +268,53 @@ Dựa trên toàn bộ lịch sử 304 cuộc trò chuyện và 271 chỉ đạo
 - **An toàn Đa Agent (Multi-Agent Safe Resume)**: Controller Agent tuyệt đối cấm spawn lại các subagent cho những task đã commit thành công. Chỉ spawn duy nhất subagent cho task đang dở dang.
 - **Kỷ luật Tự Lưu Trạng Thái (Auto-State Persistence)**: Agent tự động duy trì file checklist `tasks/CURRENT.md` mỗi khi nhận task lớn từ 2 bước trở lên để đảm bảo luôn có điểm tựa tiếp quản vĩnh viễn trên đĩa.
 
-### 10.15. Bất biến Đăng xuất Toàn bộ Thiết bị khi Đăng nhập Đồng thời (Multi-Device Simultaneous Termination & Realtime Lockdown)
-- **Kiểm tra ngay tại thời điểm Đăng nhập (`POST /auth/login`)**: Hễ tài khoản đang có phiên đăng nhập trước đó còn hiệu lực (chưa hết hạn session và chưa logout) mà có thiết bị thứ 2 đăng nhập vào:
-  + Hệ thống lập tức thu hồi (`revoked_at = utc_now()`) toàn bộ các phiên hoạt động của tài khoản (cả thiết bị cũ A lẫn thiết bị mới B vừa gửi lệnh đăng nhập).
-  + Tăng `user.auth_version` để lập tức vô hiệu hóa phiên ở mọi client/tab.
-  + **Bắn tín hiệu Realtime SSE tức thì**: Phát sự kiện `auth:concurrent_session_revoked` qua kênh SSE tới thiết bị A.
-  + **Phủ Modal Cảnh báo An ninh Toàn màn hình (Dual Blackout Modal)**: Cả 2 màn hình A (đang mở trong hệ thống) và B (vừa bấm đăng nhập) lập tức hiển thị Modal cảnh báo an ninh toàn màn hình: *"🛡️ CẢNH BÁO AN NINH: Tài khoản của bạn được phát hiện đăng nhập đồng thời trên một thiết bị khác. Hệ thống đã tự động đăng xuất trên tất cả thiết bị để bảo vệ an toàn."*, tự động đếm lùi 5 giây hoặc khi bấm nút xác nhận sẽ xóa sạch client state và chuyển hướng về trang Đăng nhập (`#/auth/login`).
-  + Ghi nhận nhật ký an ninh hệ thống `CONCURRENT_LOGIN_TERMINATION`.
+### 10.15. Bất biến Kế thừa Thiết bị Duy nhất & Đá Phiên Cũ Lịch sự (Single Active Device Takeover & Polite Eviction Invariant)
+- **Đăng nhập Mới Luôn Luôn Thành Công (Single Active Device Takeover / Eviction)**:
+  + Khi người dùng nhập đúng thông tin đăng nhập trên thiết bị mới (`POST /auth/login`): Hệ thống **LUÔN LUÔN CẤP PHIÊN MỚI THÀNH CÔNG (HTTP 200)**. Tuyệt đối cấm trả về HTTP 409 hay chặn người dùng vừa nhập đúng tài khoản/mật khẩu.
+  + **Bãi bỏ hoàn toàn cơ chế "Cùng chết" (Dual Blackout / Mutual Destruction)**: Không bao giờ khóa hoặc phủ màn hình đen cảnh báo đối với người vừa thực hiện đăng nhập thành công.
+- **Phân loại Phiên theo Nhịp tim Hoạt động Thực tế (Presence & Heartbeat Detection)**:
+  + Hệ thống kiểm tra các phiên trước đó của tài khoản trong CSDL:
+    * **Phiên cũ không hoạt động (> 5 phút kể từ `last_seen_at`)**: Đã tắt tab, đóng trình duyệt hoặc gập máy $\rightarrow$ Hệ thống thu hồi âm thầm trong CSDL (`revoked_at = utc_now()`), không phát tín hiệu SSE rác.
+    * **Phiên cũ đang hoạt động thực sự ($\le 5$ phút)**: Đang mở tab và có tương tác $\rightarrow$ Thu hồi trong CSDL và phát tín hiệu Realtime SSE `auth:concurrent_session_revoked` tới thiết bị cũ đó.
+- **Giao diện Thiết bị Cũ Bị Đá Lịch sự & Chuyên nghiệp (Polite Informational Modal - Không Dọa Dẫm)**:
+  + Thiết bị cũ khi nhận tín hiệu SSE sẽ hiển thị Hộp thoại thông báo thanh lịch:
+    * Biểu tượng thiết bị `devices` hoặc `shield_check` màu trung tính (loại bỏ hoàn toàn viền đỏ nhấp nháy, còi báo động và đếm lùi 5 giây dọa dẫm).
+    * Tiêu đề: *"Phiên làm việc đã kết thúc"*.
+    * Nội dung: *"Tài khoản của bạn vừa được đăng nhập trên một thiết bị khác. Phiên làm việc trên thiết bị này đã kết thúc để đảm bảo an toàn."*.
+    * Nút bấm: *"Đăng nhập lại tại đây"* (chuyển hướng êm ái về trang đăng nhập để người dùng chủ động đăng nhập lại nếu muốn sử dụng tiếp trên máy này). Modal cố định, không tự động biến mất.
+- **Duy trì Phiên Bền vững (Persistent Session by Default)**:
+  + Mặc định thiết lập phiên làm việc bền vững (`session.permanent = True`, thời hạn 7 ngày, hoặc 30 ngày nếu chọn *"Ghi nhớ"*).
+  + Khi người dùng tắt tab hoặc đóng trình duyệt trên cùng một máy rồi mở lại, hệ thống tự động nhận diện phiên hợp lệ, không bắt nhập lại mật khẩu và không bao giờ báo lỗi đa thiết bị.
+  + Đa tab mở trên cùng một trình duyệt hoạt động hoàn toàn mượt mà và độc lập.
 
 ### 10.18. Bất biến Bạch tuộc Trợ lý AI Toàn diện (Octopus AI Official Identity & 4096-Token Robustness)
 - **Avatar Bạch tuộc AI Chính thức**: Nghiêm cấm dùng icon robot thô sơ (`smart_toy`). Mọi vị trí đại diện Bạch tuộc Trợ lý AI (tiêu đề chat, tin nhắn AI, typing indicator, outline tab) bắt buộc hiển thị ảnh đại diện chính thức `assets/img/octopus_ai_icon.png` (bo tròn `rounded-full`, viền nhẹ tương thích dark/light mode).
 - **Khóa trần Độ dài & Triệt tiêu Cụt đuôi**: Cấu hình `maxOutputTokens: 4096`. Hàm trích xuất text `_extract_text_from_response` bắt buộc duyệt và ghép toàn bộ các `parts` của Gemini (`"".join(...)`), nghiêm cấm chỉ lấy `parts[0]`. System instruction chuẩn hóa sư phạm: tóm tắt cốt lõi -> giải thích chi tiết -> ví dụ thực tiễn, tuyệt đối không đứt câu giữa chừng.
 - **Nút Gửi Inset Pill Hiện đại (ChatGPT/Gemini Style)**: Ô nhập liệu và nút gửi được thiết kế lồng nhau dạng capsule/pill tinh tế (`Modern Inset Pill`). Nút tròn thanh thoát nằm bên trong góc phải ô input, tự động chuyển trạng thái active khi có ký tự, micro-interaction mượt mà.
 
-### 10.19. Bất biến Đồng bộ Avatar Người dùng 2 Chiều (Single Source of Truth Avatar)
+### 10.19. Bất biến Đồng bộ Avatar Người dùng Phân lập Theo Định danh (Strict User-Isolated Avatar Invariant)
 - **Lưu trữ CSDL Chuẩn mực**: Avatar người dùng được lưu trực tiếp vào trường `avatar_url` của bảng `User` trong CSDL qua API `PUT /auth/profile`.
-- **Đồng bộ hóa Tuyệt đối (Zero-Drift)**: Khung hiển thị ảnh đại diện trong trang Cài đặt tài khoản (`renderSettings`) và góc Topbar (`updateUserUI`) sử dụng cùng logic nạp ưu tiên `profile.avatar_url`, fallback duy nhất khóa chuẩn hóa `pwd301:random-avatar:${id}` và `pwd301_avatar`. Khi người dùng tạo avatar ngẫu nhiên và lưu hồ sơ, Topbar và trang Cài đặt lập tức đồng bộ hiển thị 100% trong 0ms mà không cần F5.
+- **Phân lập Bộ nhớ Tuyệt đối (Zero-Leakage Invariant)**: NGHIÊM CẤM TUYỆT ĐỐI việc sử dụng khóa fallback toàn cục không gắn định danh như `localStorage.getItem('pwd301_avatar')`. Mọi thao tác đọc/ghi cache avatar cục bộ bắt buộc phải gắn liền với User ID cụ thể: `pwd301:random-avatar:${user_id}` hoặc email của chính tài khoản đó. Các tài khoản chưa cập nhật avatar bắt buộc hiển thị huy hiệu chữ cái (Initials) với màu nền theo vai trò (Admin: Primary, Giảng viên: Indigo, Học viên: Slate), không bao giờ được lấy avatar của tài khoản khác trên cùng trình duyệt.
+
+### 10.23. Bất biến Nâng cấp Thông báo Tập trung, Xóa Cứng 15 Ngày, Video Trailer & Chứng chỉ Khóa học PDF
+- **Khử trùng lặp Popup Thông báo (Strict Toast Debounce & Dedup Invariant)**: Hàm `UI.showToast()` áp dụng cơ chế Debounce và Deduplication với cửa sổ 1500ms. Mọi thông báo cùng nội dung và trạng thái được gọi liên tiếp trong vòng 1.5s sẽ tự động gia hạn thời gian hiển thị hoặc bỏ qua việc tạo DOM node mới, triệt tiêu 100% hiện tượng duplicate popup toast trên toàn bộ hệ thống.
+- **Khu vực Quản lý Thông báo Tập trung trên Topbar cho Admin (`#/admin/notifications`)**:
+  + Bổ sung mục "Thông báo" trên thanh Topbar dành cho Admin chính (`ADMIN_PRIMARY`) và Admin hệ thống (`ADMIN_SYSTEM_MONITORING`).
+  + Di chuyển toàn bộ tính năng phát thông báo vào trang này với bố cục 2 khối ngang chuẩn mực: Khối trên là Form phát thông báo (tuân thủ RBAC: Admin chính phát mọi danh mục, Admin hệ thống chỉ phát SYSTEM), Khối dưới là Bảng lịch sử các thông báo đã phát.
+  + Thao tác "Xóa" trên bảng lịch sử sẽ thực hiện **XÓA CỨNG (Hard Delete)** sự kiện thông báo và toàn bộ bản ghi con trong CSDL và toàn hệ thống.
+- **Tự động Dọn dẹp (Xóa cứng) sau 15 Ngày (15-Day Auto Cleanup Invariant)**: Hệ thống định kỳ tự động xóa cứng tất cả thông báo trong bảng `notifications` và các sự kiện mồ côi có thời gian tạo `created_at <= now - 15 ngày`, đồng thời kích hoạt kiểm tra dọn dẹp mỗi khi Admin truy cập trang Thông báo.
+- **Hỗ trợ Tải Video Trailer Trực tiếp từ Máy tính (Dual Trailer Architecture)**:
+  + Giảng viên có thể dán link YouTube HOẶC tải file video (.mp4/.webm, dung lượng `< 1 GB`) trực tiếp từ máy tính.
+  + Hệ thống cung cấp endpoint stream công khai `/api/courses/<course_id>/trailer/stream` để video tự động phát mượt mà trên khung chuẩn 16:9 ở Hero trang giới thiệu, Màn hình học của sinh viên và Trình duyệt của Admin.
+- **Cấp Chứng chỉ Hoàn thành Khóa học A4 Khổ Đứng (Portrait A4 Course Certificate) & Đồng bộ Pixel-Perfect PDF**:
+  + **Điều kiện**: Học viên hoàn thành 100% bài học và vượt qua bài thi cuối khóa (Final Test) nếu khóa học có bài thi.
+  + **Nút Thẻ Khóa học**: Nút "Vào học tiếp tục" chuyển thành "Bạn đã hoàn thành khóa học" (vẫn bấm vào được để vào chế độ ôn tập).
+  + **Chuẩn Bất biến Khổ Đứng (Portrait A4)**: Toàn bộ chứng chỉ hoàn thành khóa học bắt buộc chuẩn hóa A4 Khổ Đứng (`210mm x 297mm`). Nghiêm cấm tuyệt đối mọi hình thức khôi phục hoặc sinh lại chứng chỉ khổ ngang (Landscape) cũ.
+  + **Chuẩn Mỹ thuật & Typography**: Sử dụng thuần nhất phông `Be Vietnam Pro` cho tiêu đề, tên học viên, đoạn công nhận, chữ ký cách điệu và các chức danh; kết hợp `JetBrains Mono` cho Huy hiệu mã môn và Mã số chứng chỉ (`CERT-...`). Bảng màu chuẩn: `#0F3D2E` (Xanh lục bảo đậm), `#C59B27` (Vàng kim), `#B8860B` (Vàng đồng), `#1E293B` (Đen xám), `#334155` (Xám xanh đậm), `#64748B` (Xám trung tính).
+  + **Hình chìm Bản quyền Hệ thống (System Base64 Watermark)**: Logo chìm PPTQ được nhúng trực tiếp dạng Base64 với độ mờ tinh tế (~8%) ở trung tâm nền chứng chỉ (phía sau nội dung), đảm bảo file HTML độc lập 100% (mở offline không bị mất hình) và bản PDF xuất ra có hình chìm chuẩn xác.
+  + **Bất biến Xóa nút Xem trước HTML**: Loại bỏ hoàn toàn nút "Xem trước Chứng chỉ HTML", chỉ duy trì duy nhất nút "Tải Chứng chỉ PDF" chuẩn A4 đứng tại cây đề cương và màn hình kết thúc khóa học.
+  + **Bất biến Đồng bộ Pixel-Perfect Chứng chỉ PDF**: Bản PDF xuất ra bắt buộc phải giống y hệt 100% bản xem trước bằng HTML (Đầy đủ logo PPTQ, tiêu đề, họ tên, đoạn văn công nhận hoàn chỉnh, hộp chuyên đề màu xanh ngọc kèm mã học phần, con dấu điện tử và chữ ký nằm trọn vẹn trong trang A4 không bị cắt chân hay tràn trang). Backend ưu tiên sử dụng Playwright Chromium hoặc lệnh CLI headless Chromium (`--headless=new --disable-gpu --no-sandbox --no-pdf-header-footer --print-to-pdf=<pdf_file> <html_file>`) in trực tiếp từ template HTML, kết hợp hàm fallback ReportLab portrait được nâng cấp chuẩn mỹ thuật.
+  + **Bất biến Triệt tiêu Mục Tài liệu Chung**: Tab Tài liệu chỉ hiển thị các tệp tài liệu học tập thực tế đính kèm theo từng Chương & Bài học; nghiêm cấm hiển thị mục "Tài liệu chung khóa học"; API backend loại bỏ truy vấn quét nhầm video trailer và tệp xuất PDF (trả về `"resources": []` tại root khóa học vì tài liệu đã được gán vào từng bài học).
 
 ### 10.16. Bất biến Soạn thảo Giáo trình Hiện đại (Modern Curriculum Studio Invariants)
 - **Chỉnh sửa Thông tin Khóa học Trực tiếp (Course Header Inline Edit)**: Cho phép giảng viên chỉnh sửa trực tiếp Mã môn, Tên môn học, Danh mục và Mô tả/Giới thiệu môn học ngay trên trang chỉnh sửa khóa học bằng cách bấm nút "Chỉnh sửa" hoặc nhấp đúp (Double-click) vào từng thành phần. Dữ liệu tự động lưu vào bản nháp staging của khóa học.
@@ -295,6 +338,69 @@ Dựa trên toàn bộ lịch sử 304 cuộc trò chuyện và 271 chỉ đạo
   1. *Câu chào mở đầu khi mở hoặc làm mới chat*: `"Xin chào bạn! Mình là Bạch Tuột, trợ lí AI của hệ thống PPTQ. Mình có thể giúp được gì cho bạn?"`
   2. *Câu phản hồi khi câu hỏi ngoài lề/không liên quan*: `"Cảm ơn câu hỏi của bạn. Nhưng hiện tại nó đang nằm ngoài phạm vi hiểu biết của mình, mình sẽ ghi nhận câu hỏi này và cải thiện bản thân nhiều hơn để có thể hỗ trợ bạn được nhiều hơn nha"`
   3. *Câu phản hồi khi câu hỏi mang tính xúc phạm, chê bai*: `"Xin lỗi vì đã làm bạn tức giận, không biết mình có thể làm gì để bạn cảm thấy tốt hơn nhỉ?"`
+
+### 10.24. Bất biến Hệ thống Thanh toán PayOS, Ví nội bộ, Định giá Khóa học & Phân quyền Admin Tài chính (WF31)
+- **Khai trừ Tuyệt đối Quy trình Ghi danh Tự do và Cụm Nút Cũ (Anti-Legacy Purge Invariant)**:
+  + Tuyệt đối nghiêm cấm việc khôi phục cụm 2 nút cũ `"Giới thiệu"` và `"Ghi danh"` trên thẻ khóa học hoặc trang giới thiệu.
+  + Thẻ khóa học bắt buộc trang bị **Tag giá tiền** nổi bật, thẩm mỹ ở góc trên thumbnail (hiển thị giá VNĐ hoặc badge xanh ngọc `"Miễn phí"` nếu giá = 0đ).
+  + Thay thế toàn bộ bằng **01 nút lớn duy nhất "Mua ngay"** (hoặc `"Đăng ký ngay"` nếu khóa 0đ). Khi bấm vào thẻ khóa học, nếu chưa sở hữu thì chuyển hướng trực tiếp đến trang giới thiệu khóa học (`#/student/courses/intro?id=...`).
+  + Nút "Cài đặt tài khoản" / "Cài đặt" trên thanh Topbar chính bị loại bỏ hoàn toàn trên tất cả các vai trò (học viên, giảng viên, admin); tính năng Cài đặt chỉ được duy trì trong menu dropdown Avatar.
+- **Mô hình Mua Khóa học Kép (Dual Purchase Gateway)**:
+  + Khi học viên bấm `"Mua ngay"`: Hệ thống mở modal thanh toán cung cấp 2 phương thức:
+    1. *Thanh toán bằng Số dư ví*: Kiểm tra số dư tài khoản học viên; nếu đủ tiền -> trừ số dư và kích hoạt ghi danh ngay lập tức; nếu thiếu tiền -> hiển thị cảnh báo số dư không đủ và số tiền còn thiếu, kèm nút chuyển hướng sang nạp tiền PayOS.
+    2. *Quét mã QR PayOS trực tiếp*: Tạo đơn thanh toán PayOS đúng bằng giá khóa học. Khi Webhook PayOS xác nhận chuyển khoản thành công -> tự động kích hoạt ghi danh khóa học cho học viên mà không cần nạp ví trước.
+- **Cổng Thanh toán VietQR PayOS & Chuỗi Nội dung 12 Ký tự Bắt buộc**:
+  + Tích hợp PayOS bằng cấu hình bảo mật: Được cung cấp an toàn qua các biến môi trường `PAYOS_CLIENT_ID`, `PAYOS_API_KEY`, `PAYOS_CHECKSUM_KEY` trong tệp cấu hình bảo mật `.env`.
+  + **Quy chuẩn Nút Header "Ví" & Menu Dropdown (Canonical Topbar Wallet Invariant)**: Nút "Nạp tiền" đơn lẻ cũ bị bãi bỏ hoàn toàn. Thanh Topbar sử dụng nút bo tròn dạng pill có icon chiếc ví (`account_balance_wallet`) và nhãn text `"Ví"`. Khi người dùng click vào nút "Ví", hệ thống hiển thị menu dropdown tối giản gồm 2 thành phần: (1) Dòng số dư hiện có: `Số dư: X.XXX đ` (font mono, số xanh ngọc nổi bật), và (2) Nút hành động `"Nạp tiền"` ngay bên dưới điều hướng đến trang ví `#/student/wallet`. Dropdown tự động đóng khi bấm ra ngoài hoặc ấn Escape.
+  + **Quy chuẩn Thẻ Số Dư & Nút Tạo Mã QR (Canonical Wallet Page Invariant)**:
+    * *Thẻ Số dư khả dụng ở Light Mode*: Bắt buộc sử dụng dải màu ngọc bích sáng (`bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-100/70 border border-emerald-200/80 text-slate-800`), số dư hiển thị nổi bật với màu xanh ngọc đậm (`text-emerald-700 font-mono font-black`). Dark mode tự động chuyển sang dải màu tối sâu (`dark:from-slate-900 dark:via-indigo-950 dark:to-slate-900 dark:border-slate-800 dark:text-white`). Nghiêm cấm để thẻ màu đen/slate-900 tương phản chói gắt ở Light mode.
+    * *Văn bản Nút Tạo Mã QR*: Toàn bộ nhãn text trên nút bấm chính và trạng thái tải/reset bắt buộc mang văn bản duy nhất: `"Tạo mã QR nạp tiền"`. Tuyệt đối cấm sử dụng nhãn cũ `"Tạo mã QR nạp tiền PayOS"`.
+    * *Cơ chế Gắn Tag "Thất bại" sau 5 Phút*: Giao dịch nạp tiền `PENDING` sau 5 phút (300 giây) chưa hoàn thành bắt buộc được xác định là hết hạn/thất bại: Backend tự động đánh dấu `FAILED` trong CSDL khi query/đối soát, Frontend gắn ngay tag `"Thất bại"` màu đỏ/xám (`bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300`).
+    * *Cơ chế Phân trang Lịch sử Giao dịch*: Chia cố định 5 giao dịch mỗi trang kèm thanh điều hướng nhỏ gọn `[Trước]` `[Trang X / Y]` `[Sau]`, đảm bảo chiều cao khung lịch sử luôn cố định và cân xứng tuyệt đối với cột nạp tiền bên trái.
+  + Chuỗi nội dung chuyển khoản tự động bắt buộc đúng **12 ký tự**: `PPTQ` + `[UserCode 4 ký tự]` + `[TxCode 4 ký tự]` (chữ hoa và số, không khoảng trắng, không ký tự đặc biệt).
+  + Webhook PayOS tại `/api/payments/payos/webhook` bắt buộc xác thực chữ ký HMAC-SHA256 fail-closed bằng Checksum Key. Xử lý cộng tiền đảm bảo tính Đẳng công (Idempotent), tuyệt đối cấm cộng tiền lặp lại cho một giao dịch đã `COMPLETED`.
+- **Định giá Khóa học (Course Pricing)**:
+  + Giảng viên được quyền nhập giá khóa học khi tạo/biên soạn khóa học (nằm trong luồng Staging Draft gửi Admin duyệt).
+  + Admin chính có toàn quyền phê duyệt, từ chối hoặc trực tiếp chỉnh sửa giá khóa học.
+  + Hỗ trợ khóa học 0đ (Miễn phí): học viên bấm đăng ký là vào học ngay lập tức mà không yêu cầu số dư.
+- **Phân quyền Quản trị viên Tài chính (`ADMIN_FINANCIAL`) & Thu hồi Tiền An toàn**:
+  + Thêm vai trò Admin phụ: `ADMIN_FINANCIAL` (Quản trị Tài chính & Dòng tiền) vào `VALID_ADMIN_SUB_ROLES`.
+  + Nút truy cập nhanh `"Quản lý dòng tiền"` trên Topbar cho Primary Admin và Financial Admin.
+  + Trang Dashboard dòng tiền: thống kê tổng tiền nạp, tổng doanh thu, số dư lưu ký, danh sách giao dịch nạp/mua và đọc log chi tiết.
+  + **Bất biến Thu hồi Tiền (Fail-Closed Revocation)**: Khi Admin thực hiện lệnh Thu hồi tiền (Revoke Balance), hệ thống trừ số dư ví của học viên; nếu học viên đã sử dụng số tiền đó để mua khóa học, hệ thống **bắt buộc tự động hủy/khóa quyền truy cập (un-enroll / cancel enrollment)** của các khóa học tương ứng, chuyển trạng thái giao dịch sang `REVOKED`, và ghi nhận bắt buộc Audit Log `WALLET_BALANCE_REVOKE` fail-closed.
+
+### 10.25. Bất biến Tải lại Sạch & Điều hướng Độc lập Topbar Admin (WF32 - Clean Reload & Independent Navigation Invariant)
+- **Khai trừ Vĩnh viễn Công nghệ Hover Preload DOM (Anti-Preload Purge Invariant)**:
+  + Tuyệt đối nghiêm cấm mọi hình thức render ngầm offscreen khi rê chuột (`pointerenter/mouseenter preload`) qua các liên kết điều hướng. Cơ chế này đã bị bãi bỏ vĩnh viễn do gây ra side effects làm biến dạng DOM sống, trigger sai sự kiện và gây vòng lặp render.
+  + Gỡ bỏ hoàn toàn `initHoverPreload`, `_preloadDomCache`, `_hoverPreloadTimer` và các phần tử `route-preload-offscreen-stage`.
+- **Nguyên tắc Tải lại Sạch (Clean Viewport Mounting)**:
+  + Khi chuyển route hoặc chuyển tab, hệ thống giải phóng dứt khoát toàn bộ nội dung DOM cũ trong `#app-viewport` trước khi mount view mới. Nghiêm cấm tạo container staging lồng ghép (`route-render-stage`) tồn tại song song với DOM cũ gây xung đột trùng lặp ID phần tử HTML (`admin-tab-content-box`, `admin-governance-root`...).
+- **Nguồn Điều hướng Độc lập & Tối giản Duy nhất qua Topbar (Single Authoritative Topbar Navigation)**:
+  + Toàn bộ các phân hệ quản trị của Admin được điều hướng độc quyền qua các tab dạng pill trên thanh Menu ngang Topbar (`Người dùng & Phân quyền`, `Quản lý dòng tiền`, `Duyệt khóa học`, `Duyệt giảng viên`, `Phân công giảng dạy`, `Thông báo`, `Bảo mật & Nhật ký`, `Vận hành hệ thống`).
+  + **Xóa bỏ Vĩnh viễn Khối 3 Thẻ Tác vụ Nhanh Trùng lặp (`#admin-approval-hub`)**: Loại bỏ khối 3 thẻ ("Khóa học mới chờ duyệt", "Bản sửa đổi & Đề xuất", "Hồ sơ giảng viên ứng tuyển") ở giữa trang để màn hình sạch sẽ, không gây phân tán và triệt tiêu các nút bấm điều hướng bị chồng chéo.
+- **Tiêu đề Header Động Theo Ngữ Cảnh Từng Tab (Dynamic Per-Tab Header)**:
+  + Header trang tự động cập nhật biểu tượng, tiêu đề lớn và mô tả chuyên biệt tương ứng với tab đang mở:
+    * Tab `users`: *"Người dùng & Phân quyền"* — Quản lý danh sách tài khoản, vai trò và trạng thái hoạt động.
+    * Tab `courses`: *"Duyệt & Thẩm định Khóa học"* — Xét duyệt khóa học mới và các yêu cầu chỉnh sửa đề cương.
+    * Tab `applications`: *"Xét duyệt Giảng viên"* — Thẩm định hồ sơ năng lực và đơn ứng tuyển giảng viên.
+    * Tab `reassign`: *"Phân công Giảng dạy"* — Chuyển giao quyền quản lý khóa học giữa các giảng viên.
+    * Tab `security`: *"Bảo mật & Nhật ký Hệ thống"* — Giám sát an ninh, nhật ký truy cập và thiết bị đăng nhập.
+- **Tự động Chuẩn hóa URL Minh bạch (Transparent URL Normalization)**:
+  + Khi truy cập `#/admin/governance` (chưa có query tab), hệ thống tự động chuẩn hóa URL (dùng `history.replaceState`) sang `#/admin/governance?tab=users` (hoặc tab mặc định của Sub-Role), đảm bảo thanh địa chỉ trình duyệt luôn phản ánh chính xác 100% nội dung đang hiển thị.
+
+### 10.26. Bất biến Tinh gọn Trang chủ Học viên, Hiển thị QR Chuẩn lớn & Quản trị Học phí Khóa học (WF32 Invariant)
+- **Tinh gọn Trang chủ Học viên (Removal of AI Course Recommendations Block)**:
+  + Màn hình Trang chủ học viên (`student.js`) tuyệt đối loại bỏ khối gợi ý khóa học `#dashboard-recommendations-section` ("Gợi ý khóa học tiếp theo") và triệt tiêu các lệnh gọi API lấy gợi ý trên Dashboard.
+  + Màn hình Dashboard tập trung 100% vào các khóa học đang theo học và bài khảo thí trọng tâm; tính năng tìm kiếm, khám phá môn học được duy trì độc quyền tại Catalog (`#/student/courses/catalog`).
+- **Khung Hiển thị QR Thanh toán Chuẩn lớn & Hỗ trợ Lightbox Phóng to (Large-Scale Payment QR & Lightbox)**:
+  + Mã QR thanh toán VietQR (cả ở luồng thanh toán mua khóa học trực tiếp và luồng nạp tiền ví) bắt buộc hiển thị trong khung kích thước chuẩn lớn tối thiểu `288px - 320px` (`w-72 sm:w-80`), ma trận mã QR to rõ và tương phản cao để điện thoại quét tức thì từ mọi cự ly.
+  + Trang bị nhãn/huy hiệu hover `🔍 Bấm để phóng to` và tích hợp Lightbox modal (`UI.showQrLightbox`) cho phép click phóng to toàn màn hình kèm bảng tóm tắt STK, số tiền và nội dung chuyển khoản có nút 1-click copy tiện lợi.
+- **Quản trị Học phí Khóa học & Thông báo Giảng viên (Admin Course Pricing Governance & Notification Invariant)**:
+  + Bảng "Quản lý khóa học" trong trang Duyệt khóa học của Admin bắt buộc hiển thị cột "Học phí" và nút thao tác "Sửa giá" (icon `payments`).
+  + Khi Admin bấm "Sửa giá", modal `UI.showCoursePriceEditModal` hiển thị thông tin môn, giá cũ, ô nhập giá mới, live preview định dạng tiền tệ, chip preset chọn nhanh, và ô nhập lý do bắt buộc.
+  + Mọi thao tác đổi giá bắt buộc sinh bản ghi `AuditEvent` append-only với action `COURSE_PRICE_UPDATED` (lưu snapshot giá cũ/mới và lý do) và tự động dispatch thông báo `SYSTEM_ADMIN_INTERVENTION` trực tiếp cho giảng viên phụ trách khóa học.
+
+
 
 
 

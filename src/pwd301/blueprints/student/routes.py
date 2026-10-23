@@ -793,19 +793,12 @@ def get_student_course_completion_route(course_id: str) -> tuple[Response, int] 
 @student_bp.route("/courses/<course_id>/certificate", methods=["GET"])
 @student_required
 def get_student_course_certificate_route(course_id: str) -> tuple[Response, int] | Response:
-    """Get the authenticated student's completion certificate for a course."""
+    """Get the authenticated student's completion certificate for a course as PDF or metadata."""
     actor = require_authenticated_actor()
 
     course = _resolve_course(course_id, session=db.session)
     if course is None or course.status == "TRASH" or course.deleted_at is not None:
         raise ResourceNotFoundError("Course not found.")
-
-    summary = get_course_completion_summary(
-        actor=actor,
-        course_id=course.id,
-        student_user_id=actor.id,
-        session=db.session,
-    )
 
     enrollment = (
         db.session.query(Enrollment)
@@ -816,9 +809,40 @@ def get_student_course_certificate_route(course_id: str) -> tuple[Response, int]
         .first()
     )
 
+    if enrollment is None:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "CERTIFICATE_NOT_AVAILABLE",
+                        "message": "Học viên chưa hoàn thành đủ điều kiện của khóa học để được cấp chứng chỉ.",
+                    },
+                    "message": "Học viên chưa hoàn thành đủ điều kiện của khóa học để được cấp chứng chỉ.",
+                }
+            ),
+            400,
+        )
+
+    summary = get_course_completion_summary(
+        actor=actor,
+        course_id=course.id,
+        student_user_id=actor.id,
+        session=db.session,
+    )
+
     is_completed = (enrollment and enrollment.status == "COMPLETED") or (
         summary and summary.ever_completed
     )
+
+    if not is_completed:
+        from pwd301.services.completion_service import evaluate_course_completion
+
+        evaluated_completed, eval_summary = evaluate_course_completion(enrollment, session=db.session)
+        if evaluated_completed:
+            is_completed = True
+            summary = eval_summary or summary
+
     if not is_completed:
         return (
             jsonify(
@@ -826,8 +850,9 @@ def get_student_course_certificate_route(course_id: str) -> tuple[Response, int]
                     "success": False,
                     "error": {
                         "code": "CERTIFICATE_NOT_AVAILABLE",
-                        "message": "Certificate is only available for completed courses.",
+                        "message": "Học viên chưa hoàn thành đủ điều kiện của khóa học để được cấp chứng chỉ.",
                     },
+                    "message": "Học viên chưa hoàn thành đủ điều kiện của khóa học để được cấp chứng chỉ.",
                 }
             ),
             400,
@@ -841,27 +866,65 @@ def get_student_course_certificate_route(course_id: str) -> tuple[Response, int]
     ts = int(completed_at.timestamp()) if completed_at else 0
     cert_code = f"CERT-{course.course_code}-{actor.id}-{ts}"
 
-    instructor_name = "Ban Giảng Huấn PWD301"
-    if course.owner_instructor:
-        instructor_name = course.owner_instructor.display_name or course.owner_instructor.email
+    if request.args.get("format") == "json":
+        instructor_name = "Ban Giảng Huấn PPTQ LMS"
+        if course.owner_instructor:
+            instructor_name = course.owner_instructor.display_name or course.owner_instructor.email
 
-    data = {
-        "certificate_code": cert_code,
-        "course_id": str(course.public_id),
-        "course_code": course.course_code,
-        "course_title": course.title,
-        "student_id": str(actor.public_id),
-        "student_name": actor.display_name or actor.email,
-        "completed_at": completed_at.isoformat() if completed_at else None,
-        "instructor_name": instructor_name,
-        "hours": 10,
-        "final_score": (
-            float(summary.final_aggregate_score)
-            if summary and summary.final_aggregate_score is not None
-            else None
-        ),
-    }
-    return jsonify({"success": True, "data": data}), 200
+        data = {
+            "certificate_code": cert_code,
+            "course_id": str(course.public_id),
+            "course_code": course.course_code,
+            "course_title": course.title,
+            "student_id": str(actor.public_id),
+            "student_name": actor.display_name or actor.email,
+            "completed_at": completed_at.isoformat() if completed_at else None,
+            "instructor_name": instructor_name,
+            "hours": 10,
+            "final_score": (
+                float(summary.final_aggregate_score)
+                if summary and summary.final_aggregate_score is not None
+                else None
+            ),
+        }
+        return jsonify({"success": True, "data": data}), 200
+
+    from pwd301.services.certificate_pdf_service import (
+        generate_course_certificate_html,
+        generate_course_certificate_pdf,
+    )
+
+    fmt_date = completed_at.strftime("%d/%m/%Y") if completed_at else datetime.now().strftime("%d/%m/%Y")
+
+    if request.args.get("format") == "html" or (
+        request.headers.get("Accept") and "text/html" in request.headers.get("Accept", "") and "application/pdf" not in request.headers.get("Accept", "")
+    ):
+        html_markup = generate_course_certificate_html(
+            student=actor,
+            course=course,
+            completion_date=fmt_date,
+            cert_id=cert_code,
+        )
+        return Response(html_markup, mimetype="text/html", status=200)
+
+    pdf_bytes = generate_course_certificate_pdf(
+        student=actor,
+        course=course,
+        completion_date=fmt_date,
+        cert_id=cert_code,
+    )
+
+    clean_code = sanitize_filename(course.course_code or "PPTQ")
+    filename = f"Chung_chi_{clean_code}.pdf"
+    response = send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=filename,
+        conditional=False,
+    )
+    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
 
 
 @student_bp.route("/notifications", methods=["GET"])
@@ -956,7 +1019,7 @@ def save_student_attempt_answer(
         raw_lease_token=raw_token,
         session=db.session,
     )
-    return jsonify(result), 200
+    return jsonify({"success": True, "data": result, "error": None, **result}), 200
 
 
 @student_bp.route("/attempt/<attempt_id>/lease/renew", methods=["POST"])
@@ -980,7 +1043,7 @@ def renew_student_attempt_lease(attempt_id: str) -> tuple[Response, int] | Respo
         raw_lease_token=raw_token,
         session=db.session,
     )
-    return jsonify(result), 200
+    return jsonify({"success": True, "data": result, "error": None, **result}), 200
 
 
 @student_bp.route("/attempt/<attempt_id>/lease/takeover", methods=["POST"])
@@ -1022,7 +1085,7 @@ def record_student_attempt_focus_event(attempt_id: str) -> Any:
         session=db.session,
     )
     db.session.commit()
-    return jsonify(result), 200
+    return jsonify({"success": True, "data": result, "error": None, **result}), 200
 
 
 @student_bp.route("/attempt/<attempt_id>/submit", methods=["POST"])
@@ -1056,7 +1119,7 @@ def submit_student_attempt(attempt_id: str) -> Any:
     )
     session.pop(f"attempt_lease_{attempt_id}", None)
 
-    return jsonify(result), 200
+    return jsonify({"success": True, "data": result, "error": None, **result}), 200
 
 
 @student_bp.route("/my-learning", methods=["GET"])
@@ -1267,6 +1330,22 @@ def _get_student_attempt_result_data(actor: Any, attempt_id: str) -> dict[str, A
             )
             result_data["candidate_name"] = cand_name
             result_data["candidate_email"] = getattr(candidate, "email", "")
+
+        from pwd301.models.attempt_regrade import AssessmentAppeal
+        appeal_rec = (
+            db.session.query(AssessmentAppeal)
+            .filter(
+                (AssessmentAppeal.assessment_attempt_id == attempt.id)
+                | (AssessmentAppeal.public_id == getattr(attempt, "public_id", None))
+            )
+            .order_by(AssessmentAppeal.created_at.desc())
+            .first()
+        )
+        if appeal_rec:
+            result_data["appeal"] = appeal_rec.serialize()
+        else:
+            result_data["appeal"] = None
+
     result_data["is_released"] = result_data.get("score_status") == "RELEASED"
     return result_data
 
@@ -1781,102 +1860,9 @@ def student_course_detail(course_id: str) -> Any:
             }
         )
 
-    from pwd301.models.file_import import LessonResource
-
-    # Identify file assets attached to deleted/trashed lessons or deleted learning units
-    # that are not attached to any active lesson in the course
-    active_lesson_subq = (
-        db.session.query(Lesson.id)
-        .outerjoin(LearningUnit, Lesson.learning_unit_id == LearningUnit.id)
-        .filter(
-            Lesson.course_id == course.id,
-            Lesson.deleted_at.is_(None),
-            Lesson.status.notin_(["TRASH", "HISTORICAL"]),
-            sa.or_(
-                Lesson.learning_unit_id.is_(None),
-                LearningUnit.deleted_at.is_(None),
-            ),
-        )
-        .subquery()
-    )
-
-    trashed_lesson_subq = (
-        db.session.query(Lesson.id)
-        .outerjoin(LearningUnit, Lesson.learning_unit_id == LearningUnit.id)
-        .filter(
-            Lesson.course_id == course.id,
-            sa.or_(
-                Lesson.deleted_at.isnot(None),
-                Lesson.status.in_(["TRASH", "HISTORICAL"]),
-                sa.and_(
-                    Lesson.learning_unit_id.isnot(None),
-                    LearningUnit.deleted_at.isnot(None),
-                ),
-            ),
-        )
-        .subquery()
-    )
-
-    active_asset_ids = sa.select(LessonResource.file_asset_id).where(
-        LessonResource.lesson_id.in_(sa.select(active_lesson_subq.c.id))
-    )
-
-    orphaned_asset_subq = (
-        db.session.query(LessonResource.file_asset_id)
-        .filter(
-            LessonResource.lesson_id.in_(sa.select(trashed_lesson_subq.c.id)),
-            LessonResource.file_asset_id.notin_(active_asset_ids),
-        )
-        .subquery()
-    )
-
-    file_assets = (
-        db.session.query(FileAsset)
-        .filter(
-            FileAsset.course_id == course.id,
-            FileAsset.asset_type.notin_(["COURSE_IMAGE", "QUESTION_IMAGE", "IMPORT_SOURCE"]),
-            FileAsset.status == "ACTIVE",
-            FileAsset.deleted_at.is_(None),
-            FileAsset.id.notin_(sa.select(orphaned_asset_subq.c.file_asset_id)),
-        )
-        .all()
-    )
-    from pwd301.services.file_service import unapproved_course_asset_ids
-
-    hidden_assets = unapproved_course_asset_ids(course, db.session)
-    is_enrolled_actor = bool(
-        actor is not None
-        and (
-            actor.is_admin
-            or (actor.has_role("INSTRUCTOR") and course.owner_instructor_id == actor.id)
-            or (enrollment is not None and enrollment.status in ["ACTIVE", "COMPLETED"])
-        )
-    )
-    serialized_resources = []
-    if is_enrolled_actor:
-        for fa in file_assets:
-            if str(fa.public_id) in hidden_assets:
-                continue
-            if fa.virus_scan_status != "CLEAN":
-                continue
-            latest_rev = fa.revisions[-1] if fa.revisions else None
-            rev_name = latest_rev.original_filename if latest_rev else None
-            byte_sz = getattr(latest_rev, "size_bytes", None) if latest_rev else None
-            serialized_resources.append(
-                {
-                    "resource_id": str(fa.public_id),
-                    "asset_id": str(fa.public_id),
-                    "id": str(fa.public_id),
-                    "label": fa.display_name or rev_name or "Tài liệu môn học",
-                    "filename": rev_name or fa.display_name,
-                    "byte_size": byte_sz,
-                    "file_size": byte_sz,
-                    "file_size_formatted": "Tài liệu giáo trình",
-                    "download_url": (
-                        f"/student/courses/{course.public_id}/files/{fa.public_id}/download"
-                    ),
-                }
-            )
+    # Invariant: Course Document Tab only shows actual learning attachments attached to lessons.
+    # Root course general resources list is strictly empty to prevent leaking trailers or exported PDFs.
+    serialized_resources: list[dict[str, Any]] = []
 
     serialized_lessons = []
     for les in lessons:
@@ -2045,6 +2031,7 @@ def student_course_detail(course_id: str) -> Any:
                 "target_audience": course.target_audience,
                 "completion_requirements": cr_data,
                 "status": course.status,
+                "price": int(getattr(course, "price", 0) or 0),
                 "capacity": course.capacity,
                 "is_full": is_full,
                 "active_enrolled_count": active_count,
@@ -2641,7 +2628,7 @@ def get_student_attempt_grade_history_route(attempt_id: str) -> Any:
         attempt_id=attempt_id,
         session=db.session,
     )
-    return jsonify(result), 200
+    return jsonify({"success": True, "data": result, "error": None, **result}), 200
 
 
 @student_bp.route("/become-instructor/cancel", methods=["POST"])
@@ -2836,3 +2823,11 @@ def _serve_lesson_hls(course_id, lesson_id, asset_id, kind, segment_name=None):
     response.headers["Cache-Control"] = "private, no-store"
     response.headers["X-Content-Type-Options"] = "nosniff"
     return response
+
+
+@student_bp.route("/courses/<course_id>/trailer/stream", methods=["GET"])
+def student_course_trailer_stream(course_id: str) -> Response:
+    """Public streaming endpoint for course intro trailer video."""
+    from pwd301.blueprints.api_courses.routes import get_course_trailer_stream_api
+    return get_course_trailer_stream_api(course_id)
+

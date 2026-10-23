@@ -93,6 +93,14 @@ def admin_user(app: Flask, setup_roles: dict[str, Role]) -> User:
     return assign_role_to_user(u.id, "ADMIN")
 
 
+@pytest.fixture(autouse=True)
+def _enable_assessment_authoring(app: Flask):
+    """Enable direct assessment authoring & live publishing in regrade unit tests."""
+    db.session.info["course_workflow_applying"] = True
+    yield
+    db.session.info.pop("course_workflow_applying", None)
+
+
 @pytest.fixture
 def instructor_user(app: Flask, setup_roles: dict[str, Role]) -> User:
     """Create instructor user."""

@@ -247,7 +247,7 @@ test('student resources accordion groups files by chapter and lesson, hides empt
 
   await sandbox.window.StudentView.renderCourseConsole(container, 'ops401', 'les-1-1');
 
-  assert.equal(container.innerHTML.includes('Tài liệu (5)'), true, 'Badge in container must reflect 5 valid study files (excluding cover)');
+  assert.equal(container.innerHTML.includes('Tài liệu (4)'), true, 'Badge in container must reflect 4 valid study files (strictly attached to lessons)');
 
   // 2. Check Resources panel content
   const resPanel = elements.get('sidebar-panel-resources');
@@ -265,8 +265,8 @@ test('student resources accordion groups files by chapter and lesson, hides empt
   assert.equal(panelHtml.includes('Bài 3: Bài học lý thuyết thuần'), false, 'Lesson without files must be hidden');
 
   // Must include General Course Resources section
-  assert.equal(panelHtml.includes('Tài liệu chung khóa học'), true, 'General course resources section must appear');
-  assert.equal(panelHtml.includes('OPS401_De_Cuong_Tong_Quat.pdf'), true, 'Syllabus must appear under general course resources');
+  assert.equal(panelHtml.includes('Tài liệu chung khóa học'), false, 'General course resources section must be purged');
+  assert.equal(panelHtml.includes('OPS401_De_Cuong_Tong_Quat.pdf'), false, 'Unattached course-level files must not appear in study resources');
 
   // Must NOT include cover image
   assert.equal(panelHtml.includes('ops401_cover.png'), false, 'ops401_cover.png must never appear in study resources');
@@ -280,7 +280,6 @@ test('student resources accordion groups files by chapter and lesson, hides empt
   // 3. Test accordion toggle without page navigation
   assert.equal(typeof sandbox.window._ciscoToggleResMod, 'function', '_ciscoToggleResMod must be defined');
   assert.equal(typeof sandbox.window._ciscoToggleResLesson, 'function', '_ciscoToggleResLesson must be defined');
-  assert.equal(typeof sandbox.window._ciscoToggleResGeneral, 'function', '_ciscoToggleResGeneral must be defined');
 
   // Toggle unit-1
   sandbox.window._ciscoToggleResMod('unit-1');

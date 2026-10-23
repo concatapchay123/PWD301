@@ -209,11 +209,8 @@ class InstructorView {
       ? currentUnits
       : (course.learning_units || course.units || []);
 
-    // 1. General course resources (if any)
-    const generalCourseResources = (course.resources || []).filter(r => !r.is_deleted && !r.deleted_at && r.status !== 'TRASH');
-
-    // 2. Units with lessons and documents
-    let totalDocsCount = generalCourseResources.length;
+    // Units with lessons and documents
+    let totalDocsCount = 0;
     const unitsWithDocs = [];
     const visibleUnits = units.filter(u => !u.pending_delete && !u.is_staged_delete && u.status !== 'TRASH');
 
@@ -313,39 +310,6 @@ class InstructorView {
               </p>
             </div>
           ` : `
-            ${generalCourseResources.length > 0 ? `
-              <div class="rounded-xl border border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/30 dark:bg-indigo-950/20 p-3 space-y-2">
-                <div class="flex items-center justify-between gap-2">
-                  <div class="flex items-center gap-1.5 min-w-0">
-                    <span class="material-symbols-outlined text-[17px] text-indigo-600 dark:text-indigo-400">school</span>
-                    <span class="text-xs font-bold text-indigo-900 dark:text-indigo-200 truncate">Tài liệu chung khóa học</span>
-                  </div>
-                  <span class="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300">
-                    ${generalCourseResources.length} tệp
-                  </span>
-                </div>
-                <div class="space-y-1.5 pt-1">
-                  ${generalCourseResources.map(f => {
-                    const fname = f.filename || f.title || 'Tài liệu';
-                    const fSize = f.file_size_bytes ? formatBytes(f.file_size_bytes) : '';
-                    const downloadUrl = f.file_url || (f.asset_id ? `/api/files/${f.asset_id}/download` : '#');
-                    const badge = getFileIconBadge(fname);
-                    return `
-                      <div class="p-2 rounded-lg bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-between gap-2 text-xs">
-                        <div class="flex items-center gap-2 min-w-0">
-                          <span class="px-1.5 py-0.5 rounded font-mono font-bold text-[9px] ${badge.colorClass}">${badge.ext}</span>
-                          <span class="font-medium text-[#222120] dark:text-[#EDEDEB] truncate" title="${UI.escapeHtml(fname)}">${UI.escapeHtml(fname)}</span>
-                          ${fSize ? `<span class="text-[10px] text-[#8F8E8A] font-mono">(${fSize})</span>` : ''}
-                        </div>
-                        <a href="${downloadUrl}" target="_blank" class="p-1 rounded text-primary hover:bg-primary/10 transition-colors" title="Tải về">
-                          <span class="material-symbols-outlined text-[15px]">download</span>
-                        </a>
-                      </div>
-                    `;
-                  }).join('')}
-                </div>
-              </div>
-            ` : ''}
 
             ${unitsWithDocs.map(unit => `
               <div class="rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#18181b] overflow-hidden shadow-2xs">
@@ -1691,9 +1655,7 @@ class InstructorView {
       const visibleUnits = currentUnits.filter(unit => !unit.pending_delete && !unit.is_staged_delete);
       let totalDocsCount = 0;
 
-      // 1. General course resources (if any)
-      const generalCourseResources = (course.resources || []).filter(r => !r.is_deleted && !r.deleted_at && r.status !== 'TRASH');
-      totalDocsCount += generalCourseResources.length;
+
 
       // 2. Units with lessons and documents
       const unitsWithDocs = [];
@@ -1769,42 +1731,7 @@ class InstructorView {
 
       let html = '';
 
-      if (generalCourseResources.length > 0) {
-        html += `
-          <div class="rounded-xl border border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/30 dark:bg-indigo-950/20 p-3 space-y-2">
-            <div class="flex items-center justify-between gap-2">
-              <div class="flex items-center gap-1.5 min-w-0">
-                <span class="material-symbols-outlined text-[17px] text-indigo-600 dark:text-indigo-400">school</span>
-                <span class="text-xs font-bold text-indigo-900 dark:text-indigo-200 truncate">Tài liệu chung khóa học</span>
-              </div>
-              <span class="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300">
-                ${generalCourseResources.length} tệp
-              </span>
-            </div>
-            <div class="space-y-1.5 pt-1">
-              ${generalCourseResources.map(f => {
-                const fname = f.filename || f.title || 'Tài liệu';
-                const fSize = f.file_size_bytes ? `${Math.round(f.file_size_bytes / 1024)} KB` : '';
-                const downloadUrl = f.file_url || (f.asset_id ? `/api/files/${f.asset_id}/download` : '#');
-                const badge = getFileIconBadge(fname);
-                return `
-                  <div class="p-2 rounded-lg bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-between gap-2 text-xs">
-                    <div class="flex items-center gap-2 min-w-0">
-                      <span class="px-1.5 py-0.5 rounded font-mono font-bold text-[9px] ${badge.colorClass}">${badge.ext}</span>
-                      <span class="font-medium text-[#222120] dark:text-[#EDEDEB] truncate" title="${UI.escapeHtml(fname)}">${UI.escapeHtml(fname)}</span>
-                      ${fSize ? `<span class="text-[10px] text-[#8F8E8A] font-mono">(${fSize})</span>` : ''}
-                    </div>
-                    <a href="${downloadUrl}" target="_blank" class="p-1 rounded text-primary hover:bg-primary/10 transition-colors" title="Tải về">
-                      <span class="material-symbols-outlined text-[15px]">download</span>
-                    </a>
-                  </div>
-                `;
-              }).join('')}
-            </div>
-          </div>
-        `;
-      }
-
+      
       unitsWithDocs.forEach(unit => {
         html += `
           <div class="rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#18181b] overflow-hidden shadow-2xs">

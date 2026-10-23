@@ -405,25 +405,64 @@ class AdminView {
   static async renderGovernance(container, activeTab = 'users', subQueue = null) {
     const adminSubRole = window.app?.currentUser?.admin_sub_role || 'ADMIN_PRIMARY';
     const isPrimary = adminSubRole === 'ADMIN_PRIMARY' || Boolean(window.app?.currentUser?.is_primary_admin);
-    const showQueueSummary = isPrimary || adminSubRole === 'ADMIN_COURSE_REVIEW' || adminSubRole === 'ADMIN_INSTRUCTOR_REVIEW';
-    const isInstructorQueue = !isPrimary && adminSubRole === 'ADMIN_INSTRUCTOR_REVIEW';
-    const isHomeTab = (!activeTab || activeTab === 'users');
+
+    const getHeaderConfig = (tab) => {
+      const configs = {
+        users: {
+          icon: 'manage_accounts',
+          actor: 'Quản trị người dùng & Phân quyền',
+          title: 'Người dùng & Phân quyền',
+          desc: 'Quản lý danh sách tài khoản, vai trò thành viên, phân quyền quản trị viên và trạng thái hoạt động trên toàn hệ thống.'
+        },
+        courses: {
+          icon: 'fact_check',
+          actor: 'Thẩm định & Phê duyệt đào tạo',
+          title: 'Duyệt khóa học & Đề cương',
+          desc: 'Thẩm định cấu trúc khóa học mới, đề cương chi tiết, bài học và các yêu cầu chỉnh sửa theo chuẩn đầu ra ABET.'
+        },
+        applications: {
+          icon: 'badge',
+          actor: 'Thẩm định giảng viên',
+          title: 'Duyệt hồ sơ giảng viên',
+          desc: 'Xét duyệt các đơn ứng tuyển trở thành Giảng viên, xác minh lý lịch chuyên môn, bằng cấp và hồ sơ năng lực.'
+        },
+        reassign: {
+          icon: 'swap_horiz',
+          actor: 'Điều phối & Phân công đào tạo',
+          title: 'Phân công giảng dạy',
+          desc: 'Điều phối chuyển giao quyền quản lý khóa học giữa các giảng viên và xử lý các khóa học chưa có người phụ trách.'
+        },
+        security: {
+          icon: 'policy',
+          actor: 'Bảo mật & Giám sát hệ thống',
+          title: 'Bảo mật & Nhật ký kiểm toán',
+          desc: 'Theo dõi nhật ký kiểm toán (Audit Log), lịch sử thao tác quản trị, sự kiện bảo mật và toàn vẹn dữ liệu.'
+        }
+      };
+      const key = (tab === 'review' ? 'courses' : (tab === 'instructors' ? 'applications' : tab)) || 'users';
+      return configs[key] || configs.users;
+    };
+
+    const initialHeader = getHeaderConfig(activeTab);
 
     container.innerHTML = `
-        <div class="p-6 space-y-6 max-w-[1800px] mx-auto animate-fade-in" id="admin-governance-root">
+      <div class="p-6 space-y-6 max-w-[1800px] mx-auto animate-fade-in" id="admin-governance-root">
         
         <!-- Header & Context Banner -->
         <section class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
           <div class="space-y-1.5">
             <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary font-caption text-xs font-semibold">
               <span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
-              <span id="admin-governance-actor-label">Quản trị hệ thống</span>
+              <span id="admin-governance-actor-label" class="inline-flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[16px]">${initialHeader.icon}</span>
+                <span>${initialHeader.actor}</span>
+              </span>
             </div>
-            <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-              Quản lý hệ thống
+            <h1 id="admin-governance-title" class="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2.5">
+              <span>${initialHeader.title}</span>
             </h1>
-            <p class="text-xs sm:text-sm text-slate-500 max-w-3xl">
-              Quản lý người dùng, khóa học, giảng viên và hoạt động của hệ thống.
+            <p id="admin-governance-desc" class="text-xs sm:text-sm text-slate-500 max-w-3xl">
+              ${initialHeader.desc}
             </p>
           </div>
           <div class="flex flex-wrap items-center gap-3 shrink-0">
@@ -443,125 +482,46 @@ class AdminView {
           </div>
         </section>
 
-        <!-- Approval & Governance Action Hub (Only shown on Admin Home Tab) -->
-        <section id="admin-approval-hub" class="${(isHomeTab && showQueueSummary) ? '' : 'hidden'} bg-gradient-to-br from-amber-500/5 via-primary/5 to-slate-50/50 dark:from-amber-950/20 dark:via-primary-950/10 dark:to-slate-900/50 rounded-2xl p-6 border border-amber-200/80 dark:border-amber-900/40 shadow-sm space-y-5">
-          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div class="space-y-1">
-              <div class="flex items-center gap-2">
-                <span id="hub-status-pill" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60">
-                  <span id="hub-pulse-dot" class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-                  <span id="kpi-courses-badge">Đang kiểm tra hàng đợi...</span>
-                </span>
-                <span class="text-xs text-slate-400 font-medium">Quy chuẩn ABET CAC</span>
-              </div>
-              <h2 class="text-xl font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
-                <span class="material-symbols-outlined text-amber-600 text-[26px]">fact_check</span>
-                <span>${isInstructorQueue ? 'Hồ sơ Giảng viên Chờ Xét duyệt' : 'Nhiệm vụ Phê duyệt & Thẩm định Cần Xử lý'}</span>
-              </h2>
-              <p class="text-xs text-slate-500 dark:text-slate-400 max-w-2xl">
-                ${isInstructorQueue ? 'Danh sách hồ sơ giảng viên ứng tuyển cần kiểm tra bằng cấp, CV và hồ sơ học thuật.' : 'Tổng hợp toàn bộ khóa học mới, bản sửa đổi đề cương và hồ sơ giảng viên đang chờ bạn thẩm định và ra quyết định.'}
-              </p>
-            </div>
-            <div class="flex items-center gap-4 bg-white dark:bg-slate-900 px-5 py-3 rounded-2xl border border-amber-200/90 dark:border-amber-900/60 shadow-xs shrink-0">
-              <div class="text-right">
-                <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tổng việc cần duyệt</div>
-                <div class="text-xs font-semibold text-amber-700 dark:text-amber-400" id="kpi-courses-subtext">Hàng đợi xét duyệt</div>
-              </div>
-              <div class="text-3xl sm:text-4xl font-black text-amber-600 dark:text-amber-400 font-mono tracking-tight" id="kpi-courses-pending">--</div>
-            </div>
-          </div>
-
-          <!-- 3 Quick Action Cards -->
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="approval-hub-cards">
-            <!-- Card 1: Khóa học mới -->
-            <div class="${isInstructorQueue ? 'hidden' : ''} cursor-pointer group bg-white dark:bg-slate-900 hover:bg-amber-50/30 dark:hover:bg-slate-800/60 rounded-xl p-4 border border-slate-200 dark:border-slate-800 hover:border-amber-400 dark:hover:border-amber-500 transition-all shadow-xs flex flex-col justify-between" onclick="window.location.hash = '#/admin/governance?tab=courses&queue=courses'">
-              <div class="space-y-2">
-                <div class="flex items-center justify-between">
-                  <span class="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-sm">
-                    <span class="material-symbols-outlined text-[18px]">menu_book</span>
-                  </span>
-                  <span class="px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300" id="hub-courses-count">--</span>
-                </div>
-                <div>
-                  <h3 class="text-sm font-bold text-slate-800 dark:text-slate-100 group-hover:text-blue-600 transition-colors">Khóa học mới chờ duyệt</h3>
-                  <p class="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 mt-0.5">Khóa học mới gửi đề cương, thẩm định cấu trúc chương mục và chuẩn đầu ra.</p>
-                </div>
-              </div>
-              <div class="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] font-bold text-blue-600 dark:text-blue-400">
-                <span>Vào duyệt khóa học</span>
-                <span class="material-symbols-outlined text-[15px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
-              </div>
-            </div>
-
-            <!-- Card 2: Bản sửa đổi -->
-            <div class="${isInstructorQueue ? 'hidden' : ''} cursor-pointer group bg-white dark:bg-slate-900 hover:bg-amber-50/30 dark:hover:bg-slate-800/60 rounded-xl p-4 border border-slate-200 dark:border-slate-800 hover:border-amber-400 dark:hover:border-amber-500 transition-all shadow-xs flex flex-col justify-between" onclick="window.location.hash = '#/admin/governance?tab=courses&queue=changes'">
-              <div class="space-y-2">
-                <div class="flex items-center justify-between">
-                  <span class="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold text-sm">
-                    <span class="material-symbols-outlined text-[18px]">rule</span>
-                  </span>
-                  <span class="px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" id="hub-changes-count">--</span>
-                </div>
-                <div>
-                  <h3 class="text-sm font-bold text-slate-800 dark:text-slate-100 group-hover:text-amber-600 transition-colors">Bản sửa đổi & Đề xuất</h3>
-                  <p class="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 mt-0.5">Yêu cầu chỉnh sửa đề cương, thêm bớt bài học trên các khóa học đã xuất bản.</p>
-                </div>
-              </div>
-              <div class="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] font-bold text-amber-600 dark:text-amber-400">
-                <span>Xem bản sửa đổi</span>
-                <span class="material-symbols-outlined text-[15px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
-              </div>
-            </div>
-
-            <!-- Card 3: Hồ sơ giảng viên -->
-            <div class="${adminSubRole === 'ADMIN_COURSE_REVIEW' ? 'hidden' : ''} cursor-pointer group bg-white dark:bg-slate-900 hover:bg-amber-50/30 dark:hover:bg-slate-800/60 rounded-xl p-4 border border-slate-200 dark:border-slate-800 hover:border-amber-400 dark:hover:border-amber-500 transition-all shadow-xs flex flex-col justify-between" onclick="window.location.hash = '#/admin/governance?tab=applications'">
-              <div class="space-y-2">
-                <div class="flex items-center justify-between">
-                  <span class="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold text-sm">
-                    <span class="material-symbols-outlined text-[18px]">badge</span>
-                  </span>
-                  <span class="px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300" id="hub-apps-count">--</span>
-                </div>
-                <div>
-                  <h3 class="text-sm font-bold text-slate-800 dark:text-slate-100 group-hover:text-emerald-600 transition-colors">Hồ sơ giảng viên ứng tuyển</h3>
-                  <p class="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 mt-0.5">Đơn ứng tuyển nâng cấp quyền Giảng viên mới nộp lên hệ thống.</p>
-                </div>
-              </div>
-              <div class="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                <span>Duyệt hồ sơ giảng viên</span>
-                <span class="material-symbols-outlined text-[15px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
-              </div>
-            </div>
-          </div>
-        </section>
-
         <!-- Tab Content Box -->
         <div id="admin-tab-content-box" class="min-h-[400px]"></div>
 
       </div>
     `;
 
-    // Load initial KPIs
+    // Synchronize Real-time Superscript Exponent Badges to Topbar
     try {
       const isCourseReviewer = isPrimary || adminSubRole === 'ADMIN_COURSE_REVIEW';
       const isInstructorReviewer = isPrimary || adminSubRole === 'ADMIN_INSTRUCTOR_REVIEW';
-      const [coursesRes, appsRes, crRes] = await Promise.allSettled([
-        isCourseReviewer ? ApiClient.getPendingCourses() : Promise.resolve(null),
-        isInstructorReviewer ? ApiClient.getAdminInstructorApplications('PENDING') : Promise.resolve(null),
-        isCourseReviewer ? ApiClient.getAdminChangeRequests('PENDING') : Promise.resolve(null)
-      ]);
 
       let pendingCoursesCount = 0;
-      if (coursesRes.status === 'fulfilled' && coursesRes.value) {
-        pendingCoursesCount = coursesRes.value.pending_count || (coursesRes.value.courses ? coursesRes.value.courses.length : 0);
-      }
       let pendingCrCount = 0;
-      if (crRes.status === 'fulfilled' && crRes.value) {
-        pendingCrCount = crRes.value.pending_count || (crRes.value.change_requests ? crRes.value.change_requests.length : 0);
-      }
       let pendingAppsCount = 0;
-      if (appsRes.status === 'fulfilled' && appsRes.value) {
-        pendingAppsCount = appsRes.value.pending_count || (appsRes.value.applications ? appsRes.value.applications.length : 0);
+
+      let summaryData = null;
+      try {
+        const sumRes = await ApiClient.getAdminGovernanceSummary();
+        summaryData = (sumRes && sumRes.data) ? sumRes.data : sumRes;
+      } catch (_) {}
+
+      if (summaryData) {
+        pendingCoursesCount = summaryData.pending_courses_count || 0;
+        pendingCrCount = summaryData.pending_change_requests_count || 0;
+        pendingAppsCount = summaryData.pending_instructor_applications_count || 0;
+      } else {
+        const [coursesRes, appsRes, crRes] = await Promise.allSettled([
+          isCourseReviewer ? ApiClient.getPendingCourses() : Promise.resolve(null),
+          isInstructorReviewer ? ApiClient.getAdminInstructorApplications('PENDING') : Promise.resolve(null),
+          isCourseReviewer ? ApiClient.getAdminChangeRequests('PENDING') : Promise.resolve(null)
+        ]);
+        if (coursesRes.status === 'fulfilled' && coursesRes.value) {
+          pendingCoursesCount = coursesRes.value.pending_count || (coursesRes.value.courses ? coursesRes.value.courses.length : 0);
+        }
+        if (crRes.status === 'fulfilled' && crRes.value) {
+          pendingCrCount = crRes.value.pending_count || (crRes.value.change_requests ? crRes.value.change_requests.length : 0);
+        }
+        if (appsRes.status === 'fulfilled' && appsRes.value) {
+          pendingAppsCount = appsRes.value.pending_count || (appsRes.value.applications ? appsRes.value.applications.length : 0);
+        }
       }
 
       const queueSummary = AdminView.getQueueSummary(adminSubRole, {
@@ -569,57 +529,31 @@ class AdminView {
         changes: pendingCrCount,
         applications: pendingAppsCount,
       });
-      const totalCourseWork = queueSummary.courses + queueSummary.changes + queueSummary.applications;
-      const el = document.getElementById('kpi-courses-pending');
-      const badge = document.getElementById('kpi-courses-badge');
-      const subtext = document.getElementById('kpi-courses-subtext');
-      const hubCoursesEl = document.getElementById('hub-courses-count');
-      const hubChangesEl = document.getElementById('hub-changes-count');
-      const hubAppsEl = document.getElementById('hub-apps-count');
-      const hubStatusPill = document.getElementById('hub-status-pill');
-      const hubPulseDot = document.getElementById('hub-pulse-dot');
 
-      if (hubCoursesEl) hubCoursesEl.textContent = `${pendingCoursesCount} khóa`;
-      if (hubChangesEl) hubChangesEl.textContent = `${pendingCrCount} bản sửa`;
-      if (hubAppsEl) hubAppsEl.textContent = `${pendingAppsCount} hồ sơ`;
-
-      if (el) el.textContent = String(totalCourseWork).padStart(2, '0');
-      if (badge) {
-        if (totalCourseWork > 0) {
-          badge.textContent = `${totalCourseWork} việc cần xử lý ngay`;
-          if (subtext) subtext.textContent = 'Cần hành động ngay';
-          if (hubStatusPill) {
-            hubStatusPill.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60';
-          }
-          if (hubPulseDot) hubPulseDot.className = 'w-2 h-2 rounded-full bg-amber-500 animate-pulse';
-        } else {
-          badge.textContent = `Tất cả đã hoàn tất (0 việc)`;
-          if (subtext) subtext.textContent = 'Không có việc tồn đọng';
-          if (hubStatusPill) {
-            hubStatusPill.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60';
-          }
-          if (hubPulseDot) hubPulseDot.className = 'w-2 h-2 rounded-full bg-emerald-500';
-        }
-      }
-
-      // Synchronize Real-time Superscript Exponent Badges to Topbar
       if (window.app && typeof window.app.updateAdminNavBadges === 'function') {
         window.app.updateAdminNavBadges({
           courses: queueSummary.courses + queueSummary.changes,
           applications: queueSummary.applications
         });
       }
-
     } catch (err) {
       console.warn('Initial admin KPI load warning:', err);
     }
 
-    // Tab Switching Logic (URL Hash & Topbar Synchronized)
-    const contentBox = document.getElementById('admin-tab-content-box');
+    // Ensure contentBox is located within container or created cleanly
+    let contentBox = container.querySelector('#admin-tab-content-box') || document.getElementById('admin-tab-content-box');
+    if (!contentBox) {
+      contentBox = document.createElement('div');
+      contentBox.id = 'admin-tab-content-box';
+      contentBox.className = 'min-h-[400px]';
+      const root = container.querySelector('#admin-governance-root') || container;
+      root.appendChild(contentBox);
+    }
 
+    // Tab Switching Logic (URL State & Topbar Synchronized without Hash Loop)
     AdminView.switchTab = async (tabKey, subQueue = null, syncHash = true) => {
       const tabToQuery = {
-        'tab-users': '',
+        'tab-users': 'users',
         'tab-courses-review': 'courses',
         'tab-review': 'courses',
         'tab-instructor-apps': 'applications',
@@ -627,23 +561,41 @@ class AdminView {
         'tab-security': 'security'
       };
 
+      const queryTab = tabToQuery[tabKey] || 'users';
+
       if (syncHash) {
-        const q = tabToQuery[tabKey];
-        const newHash = q ? `#/admin/governance?tab=${q}` : '#/admin/governance';
+        const queueParam = (queryTab === 'courses' && subQueue) ? `&queue=${subQueue}` : '';
+        const newHash = `#/admin/governance?tab=${queryTab}${queueParam}`;
         if (window.location.hash !== newHash) {
-          window.location.hash = newHash;
-          return;
+          window.history.replaceState(null, '', newHash);
+          if (window.app && typeof window.app.renderDynamicSidebar === 'function') {
+            window.app.renderDynamicSidebar();
+          }
         }
       }
 
-      // Toggle Approval Hub: only show on Home Tab (tab-users)
-      const hub = document.getElementById('admin-approval-hub');
-      if (hub) {
-        if (tabKey === 'tab-users' && showQueueSummary) {
-          hub.classList.remove('hidden');
-        } else {
-          hub.classList.add('hidden');
-        }
+      // Update Header according to active tab
+      const headerInfo = getHeaderConfig(queryTab);
+      const actorEl = container.querySelector('#admin-governance-actor-label');
+      const titleEl = container.querySelector('#admin-governance-title');
+      const descEl = container.querySelector('#admin-governance-desc');
+      if (actorEl) {
+        actorEl.innerHTML = `
+          <span class="material-symbols-outlined text-[16px]">${headerInfo.icon}</span>
+          <span>${headerInfo.actor}</span>
+        `;
+      }
+      if (titleEl) {
+        titleEl.textContent = headerInfo.title;
+      }
+      if (descEl) {
+        descEl.textContent = headerInfo.desc;
+      }
+
+      // Ensure contentBox is in the DOM
+      if (!contentBox.parentElement) {
+        const root = container.querySelector('#admin-governance-root') || container;
+        root.appendChild(contentBox);
       }
 
       if (tabKey === 'tab-users') {
@@ -673,13 +625,24 @@ class AdminView {
 
   static renderUserAvatar(u) {
     const initials = (u.display_name || u.email || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-    const avatarBg = u.roles && u.roles.includes('ADMIN') ? 'bg-primary text-white' : u.roles && u.roles.includes('INSTRUCTOR') ? 'bg-indigo-600 text-white' : 'bg-slate-500 text-white';
+    const uRoles = Array.isArray(u.roles) ? u.roles : (u.role_codes || [u.role || u.primary_role || 'STUDENT']);
+    const avatarBg = uRoles.includes('ADMIN')
+      ? 'bg-primary text-white'
+      : (uRoles.includes('INSTRUCTOR') ? 'bg-indigo-600 text-white' : 'bg-slate-500 text-white');
+
     let avatarUrl = u.avatar_url;
-    if (!avatarUrl && typeof StudentView !== 'undefined' && typeof StudentView.getStoredRandomAvatarUrl === 'function') {
-      avatarUrl = StudentView.getStoredRandomAvatarUrl(u.user_id || u.id);
+    const uId = u.user_id || u.id || u.public_id;
+    if (!avatarUrl && uId && typeof StudentView !== 'undefined' && typeof StudentView.getStoredRandomAvatarUrl === 'function') {
+      avatarUrl = StudentView.getStoredRandomAvatarUrl(uId);
     }
-    if (!avatarUrl && window.app?.currentUser && (window.app.currentUser.public_id === u.user_id || window.app.currentUser.id === u.user_id || window.app.currentUser.email === u.email)) {
-      avatarUrl = window.app.currentUser.avatar_url;
+
+    const cur = window.app?.currentUser;
+    const isCurrent = cur && (
+      (cur.id && (String(cur.id) === String(u.id) || String(cur.id) === String(u.user_id))) ||
+      (cur.public_id && (String(cur.public_id) === String(u.id) || String(cur.public_id) === String(u.user_id) || String(cur.public_id) === String(u.public_id)))
+    );
+    if (!avatarUrl && isCurrent && cur.avatar_url) {
+      avatarUrl = cur.avatar_url;
     }
 
     const escape = typeof UI !== 'undefined' && typeof UI.escapeHtml === 'function'
@@ -711,9 +674,14 @@ class AdminView {
   static async renderTabUsers(container) {
     container.innerHTML = `
       <div class="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5" id="users-box">
-        <div class="p-12 text-center text-slate-400">
-          <span class="inline-block animate-spin text-2xl mb-2">⏳</span>
-          <p class="text-sm">Đang tải ma trận người dùng & kiểm soát phiên từ MS SQL Server...</p>
+        <div class="animate-pulse space-y-4">
+          <div class="h-8 bg-slate-200 dark:bg-slate-800 rounded-xl w-1/3"></div>
+          <div class="space-y-2">
+            <div class="h-10 bg-slate-100 dark:bg-slate-800 rounded-xl"></div>
+            <div class="h-10 bg-slate-100 dark:bg-slate-800 rounded-xl"></div>
+            <div class="h-10 bg-slate-100 dark:bg-slate-800 rounded-xl"></div>
+            <div class="h-10 bg-slate-100 dark:bg-slate-800 rounded-xl"></div>
+          </div>
         </div>
       </div>
     `;
@@ -1547,10 +1515,6 @@ class AdminView {
       if (window.app && typeof window.app.updateAdminNavBadges === 'function') {
         window.app.updateAdminNavBadges({ courses: totalPending });
       }
-      const elPending = document.getElementById('kpi-courses-pending');
-      const badgePending = document.getElementById('kpi-courses-badge');
-      if (elPending) elPending.textContent = String(totalPending).padStart(2, '0');
-      if (badgePending) badgePending.textContent = `${totalPending} chờ duyệt`;
 
       const box = container.querySelector('#courses-review-box');
       if (!box) return;
@@ -1581,13 +1545,23 @@ class AdminView {
             <div class="space-y-4">
               ${pendingCourses.map(c => `
                 <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
-                      <div class="font-bold text-sm text-slate-800 dark:text-slate-100">${UI.escapeHtml(c.title)}</div>
-                      <div class="text-xs text-slate-600 dark:text-slate-300 mt-1">${UI.escapeHtml(c.course_code)} · Gửi duyệt ${UI.formatDateTime(c.updated_at)}</div>
+                    <div class="space-y-1">
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <span class="font-bold text-sm text-slate-800 dark:text-slate-100">${UI.escapeHtml(c.title)}</span>
+                        <span class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300">
+                          ${c.price_formatted || (c.price ? UI.formatCurrency(c.price) : 'Miễn phí')}
+                        </span>
+                      </div>
+                      <div class="text-xs text-slate-600 dark:text-slate-300">${UI.escapeHtml(c.course_code)} · Gửi duyệt ${UI.formatDateTime(c.updated_at)}</div>
                     </div>
-                    <button type="button" class="px-4 py-2 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-slate-50 text-xs font-bold transition-colors flex items-center gap-1 inspect-course-btn" data-course-id="${c.course_id}">
-                      <span class="material-symbols-outlined text-[16px]">menu_book</span> Xem Khóa Học
-                    </button>
+                    <div class="flex items-center gap-2">
+                      <button type="button" class="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-bold transition-colors flex items-center gap-1 edit-admin-course-price-btn" data-course-id="${c.course_id}" data-current-price="${c.price || 0}">
+                        <span class="material-symbols-outlined text-[16px]">payments</span> Sửa Giá
+                      </button>
+                      <button type="button" class="px-4 py-2 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-slate-50 text-xs font-bold transition-colors flex items-center gap-1 inspect-course-btn" data-course-id="${c.course_id}">
+                        <span class="material-symbols-outlined text-[16px]">menu_book</span> Xem Khóa Học
+                      </button>
+                    </div>
                 </div>
               `).join('')}
             </div>
@@ -1655,20 +1629,21 @@ class AdminView {
           <div class="overflow-x-auto">
             <table class="w-full text-left text-xs sm:text-sm min-w-[900px] table-fixed">
               <colgroup>
-                <col style="width:140px"><col style="width:300px"><col style="width:180px">
-                <col style="width:140px"><col style="width:140px">
+                <col style="width:110px"><col style="width:250px"><col style="width:160px">
+                <col style="width:140px"><col style="width:110px"><col style="width:180px">
               </colgroup>
               <thead class="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 uppercase tracking-wider text-[11px] font-bold">
                 <tr>
                   <th class="px-3.5 py-3">Mã môn</th>
                   <th class="px-3.5 py-3">Tên khóa học</th>
                   <th class="px-3.5 py-3">Giảng viên</th>
+                  <th class="px-3.5 py-3">Học phí</th>
                   <th class="px-3.5 py-3">Trạng thái</th>
                   <th class="px-3.5 py-3 text-right">Thao tác</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300 font-medium" id="admin-active-courses-tbody">
-                <tr><td colspan="5" class="py-8 text-center text-slate-400 text-xs">Đang tải danh sách khóa học hiện hành...</td></tr>
+                <tr><td colspan="6" class="py-8 text-center text-slate-400 text-xs">Đang tải danh sách khóa học hiện hành...</td></tr>
               </tbody>
             </table>
           </div>
@@ -1688,7 +1663,7 @@ class AdminView {
           if (countBadge) countBadge.textContent = `${courses.length} khóa học`;
 
           if (courses.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-slate-400 text-xs">Chưa có khóa học nào đã xuất bản.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-slate-400 text-xs">Chưa có khóa học nào đã xuất bản.</td></tr>`;
             return;
           }
 
@@ -1697,11 +1672,28 @@ class AdminView {
               <td class="px-3.5 py-3 font-mono font-bold text-primary">${UI.escapeHtml(c.course_code)}</td>
               <td class="px-3.5 py-3 font-bold text-slate-900 dark:text-slate-100">${UI.escapeHtml(c.title)}</td>
               <td class="px-3.5 py-3 text-slate-600 dark:text-slate-400">${UI.escapeHtml(c.owner_instructor_name || c.instructor_name || c.instructor?.display_name || c.owner_instructor?.full_name || 'Chưa phân công')}</td>
+              <td class="px-3.5 py-3">
+                <span class="inline-flex items-center gap-1 font-mono font-bold text-xs ${c.price > 0 ? 'text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-md border border-emerald-200/60 dark:border-emerald-800/60' : 'text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md'}">
+                  ${UI.escapeHtml(c.price_formatted || (c.price > 0 ? UI.formatMoney(c.price) : 'Miễn phí'))}
+                </span>
+              </td>
               <td class="px-3.5 py-3">${UI.statusBadge(c.status)}</td>
-              <td class="px-3.5 py-3 text-right">
+              <td class="px-3.5 py-3 text-right space-x-1.5">
                 <button
                   type="button"
-                  class="btn-admin-delete-course px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60 text-xs font-bold inline-flex items-center gap-1 cursor-pointer transition-colors"
+                  class="btn-admin-edit-course-price px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-900/60 text-xs font-bold inline-flex items-center gap-1 cursor-pointer transition-colors"
+                  data-course-id="${c.course_id || c.id}"
+                  data-course-title="${UI.escapeHtml(c.title)}"
+                  data-course-code="${UI.escapeHtml(c.course_code)}"
+                  data-course-price="${c.price || 0}"
+                  data-course-price-fmt="${UI.escapeHtml(c.price_formatted || (c.price > 0 ? UI.formatMoney(c.price) : 'Miễn phí'))}"
+                >
+                  <span class="material-symbols-outlined text-[15px]">payments</span>
+                  <span>Sửa giá</span>
+                </button>
+                <button
+                  type="button"
+                  class="btn-admin-delete-course px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60 text-xs font-bold inline-flex items-center gap-1 cursor-pointer transition-colors"
                   data-course-id="${c.course_id || c.id}"
                   data-course-title="${UI.escapeHtml(c.title)}"
                   data-course-code="${UI.escapeHtml(c.course_code)}"
@@ -1712,6 +1704,36 @@ class AdminView {
               </td>
             </tr>
           `).join('');
+
+          tbody.querySelectorAll('.btn-admin-edit-course-price').forEach(btn => {
+            btn.onclick = async () => {
+              const cId = btn.dataset.courseId;
+              const cTitle = btn.dataset.courseTitle;
+              const cCode = btn.dataset.courseCode || '';
+              const cPrice = parseInt(btn.dataset.coursePrice, 10) || 0;
+              const cPriceFmt = btn.dataset.coursePriceFmt || '';
+
+              const modalRes = await UI.showCoursePriceEditModal({
+                courseCode: cCode,
+                courseTitle: cTitle,
+                currentPrice: cPrice,
+                currentPriceFormatted: cPriceFmt
+              });
+
+              if (!modalRes || !modalRes.confirmed) return;
+
+              try {
+                btn.disabled = true;
+                await ApiClient.updateCoursePrice(cId, modalRes.price, modalRes.reason);
+                UI.showToast(`Đã cập nhật học phí môn "${cTitle}" thành công!`, 'success');
+                if (window.EventBus) window.EventBus.emit('course:price_updated', { course_id: cId, price: modalRes.price });
+                await loadActiveCoursesForAdmin();
+              } catch (err) {
+                UI.showToast(err.message || 'Lỗi khi cập nhật học phí.', 'error');
+                btn.disabled = false;
+              }
+            };
+          });
 
           tbody.querySelectorAll('.btn-admin-delete-course').forEach(btn => {
             btn.onclick = async () => {
@@ -1753,6 +1775,25 @@ class AdminView {
         };
       });
 
+      box.querySelectorAll('.edit-admin-course-price-btn').forEach(btn => {
+        btn.onclick = async () => {
+          const cId = btn.dataset.courseId;
+          const currentPrice = btn.dataset.currentPrice || 0;
+          const formattedCurrent = currentPrice > 0 ? Number(currentPrice).toLocaleString('vi-VN') : '0';
+          const newPriceInput = prompt('Nhập học phí mới cho khóa học (VNĐ):\n(Hiện tại: ' + formattedCurrent + ' VNĐ - Nhập 0 nếu Miễn phí)', currentPrice);
+          if (newPriceInput === null) return;
+          const parsed = Math.max(0, parseInt(newPriceInput.replace(/\D/g, ''), 10) || 0);
+          try {
+            await ApiClient.updateCoursePrice(cId, parsed);
+            UI.showToast('Đã cập nhật giá khóa học thành công!', 'success');
+            if (typeof SWRCache !== 'undefined') SWRCache.invalidate(/courses/);
+            AdminView.renderTabCoursesReview(container, subQueue);
+          } catch (err) {
+            UI.showToast(err.message || 'Lỗi khi cập nhật giá khóa học', 'error');
+          }
+        };
+      });
+
       const updateCrFilterBadges = () => {
         const pCount = changeRequests.filter(r => r.status === 'PENDING').length;
 
@@ -1764,10 +1805,6 @@ class AdminView {
         if (window.app && typeof window.app.updateAdminNavBadges === 'function') {
           window.app.updateAdminNavBadges({ courses: totalP });
         }
-        const elPending = document.getElementById('kpi-courses-pending');
-        const badgePending = document.getElementById('kpi-courses-badge');
-        if (elPending) elPending.textContent = String(totalP).padStart(2, '0');
-        if (badgePending) badgePending.textContent = `${totalP} chờ duyệt`;
       };
 
       // Filter change requests
@@ -5804,6 +5841,803 @@ class AdminView {
 
     loadJobs();
   }
-}
 
-window.AdminView = AdminView;
+  // =========================================================================
+  // Dedicated Admin Notification Center (2-Block Layout)
+  // Block 1: Broadcast Form (#admin-broadcast-form)
+  // Block 2: Broadcast History & Hard Delete (#admin-broadcasts-table)
+  // =========================================================================
+  static async renderNotificationsPage(container) {
+    if (!container) return;
+    const subRole = window.app?.currentUser?.admin_sub_role || 'ADMIN_PRIMARY';
+    const isPrimary = window.app?.currentUser?.is_primary_admin || subRole === 'ADMIN_PRIMARY';
+    const isMonitoring = subRole === 'ADMIN_SYSTEM_MONITORING';
+
+    container.innerHTML = `
+      <div class="max-w-7xl mx-auto space-y-8 animate-fade-in pb-16">
+        <!-- Header -->
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                <span class="material-symbols-outlined text-[20px]">campaign</span>
+              </span>
+              <h1 class="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                Quản Lý & Phát Thông Báo Tập Trung
+              </h1>
+            </div>
+            <p class="text-xs text-slate-500 mt-1">
+              Phát thông báo toàn hệ thống theo phân quyền RBAC và quản lý lịch sử thông báo đã phát.
+            </p>
+          </div>
+          <div class="flex items-center gap-2 text-xs font-mono text-slate-500 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 shrink-0">
+            <span class="w-2 h-2 rounded-full ${isPrimary ? 'bg-primary' : 'bg-indigo-500'}"></span>
+            <span>Quyền hạn: <strong>${isPrimary ? 'Admin Toàn Quyền' : 'Giám Sát Hệ Thống'}</strong></span>
+          </div>
+        </div>
+
+        <!-- KHỐI 1: FORM PHÁT THÔNG BÁO MỚI (NẰM NGANG PHÍA TRÊN) -->
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 sm:p-7 space-y-6" id="broadcast-form-section">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+            <div class="flex items-center gap-2.5">
+              <span class="w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
+                <span class="material-symbols-outlined text-[18px]">send</span>
+              </span>
+              <h2 class="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+                Phát Thông Báo Toàn Hệ Thống
+              </h2>
+            </div>
+            <span class="text-[11px] text-slate-400 font-mono">Bản tin thông báo thời gian thực</span>
+          </div>
+
+          <form id="admin-broadcast-form" class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <!-- Target Role -->
+              <div>
+                <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5" for="broadcast-target-role">
+                  Nhóm đối tượng nhận <span class="text-rose-500">*</span>
+                </label>
+                <select
+                  id="broadcast-target-role"
+                  class="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:border-primary transition-all font-medium"
+                >
+                  <option value="ALL">Tất cả người dùng (Học viên, Giảng viên, Admin)</option>
+                  <option value="STUDENT">Chỉ Học viên (STUDENT)</option>
+                  <option value="INSTRUCTOR">Chỉ Giảng viên (INSTRUCTOR)</option>
+                  <option value="ADMIN">Chỉ Quản trị viên (ADMIN)</option>
+                </select>
+              </div>
+
+              <!-- Category -->
+              <div>
+                <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5" for="broadcast-category">
+                  Danh mục thông báo <span class="text-rose-500">*</span>
+                </label>
+                <select
+                  id="broadcast-category"
+                  class="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:border-primary transition-all font-medium"
+                  ${isMonitoring ? 'disabled' : ''}
+                >
+                  <option value="SYSTEM" selected>Hệ thống (SYSTEM)</option>
+                  <option value="COURSE">Khóa học (COURSE)</option>
+                  <option value="ASSESSMENT">Bài kiểm tra & Khảo thí (ASSESSMENT)</option>
+                  <option value="GRADE">Điểm số & Học vụ (GRADE)</option>
+                  <option value="SECURITY">Bảo mật & Phiên làm việc (SECURITY)</option>
+                </select>
+                ${isMonitoring ? '<p class="text-[10px] text-amber-600 dark:text-amber-400 mt-1">Admin giám sát hệ thống chỉ được phép phát danh mục SYSTEM.</p>' : ''}
+              </div>
+            </div>
+
+            <!-- Title -->
+            <div>
+              <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5" for="broadcast-title">
+                Tiêu đề thông báo <span class="text-rose-500">*</span>
+              </label>
+              <input
+                id="broadcast-title"
+                type="text"
+                placeholder="Nhập tiêu đề thông báo ngắn gọn, rõ ràng..."
+                required
+                class="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:border-primary transition-all font-semibold"
+              />
+            </div>
+
+            <!-- Body -->
+            <div>
+              <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5" for="broadcast-body">
+                Nội dung chi tiết <span class="text-rose-500">*</span>
+              </label>
+              <textarea
+                id="broadcast-body"
+                rows="3"
+                placeholder="Nhập nội dung đầy đủ của thông báo gửi tới người dùng..."
+                required
+                class="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:border-primary transition-all leading-relaxed"
+              ></textarea>
+            </div>
+
+            <!-- Submit Button -->
+            <div class="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                id="btn-broadcast-reset"
+                class="px-4 py-2.5 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+              >
+                Làm mới form
+              </button>
+              <button
+                type="submit"
+                id="btn-broadcast-submit"
+                class="px-6 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                <span class="material-symbols-outlined text-[16px]">campaign</span>
+                <span id="btn-broadcast-submit-text">Phát thông báo ngay</span>
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- KHỐI 2: BẢNG LỊCH SỬ THÔNG BÁO ĐÃ PHÁT (NẰM NGANG PHÍA DƯỚI) -->
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 sm:p-7 space-y-5" id="admin-broadcasts-history">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+            <div class="flex items-center gap-2.5">
+              <span class="w-7 h-7 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
+                <span class="material-symbols-outlined text-[18px]">history</span>
+              </span>
+              <div>
+                <h2 class="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+                  Lịch sử Thông báo Đã phát & Xóa cứng Toàn hệ thống
+                </h2>
+                <p class="text-[11px] text-slate-500">Danh sách các đợt phát thông báo và tùy chọn xóa cứng vĩnh viễn khỏi CSDL.</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              id="btn-refresh-broadcasts"
+              class="px-3.5 py-1.5 text-xs font-semibold rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+            >
+              <span class="material-symbols-outlined text-[15px]">refresh</span>
+              <span>Làm mới danh sách</span>
+            </button>
+          </div>
+
+          <!-- Table Container -->
+          <div class="overflow-x-auto -mx-6 sm:mx-0">
+            <table class="w-full text-left text-xs" id="admin-broadcasts-table">
+              <thead>
+                <tr class="border-b border-slate-200 dark:border-slate-800 text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50/50 dark:bg-slate-800/40">
+                  <th class="py-3 px-4">Tiêu đề & Nội dung</th>
+                  <th class="py-3 px-3">Danh mục</th>
+                  <th class="py-3 px-3">Nhóm nhận</th>
+                  <th class="py-3 px-3">Thời gian phát</th>
+                  <th class="py-3 px-3 text-center">Người nhận</th>
+                  <th class="py-3 px-3">Người phát</th>
+                  <th class="py-3 px-4 text-right">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody id="admin-broadcasts-tbody" class="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium">
+                <tr>
+                  <td colspan="7" class="py-12 text-center text-slate-400">
+                    <span class="inline-block animate-spin text-xl mb-1">⏳</span>
+                    <p class="text-xs">Đang nạp lịch sử thông báo...</p>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Logic: Load Broadcasts Table
+    const loadBroadcasts = async () => {
+      const tbody = document.getElementById('admin-broadcasts-tbody');
+      if (!tbody) return;
+      try {
+        const broadcasts = await ApiClient.getAdminBroadcasts();
+        const items = Array.isArray(broadcasts) ? broadcasts : (broadcasts?.data || []);
+
+        if (items.length === 0) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="7" class="py-12 text-center text-slate-400">
+                <span class="material-symbols-outlined text-3xl text-slate-300 dark:text-slate-600 mb-1 inline-block">inbox</span>
+                <p class="text-xs font-semibold text-slate-500">Chưa có thông báo nào được phát</p>
+                <p class="text-[11px] text-slate-400 mt-0.5">Sử dụng form phía trên để gửi thông báo đầu tiên.</p>
+              </td>
+            </tr>
+          `;
+          return;
+        }
+
+        tbody.innerHTML = items.map(b => {
+          const eventId = b.event_id || b.id;
+          const title = b.title || b.payload?.title || '(Không có tiêu đề)';
+          const body = b.body || b.payload?.body || '';
+          const category = (b.category || b.payload?.category || 'SYSTEM').toUpperCase();
+          const targetRole = b.target_role || b.payload?.target_role || 'ALL';
+          const createdAt = b.created_at ? UI.formatDateTime(b.created_at) : '(Không rõ)';
+          const count = b.recipients_count ?? b.count ?? b.broadcasted_count ?? '-';
+          const author = b.sender_name || b.actor_email || b.actor_user_id || 'Quản trị viên';
+
+          const catColor = {
+            SYSTEM: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+            COURSE: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300',
+            ASSESSMENT: 'bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300',
+            GRADE: 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300',
+            SECURITY: 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300',
+          }[category] || 'bg-slate-100 text-slate-700';
+
+          return `
+            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+              <td class="py-3 px-4 max-w-xs">
+                <div class="font-bold text-slate-900 dark:text-white truncate" title="${UI.escapeHtml(title)}">${UI.escapeHtml(title)}</div>
+                <div class="text-[11px] text-slate-500 line-clamp-1 mt-0.5" title="${UI.escapeHtml(body)}">${UI.escapeHtml(body)}</div>
+              </td>
+              <td class="py-3 px-3">
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold ${catColor}">${category}</span>
+              </td>
+              <td class="py-3 px-3">
+                <span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                  ${targetRole === 'ALL' ? 'Tất cả' : targetRole}
+                </span>
+              </td>
+              <td class="py-3 px-3 text-slate-500 font-mono text-[11px] whitespace-nowrap">${createdAt}</td>
+              <td class="py-3 px-3 text-center font-mono font-bold text-slate-700 dark:text-slate-300">${count}</td>
+              <td class="py-3 px-3 text-slate-600 dark:text-slate-400 text-[11px]">${UI.escapeHtml(String(author))}</td>
+              <td class="py-3 px-4 text-right whitespace-nowrap">
+                <button
+                  type="button"
+                  class="btn-delete-broadcast px-2.5 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-semibold transition-colors inline-flex items-center gap-1 cursor-pointer"
+                  data-event-id="${eventId}"
+                  title="Xóa cứng vĩnh viễn khỏi toàn hệ thống"
+                >
+                  <span class="material-symbols-outlined text-[15px]">delete</span>
+                  <span>Xóa</span>
+                </button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+
+        // Wire delete buttons
+        tbody.querySelectorAll('.btn-delete-broadcast').forEach(btn => {
+          btn.onclick = async (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            const eventId = btn.dataset.eventId;
+            if (!eventId) return;
+
+            const conf = await UI.confirm(
+              'Xác nhận xóa cứng thông báo',
+              'Thông báo này và tất cả bản sao đã gửi đến người dùng sẽ bị xóa vĩnh viễn khỏi CSDL và giao diện toàn hệ thống. Thao tác không thể hoàn tác.',
+              'Xóa vĩnh viễn'
+            );
+            if (!conf) return;
+
+            try {
+              btn.disabled = true;
+              await ApiClient.deleteAdminBroadcast(eventId);
+              UI.showToast('Đã xóa cứng thông báo trên toàn hệ thống và CSDL', 'success');
+              await loadBroadcasts();
+            } catch (err) {
+              btn.disabled = false;
+              UI.showToast(err.message || 'Không thể xóa thông báo.', 'error');
+            }
+          };
+        });
+
+      } catch (err) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" class="py-8 text-center text-rose-500 text-xs">
+              Lỗi tải lịch sử thông báo: ${UI.escapeHtml(err.message || '')}
+            </td>
+          </tr>
+        `;
+      }
+    };
+
+    // Form submission
+    const form = document.getElementById('admin-broadcast-form');
+    const submitBtn = document.getElementById('btn-broadcast-submit');
+    const submitText = document.getElementById('btn-broadcast-submit-text');
+
+    if (form) {
+      form.onsubmit = async (e) => {
+        e.preventDefault();
+        const title = (document.getElementById('broadcast-title')?.value || '').trim();
+        const body = (document.getElementById('broadcast-body')?.value || '').trim();
+        const roleVal = document.getElementById('broadcast-target-role')?.value || 'ALL';
+        const targetRole = roleVal === 'ALL' ? null : roleVal;
+        const category = document.getElementById('broadcast-category')?.value || 'SYSTEM';
+
+        if (!title || !body) {
+          UI.showToast('Vui lòng nhập đầy đủ tiêu đề và nội dung thông báo.', 'warning');
+          return;
+        }
+
+        if (submitBtn) submitBtn.disabled = true;
+        if (submitText) submitText.textContent = 'Đang phát thông báo...';
+
+        try {
+          // Track last broadcast to suppress duplicate toast on SSE
+          window._lastBroadcastSent = { title, body, timestamp: Date.now() };
+
+          const res = await ApiClient.broadcastNotification(title, body, targetRole, category);
+          const count = res?.broadcasted_count ?? res?.data?.broadcasted_count ?? 'toàn bộ';
+          UI.showToast(`Phát thông báo toàn hệ thống thành công (${count} người nhận)!`, 'success');
+
+          form.reset();
+          await loadBroadcasts();
+        } catch (err) {
+          UI.showToast(err.message || 'Lỗi khi phát thông báo.', 'error');
+        } finally {
+          if (submitBtn) submitBtn.disabled = false;
+          if (submitText) submitText.textContent = 'Phát thông báo ngay';
+        }
+      };
+    }
+
+    const resetBtn = document.getElementById('btn-broadcast-reset');
+    if (resetBtn && form) {
+      resetBtn.onclick = () => form.reset();
+    }
+
+    const refreshBtn = document.getElementById('btn-refresh-broadcasts');
+    if (refreshBtn) {
+      refreshBtn.onclick = () => loadBroadcasts();
+    }
+
+    // Initial load
+    await loadBroadcasts();
+  }
+
+
+  // =========================================================================
+  // TASK-120: Cashflow & Financial Governance Management
+  // =========================================================================
+  static async renderCashflow(container, query = {}) {
+    container.innerHTML = `
+      <div class="py-6 space-y-6 max-w-[1720px] w-full mx-auto px-4 sm:px-6 lg:px-10 animate-fade-in">
+        <!-- Top Title Bar -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <div class="flex items-center gap-2 mb-1">
+              <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-200 dark:border-amber-800/40 flex items-center gap-1">
+                <span class="material-symbols-outlined text-[13px]">account_balance</span>
+                <span>Tài chính & Dòng tiền</span>
+              </span>
+              <span class="text-xs text-slate-400 font-mono">TASK-120</span>
+            </div>
+            <h1 class="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Quản lý dòng tiền & Xác thực nạp tiền</h1>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Giám sát tổng thể dòng tiền, lịch sử nạp/mua, xác thực giao dịch và thu hồi quỹ khả nghi.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button type="button" id="btn-refresh-cashflow" class="c-btn c-btn-secondary c-btn-sm flex items-center gap-1.5 shadow-xs">
+              <span class="material-symbols-outlined text-[16px]">refresh</span>
+              <span>Làm mới</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 4 Bento Grid Metric Cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" id="cashflow-stats-cards">
+          <div class="c-card p-5 relative overflow-hidden flex flex-col justify-between border-l-4 border-l-emerald-500">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Tổng nạp thành công</span>
+              <div class="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 flex items-center justify-center">
+                <span class="material-symbols-outlined text-[20px]">account_balance_wallet</span>
+              </div>
+            </div>
+            <div class="mt-3">
+              <div class="text-2xl font-black text-emerald-600 dark:text-emerald-400" id="stat-total-deposited">0 đ</div>
+              <p class="text-xs text-slate-400 mt-1">Toàn bộ dòng tiền nạp vào hệ thống</p>
+            </div>
+          </div>
+
+          <div class="c-card p-5 relative overflow-hidden flex flex-col justify-between border-l-4 border-l-blue-500">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Doanh thu mua khóa học</span>
+              <div class="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 flex items-center justify-center">
+                <span class="material-symbols-outlined text-[20px]">monetization_on</span>
+              </div>
+            </div>
+            <div class="mt-3">
+              <div class="text-2xl font-black text-blue-600 dark:text-blue-400" id="stat-total-spent">0 đ</div>
+              <p class="text-xs text-slate-400 mt-1">Đã chi tiêu mua khóa học</p>
+            </div>
+          </div>
+
+          <div class="c-card p-5 relative overflow-hidden flex flex-col justify-between border-l-4 border-l-rose-500">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Số tiền đã thu hồi</span>
+              <div class="w-9 h-9 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 flex items-center justify-center">
+                <span class="material-symbols-outlined text-[20px]">replay</span>
+              </div>
+            </div>
+            <div class="mt-3">
+              <div class="text-2xl font-black text-rose-600 dark:text-rose-400" id="stat-total-revoked">0 đ</div>
+              <p class="text-xs text-slate-400 mt-1">Khoản tiền thu hồi do gian lận/sai sót</p>
+            </div>
+          </div>
+
+          <div class="c-card p-5 relative overflow-hidden flex flex-col justify-between border-l-4 border-l-amber-500">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Nạp hôm nay</span>
+              <div class="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 flex items-center justify-center">
+                <span class="material-symbols-outlined text-[20px]">insights</span>
+              </div>
+            </div>
+            <div class="mt-3">
+              <div class="text-2xl font-black text-amber-600 dark:text-amber-400" id="stat-today-deposited">0 đ</div>
+              <p class="text-xs text-slate-400 mt-1" id="stat-tx-count">0 giao dịch tổng cộng</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Filter & Search Toolbar -->
+        <div class="c-card p-4">
+          <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div class="flex-1 relative">
+              <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">search</span>
+              <input
+                type="text"
+                id="cashflow-search-input"
+                class="w-full pl-9 pr-4 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-2 focus:ring-primary font-medium"
+                placeholder="Tìm theo mã giao dịch, email học viên, mã nội dung 12 kí tự..."
+              />
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <select id="cashflow-filter-type" class="px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-primary">
+                <option value="ALL">Tất cả loại GD</option>
+                <option value="DEPOSIT">Nạp tiền (DEPOSIT)</option>
+                <option value="PURCHASE">Mua khóa học (PURCHASE)</option>
+                <option value="REVOKE">Thu hồi tiền (REVOKE)</option>
+                <option value="REFUND">Hoàn tiền (REFUND)</option>
+              </select>
+
+              <select id="cashflow-filter-status" class="px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-primary">
+                <option value="ALL">Tất cả trạng thái</option>
+                <option value="PAID">Thành công (PAID)</option>
+                <option value="PENDING">Chờ xử lý (PENDING)</option>
+                <option value="REVOKED">Đã thu hồi (REVOKED)</option>
+                <option value="FAILED">Thất bại (FAILED)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Transactions Table Container -->
+        <div class="c-card overflow-hidden">
+          <div class="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+            <h3 class="font-extrabold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+              <span class="material-symbols-outlined text-primary text-[18px]">receipt_long</span>
+              <span>Danh sách giao dịch hệ thống</span>
+            </h3>
+            <span class="text-xs text-slate-400 font-mono" id="tx-table-count">Đang tải...</span>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr class="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 font-bold uppercase tracking-wider">
+                  <th class="py-3 px-4">Thời gian</th>
+                  <th class="py-3 px-4">Mã GD / Mã 12 ký tự</th>
+                  <th class="py-3 px-4">Học viên</th>
+                  <th class="py-3 px-4">Loại GD</th>
+                  <th class="py-3 px-4">Số tiền</th>
+                  <th class="py-3 px-4">Trạng thái</th>
+                  <th class="py-3 px-4 text-right">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody id="cashflow-table-body" class="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
+                <tr>
+                  <td colspan="7" class="py-12 text-center text-slate-400">
+                    <span class="inline-block animate-spin text-2xl mb-2">⏳</span>
+                    <p>Đang tải dữ liệu dòng tiền...</p>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Global state for cashflow
+    let allTransactions = [];
+
+    const loadCashflowData = async () => {
+      try {
+        const [dashRes, txRes] = await Promise.all([
+          ApiClient.getCashflowDashboard(),
+          ApiClient.getCashflowTransactions({ limit: 200 })
+        ]);
+
+        const stats = dashRes?.stats || dashRes?.data || dashRes || {};
+        const totalDeposited = stats.total_deposited || 0;
+        const totalSpent = stats.total_spent || stats.total_revenue || 0;
+        const totalRevoked = stats.total_revoked || 0;
+        const todayDeposited = stats.today_deposited || stats.total_system_balance || 0;
+        const txCount = stats.transaction_count || ((stats.transactions_completed_count || 0) + (stats.transactions_pending_count || 0));
+
+        document.getElementById('stat-total-deposited').textContent = UI.formatMoney ? UI.formatMoney(totalDeposited) : totalDeposited.toLocaleString('vi-VN') + ' đ';
+        document.getElementById('stat-total-spent').textContent = UI.formatMoney ? UI.formatMoney(totalSpent) : totalSpent.toLocaleString('vi-VN') + ' đ';
+        document.getElementById('stat-total-revoked').textContent = UI.formatMoney ? UI.formatMoney(totalRevoked) : totalRevoked.toLocaleString('vi-VN') + ' đ';
+        document.getElementById('stat-today-deposited').textContent = UI.formatMoney ? UI.formatMoney(todayDeposited) : todayDeposited.toLocaleString('vi-VN') + ' đ';
+        document.getElementById('stat-tx-count').textContent = `${txCount} giao dịch tổng cộng`;
+
+        allTransactions = txRes?.transactions || txRes?.data || (Array.isArray(txRes) ? txRes : []);
+        renderFilteredTable();
+      } catch (err) {
+        console.error('Failed to load cashflow data:', err);
+        UI.showToast(err.message || 'Không thể tải dữ liệu dòng tiền.', 'error');
+        document.getElementById('cashflow-table-body').innerHTML = `
+          <tr>
+            <td colspan="7" class="py-8 text-center text-rose-500 font-bold">
+              Lỗi tải dữ liệu dòng tiền: ${UI.escapeHtml(err.message || 'Lỗi kết nối')}
+            </td>
+          </tr>
+        `;
+      }
+    };
+
+    const renderFilteredTable = () => {
+      const q = (document.getElementById('cashflow-search-input')?.value || '').trim().toLowerCase();
+      const filterType = document.getElementById('cashflow-filter-type')?.value || 'ALL';
+      const filterStatus = document.getElementById('cashflow-filter-status')?.value || 'ALL';
+
+      let filtered = allTransactions.filter(tx => {
+        if (filterType !== 'ALL') {
+          if (filterType === 'PURCHASE' && tx.tx_type !== 'PURCHASE' && tx.tx_type !== 'COURSE_PURCHASE') return false;
+          else if (filterType !== 'PURCHASE' && tx.tx_type !== filterType) return false;
+        }
+        if (filterStatus !== 'ALL') {
+          if (filterStatus === 'PAID' && tx.status !== 'PAID' && tx.status !== 'COMPLETED') return false;
+          else if (filterStatus !== 'PAID' && tx.status !== filterStatus) return false;
+        }
+        if (q) {
+          const matchCode = (tx.transfer_code || tx.transfer_code_12 || '').toLowerCase().includes(q);
+          const matchTxId = String(tx.id || '').toLowerCase().includes(q);
+          const matchEmail = (tx.user_email || '').toLowerCase().includes(q);
+          const matchName = (tx.user_name || '').toLowerCase().includes(q);
+          const matchDesc = (tx.description || '').toLowerCase().includes(q);
+          if (!matchCode && !matchTxId && !matchEmail && !matchName && !matchDesc) return false;
+        }
+        return true;
+      });
+
+      const countEl = document.getElementById('tx-table-count');
+      if (countEl) countEl.textContent = `Hiển thị ${filtered.length} / ${allTransactions.length} giao dịch`;
+
+      const tbody = document.getElementById('cashflow-table-body');
+      if (!tbody) return;
+
+      if (!filtered.length) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" class="py-12 text-center text-slate-400">
+              <span class="material-symbols-outlined text-4xl mb-1 text-slate-300">receipt_long</span>
+              <p>Không có giao dịch nào khớp với bộ lọc.</p>
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(tx => {
+        const isDeposit = tx.tx_type === 'DEPOSIT';
+        const isPurchase = tx.tx_type === 'PURCHASE' || tx.tx_type === 'COURSE_PURCHASE';
+        const isRevoke = tx.tx_type === 'REVOKE';
+        const isPaid = tx.status === 'PAID' || tx.status === 'COMPLETED';
+        const isPending = tx.status === 'PENDING';
+        const isRevoked = tx.status === 'REVOKED';
+        const transferCode = tx.transfer_code || tx.transfer_code_12 || '';
+
+        let typeBadge = '';
+        if (isDeposit) {
+          typeBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">Nạp tiền</span>';
+        } else if (isPurchase) {
+          typeBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400">Mua khóa học</span>';
+        } else if (isRevoke) {
+          typeBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400">Thu hồi</span>';
+        } else {
+          typeBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">${UI.escapeHtml(tx.tx_type)}</span>`;
+        }
+
+        let statusBadge = '';
+        if (isPaid) {
+          statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400 flex items-center gap-1 w-fit"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Thành công</span>';
+        } else if (isPending) {
+          statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400 flex items-center gap-1 w-fit"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Chờ xử lý</span>';
+        } else if (isRevoked) {
+          statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-400 flex items-center gap-1 w-fit"><span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span> Đã thu hồi</span>';
+        } else {
+          statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">${UI.escapeHtml(tx.status)}</span>`;
+        }
+
+        const dateStr = tx.created_at ? new Date(tx.created_at).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
+        const formattedAmount = UI.formatMoney ? UI.formatMoney(tx.amount) : Number(tx.amount).toLocaleString('vi-VN') + ' đ';
+
+        return `
+          <tr class="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
+            <td class="py-3 px-4 text-slate-500 font-mono text-[11px] whitespace-nowrap">
+              ${dateStr}
+            </td>
+            <td class="py-3 px-4">
+              <div class="font-mono font-bold text-slate-900 dark:text-white text-xs">#${tx.id}</div>
+              ${transferCode ? `
+                <div class="mt-0.5 inline-block font-mono font-extrabold text-[11px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-primary rounded border border-slate-200 dark:border-slate-700">
+                  ${UI.escapeHtml(transferCode)}
+                </div>
+              ` : ''}
+            </td>
+            <td class="py-3 px-4">
+              <div class="font-bold text-slate-900 dark:text-white">${UI.escapeHtml(tx.user_name || 'Người dùng')}</div>
+              <div class="text-[11px] text-slate-400 font-mono">${UI.escapeHtml(tx.user_email || '')}</div>
+            </td>
+            <td class="py-3 px-4">
+              ${typeBadge}
+            </td>
+            <td class="py-3 px-4 font-black text-xs ${isDeposit ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}">
+              ${isDeposit ? '+' : (isPurchase ? '-' : '')}${formattedAmount}
+            </td>
+            <td class="py-3 px-4">
+              ${statusBadge}
+            </td>
+            <td class="py-3 px-4 text-right whitespace-nowrap">
+              <div class="flex items-center justify-end gap-1.5">
+                ${isPending && isDeposit ? `
+                  <button
+                    type="button"
+                    class="btn-verify-tx px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] flex items-center gap-1 shadow-xs cursor-pointer transition-all"
+                    data-id="${tx.id}"
+                    data-code="${UI.escapeHtml(transferCode)}"
+                    data-amount="${tx.amount}"
+                    title="Xác thực nạp tiền thủ công"
+                  >
+                    <span class="material-symbols-outlined text-[14px]">done</span>
+                    <span>Xác thực</span>
+                  </button>
+                ` : ''}
+                ${isPaid && isDeposit ? `
+                  <button
+                    type="button"
+                    class="btn-revoke-tx px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/30 dark:hover:bg-rose-950/60 text-rose-600 dark:text-rose-400 font-bold text-[11px] flex items-center gap-1 border border-rose-200 dark:border-rose-800 cursor-pointer transition-all"
+                    data-id="${tx.id}"
+                    data-email="${UI.escapeHtml(tx.user_email || '')}"
+                    data-amount="${tx.amount}"
+                    title="Thu hồi giao dịch nghi ngờ gian lận"
+                  >
+                    <span class="material-symbols-outlined text-[14px]">undo</span>
+                    <span>Thu hồi quỹ</span>
+                  </button>
+                ` : ''}
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      // Wire Verify Buttons
+      tbody.querySelectorAll('.btn-verify-tx').forEach(btn => {
+        btn.onclick = async () => {
+          const txId = btn.dataset.id;
+          const code = btn.dataset.code;
+          const amount = UI.formatMoney ? UI.formatMoney(btn.dataset.amount) : btn.dataset.amount + ' đ';
+          if (!confirm(`Bạn có chắc chắn muốn XÁC THỰC giao dịch nạp tiền #${txId} (${amount}) với mã ${code} không? Số dư của học viên sẽ được cộng ngay lập tức.`)) {
+            return;
+          }
+          btn.disabled = true;
+          try {
+            await ApiClient.verifyCashflowTransaction(txId);
+            UI.showToast(`Xác thực nạp tiền #${txId} thành công!`, 'success');
+            await loadCashflowData();
+          } catch (err) {
+            UI.showToast(err.message || 'Xác thực không thành công.', 'error');
+            btn.disabled = false;
+          }
+        };
+      });
+
+      // Wire Revoke Buttons
+      tbody.querySelectorAll('.btn-revoke-tx').forEach(btn => {
+        btn.onclick = () => {
+          const txId = btn.dataset.id;
+          const userEmail = btn.dataset.email;
+          const amount = UI.formatMoney ? UI.formatMoney(btn.dataset.amount) : btn.dataset.amount + ' đ';
+          AdminView.openRevokeModal(txId, userEmail, amount, () => loadCashflowData());
+        };
+      });
+    };
+
+    // Filter Listeners
+    document.getElementById('cashflow-search-input')?.addEventListener('input', renderFilteredTable);
+    document.getElementById('cashflow-filter-type')?.addEventListener('change', renderFilteredTable);
+    document.getElementById('cashflow-filter-status')?.addEventListener('change', renderFilteredTable);
+    document.getElementById('btn-refresh-cashflow')?.addEventListener('click', loadCashflowData);
+
+    // Initial load
+    await loadCashflowData();
+  }
+
+  // Revoke Modal for Admin (TASK-120)
+  static openRevokeModal(txId, userEmail, amountFormatted, onSuccessCallback) {
+    const modalId = 'modal-revoke-cashflow';
+    document.getElementById(modalId)?.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = modalId;
+    overlay.className = 'fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in';
+    overlay.innerHTML = `
+      <div class="c-card max-w-lg w-full p-6 space-y-5 bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-900/50 shadow-2xl rounded-2xl relative">
+        <div class="flex items-start gap-3">
+          <div class="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/50 text-rose-600 flex items-center justify-center shrink-0">
+            <span class="material-symbols-outlined text-[24px]">gavel</span>
+          </div>
+          <div>
+            <h3 class="text-lg font-black text-slate-900 dark:text-white">Thu hồi khoản tiền #${txId}</h3>
+            <p class="text-xs text-slate-500 mt-0.5">Học viên: <strong class="text-slate-700 dark:text-slate-300">${UI.escapeHtml(userEmail)}</strong> — Số tiền: <strong class="text-rose-600">${amountFormatted}</strong></p>
+          </div>
+        </div>
+
+        <div class="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 text-xs text-rose-800 dark:text-rose-300 space-y-1.5">
+          <div class="font-bold flex items-center gap-1">
+            <span class="material-symbols-outlined text-[16px]">warning</span>
+            <span>CẢNH BÁO AN NINH & FAIL-CLOSED:</span>
+          </div>
+          <p class="leading-relaxed">
+            Hành động này sẽ trừ số dư của học viên và ghi log kiểm toán an ninh. <strong>Nếu học viên đã dùng số tiền này để mua khóa học, hệ thống sẽ tự động HỦY GHI DANH (Status = LEFT) ngay lập tức</strong> để ngăn chặn trục lợi học tập trái phép.
+          </p>
+        </div>
+
+        <div class="space-y-1.5">
+          <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">Lý do thu hồi quỹ <span class="text-rose-500">*</span></label>
+          <textarea
+            id="revoke-reason-input"
+            rows="3"
+            class="w-full p-3 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-rose-500 font-medium"
+            placeholder="Nhập lý do thu hồi (VD: Phát hiện gian lận nạp tiền, giao dịch thẻ nghi vấn, ngân hàng tra soát...)"
+          ></textarea>
+        </div>
+
+        <div class="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <button type="button" id="btn-cancel-revoke" class="c-btn c-btn-secondary c-btn-sm">
+            <span>Hủy bỏ</span>
+          </button>
+          <button type="button" id="btn-confirm-revoke" class="c-btn c-btn-danger c-btn-sm flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold">
+            <span class="material-symbols-outlined text-[16px]">gavel</span>
+            <span>Xác nhận thu hồi tiền</span>
+          </button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    document.getElementById('btn-cancel-revoke').onclick = close;
+
+    document.getElementById('btn-confirm-revoke').onclick = async () => {
+      const reason = (document.getElementById('revoke-reason-input')?.value || '').trim();
+      if (!reason) {
+        UI.showToast('Vui lòng nhập lý do thu hồi quỹ.', 'warning');
+        return;
+      }
+      const confirmBtn = document.getElementById('btn-confirm-revoke');
+      confirmBtn.disabled = true;
+      confirmBtn.innerHTML = `<span class="inline-block animate-spin text-[14px]">⏳</span> <span>Đang xử lý...</span>`;
+      try {
+        const res = await ApiClient.revokeCashflowTransaction(txId, reason);
+        UI.showToast(res.message || `Đã thu hồi khoản tiền #${txId} thành công!`, 'success');
+        close();
+        if (typeof onSuccessCallback === 'function') onSuccessCallback();
+      } catch (err) {
+        UI.showToast(err.message || 'Lỗi khi thu hồi tiền.', 'error');
+        confirmBtn.disabled = false;
+        confirmBtn.innerHTML = `<span class="material-symbols-outlined text-[16px]">gavel</span> <span>Xác nhận thu hồi tiền</span>`;
+      }
+    };
+  }
+}

@@ -55,9 +55,56 @@ class UI {
     const container = document.getElementById('toast-container');
     if (!container) return;
 
+    const msgStr = String(message || '').trim();
+    const typeStr = String(type || 'info').toLowerCase();
+    const now = Date.now();
+
+    // 1500ms Debounce & Deduplication cache
+    UI._recentToastMap = UI._recentToastMap || new Map();
+    const dedupKey = `${typeStr}:::${msgStr}`;
+    const lastTimestamp = UI._recentToastMap.get(dedupKey) || 0;
+    const isDebounced = (now - lastTimestamp < 1500);
+    UI._recentToastMap.set(dedupKey, now);
+
+    // Check if an identical toast is currently visible in DOM
+    const existingToast = Array.from(container.children).find(el => 
+      el.getAttribute('data-toast-msg') === msgStr &&
+      el.getAttribute('data-toast-type') === typeStr
+    );
+
+    if (existingToast || (isDebounced && container.children.length > 0)) {
+      const targetToast = existingToast || container.lastElementChild;
+      if (targetToast) {
+        // Reset timer
+        if (targetToast._dismissTimer) {
+          clearTimeout(targetToast._dismissTimer);
+          targetToast._dismissTimer = null;
+        }
+        targetToast._dismissTimer = setTimeout(() => {
+          UI.dismissToast(targetToast.id);
+        }, duration);
+
+        // Reset countdown progress bar
+        const progressBar = document.getElementById(`${targetToast.id}_progress`);
+        if (progressBar) {
+          progressBar.style.transition = 'none';
+          progressBar.style.width = '100%';
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              progressBar.style.transition = `width ${duration}ms linear`;
+              progressBar.style.width = '0%';
+            });
+          });
+        }
+      }
+      return;
+    }
+
     const toastId = 'toast_' + Math.random().toString(36).substring(2, 9);
     const toast = document.createElement('div');
     toast.id = toastId;
+    toast.setAttribute('data-toast-msg', msgStr);
+    toast.setAttribute('data-toast-type', typeStr);
 
     let icon = 'info';
     let iconBadgeBg = 'bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400 border border-blue-100 dark:border-blue-900/50';
@@ -485,13 +532,14 @@ class UI {
     const container = document.body;
     const modalLayer = document.createElement('div');
     modalLayer.id = 'concurrent-session-lockdown-layer';
-    modalLayer.className = 'fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[99999] flex items-center justify-center p-4 sm:p-6 animate-fade-in select-none';
-
-    let countdown = 5;
-    let timer = null;
+    modalLayer.className = 'fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 sm:p-6 animate-fade-in select-none';
 
     const handleRedirect = async () => {
-      if (timer) clearInterval(timer);
+      try {
+        if (window.RealtimeEngine && typeof window.RealtimeEngine.disconnect === 'function') {
+          window.RealtimeEngine.disconnect();
+        }
+      } catch (_) {}
       try {
         if (typeof ApiClient !== 'undefined' && typeof ApiClient.logout === 'function') {
           await ApiClient.logout().catch(() => {});
@@ -513,49 +561,44 @@ class UI {
       }
     };
 
-    const displayMsg = message || 'Tài khoản của bạn được phát hiện đăng nhập đồng thời trên một thiết bị khác. Hệ thống đã tự động đăng xuất tất cả thiết bị để bảo vệ an toàn.';
+    const displayMsg = message || 'Tài khoản của bạn vừa được đăng nhập trên một thiết bị khác. Phiên làm việc trên thiết bị này đã kết thúc để đảm bảo an toàn.';
 
     modalLayer.innerHTML = `
-      <div class="bg-white dark:bg-slate-900 border-2 border-rose-500/80 rounded-3xl shadow-2xl w-full max-w-md p-6 sm:p-8 flex flex-col items-center text-center gap-5 transform transition-all duration-200 scale-100 animate-scale-up">
-        <div class="relative flex items-center justify-center">
-          <div class="w-20 h-20 rounded-full bg-rose-100 dark:bg-rose-950/60 flex items-center justify-center text-rose-600 dark:text-rose-400 border-2 border-rose-300 dark:border-rose-800 shadow-lg">
-            <span class="material-symbols-outlined text-[44px]">shield_lock</span>
-          </div>
-          <span class="absolute -top-1 -right-1 flex h-5 w-5">
-            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-            <span class="relative inline-flex rounded-full h-5 w-5 bg-rose-600 text-white text-[10px] font-bold items-center justify-center">!</span>
-          </span>
+      <div class="bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl w-full max-w-md p-6 sm:p-8 flex flex-col items-center text-center gap-5 transform transition-all duration-200 animate-scale-up">
+        <div class="w-16 h-16 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shadow-sm">
+          <span class="material-symbols-outlined text-[36px]">devices</span>
         </div>
 
         <div class="space-y-2">
-          <span class="px-3 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-wider bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-300/80 dark:border-rose-800/80 inline-block">
-            🛡️ Cảnh Báo An Ninh Hệ Thống
+          <span class="px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 inline-flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-[14px] text-indigo-500">info</span>
+            Thông báo phiên làm việc
           </span>
-          <h3 class="text-lg sm:text-xl font-black text-slate-900 dark:text-white leading-tight">
-            Phát Hiện Đăng Nhập Đồng Thời
+          <h3 class="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 leading-tight">
+            Phiên làm việc đã kết thúc
           </h3>
-          <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed max-w-sm mx-auto">
+          <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed max-w-sm mx-auto">
             ${UI.escapeHtml(displayMsg)}
           </p>
         </div>
 
-        <div class="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-amber-800 dark:text-amber-300 text-xs text-left w-full space-y-1">
-          <div class="font-bold flex items-center gap-1.5">
-            <span class="material-symbols-outlined text-[16px] text-amber-600">info</span>
-            Chính sách an toàn tài khoản:
+        <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80 text-xs text-left w-full space-y-1">
+          <div class="font-bold flex items-center gap-1.5 text-slate-800 dark:text-slate-200">
+            <span class="material-symbols-outlined text-[16px] text-indigo-500">security</span>
+            Chính sách bảo mật tài khoản:
           </div>
-          <p class="text-[11px] leading-relaxed text-amber-700 dark:text-amber-400">
-            Nền tảng PWD301 chỉ cho phép 01 phiên làm việc duy nhất tại 1 thời điểm. Khi phát hiện thiết bị thứ 2 đăng nhập, toàn bộ các phiên đều tự động bị hủy để chống chia sẻ tài khoản trái phép.
+          <p class="text-[11px] leading-relaxed text-slate-600 dark:text-slate-400">
+            Để bảo vệ dữ liệu học tập và tài khoản của bạn, hệ thống duy trì 01 thiết bị hoạt động tại một thời điểm. Bạn có thể bấm nút bên dưới để đăng nhập lại ngay trên thiết bị này.
           </p>
         </div>
 
         <button
           type="button"
           id="btn-confirm-concurrent-logout"
-          class="w-full py-3.5 px-6 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs sm:text-sm transition-all shadow-md shadow-rose-600/25 flex items-center justify-center gap-2 cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+          class="w-full py-3 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-semibold text-xs sm:text-sm transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
         >
-          <span class="material-symbols-outlined text-[18px]">logout</span>
-          <span id="concurrent-logout-btn-text">Xác nhận & Về trang đăng nhập (${countdown}s)</span>
+          <span class="material-symbols-outlined text-[18px]">login</span>
+          <span id="concurrent-logout-btn-text">Đăng nhập lại tại đây</span>
         </button>
       </div>
     `;
@@ -563,22 +606,9 @@ class UI {
     container.appendChild(modalLayer);
 
     const confirmBtn = modalLayer.querySelector('#btn-confirm-concurrent-logout');
-    const btnText = modalLayer.querySelector('#concurrent-logout-btn-text');
-
     if (confirmBtn) {
       confirmBtn.onclick = handleRedirect;
     }
-
-    timer = setInterval(() => {
-      countdown--;
-      if (btnText) {
-        btnText.textContent = `Xác nhận & Về trang đăng nhập (${countdown}s)`;
-      }
-      if (countdown <= 0) {
-        clearInterval(timer);
-        handleRedirect();
-      }
-    }, 1000);
   }
 
   static showCourseDelete2FAModal({ courseCode = '', courseTitle = '', isDraft = false, requireAuditReason = false }) {
@@ -773,6 +803,335 @@ class UI {
         if (e.key === 'Escape') {
           e.preventDefault();
           finish({ confirmed: false });
+        }
+      };
+      document.addEventListener('keydown', onKeyDown);
+      cleanupKeyHandler = () => document.removeEventListener('keydown', onKeyDown);
+    });
+  }
+
+  static showCoursePriceEditModal({ courseCode = '', courseTitle = '', currentPrice = 0, currentPriceFormatted = '' }) {
+    return new Promise((resolve) => {
+      const container = document.getElementById('modal-container');
+      if (!container) {
+        resolve({ confirmed: false });
+        return;
+      }
+
+      if (!UI._modalStack) UI._modalStack = [];
+      const activeLayer = container.querySelector('.modal-layer:last-child');
+      if (activeLayer) {
+        activeLayer.style.display = 'none';
+        UI._modalStack.push({
+          element: activeLayer,
+          onClose: window._modalOnClose
+        });
+      }
+
+      let settled = false;
+      let cleanupKeyHandler = null;
+
+      const finish = (result) => {
+        if (!settled) {
+          settled = true;
+          if (cleanupKeyHandler) cleanupKeyHandler();
+          window._modalOnClose = null;
+          UI.closeModal();
+          resolve(result);
+        }
+      };
+
+      const normCode = (courseCode || '').trim();
+      const currentPriceNum = Math.max(0, parseInt(currentPrice, 10) || 0);
+      const currFmt = currentPriceFormatted || (currentPriceNum > 0 ? UI.formatMoney(currentPriceNum) : 'Miễn phí');
+
+      const modalLayer = document.createElement('div');
+      modalLayer.className = 'modal-layer fixed inset-0 bg-[#222120]/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-6';
+      modalLayer.innerHTML = `
+        <div class="bg-[#FAF9F5] dark:bg-[#202020] border border-indigo-200 dark:border-indigo-900/60 rounded-2xl shadow-elevated w-full max-w-lg p-6 flex flex-col gap-5 transform transition-all duration-150 scale-95 opacity-0" id="edit-course-price-card">
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <div class="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-900/60 shadow-2xs">
+                <span class="material-symbols-outlined text-[28px]">payments</span>
+              </div>
+              <div>
+                <h3 class="text-base sm:text-lg font-bold text-[#222120] dark:text-[#EDEDEB] leading-snug">
+                  Điều chỉnh học phí khóa học
+                </h3>
+                <p class="text-xs text-indigo-600 dark:text-indigo-400 font-medium">Kiểm toán hệ thống & Thông báo giảng viên</p>
+              </div>
+            </div>
+            <button type="button" id="price-modal-close-x-btn" class="p-1 rounded-lg text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#E8E6DF] dark:hover:bg-[#2E2D2B] transition-colors" title="Đóng">
+              <span class="material-symbols-outlined text-[20px]">close</span>
+            </button>
+          </div>
+
+          <div class="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/80 p-4 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] uppercase font-extrabold tracking-wider text-slate-500">Mã môn học</span>
+              <span class="px-2 py-0.5 rounded font-mono font-bold text-xs bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">${UI.escapeHtml(normCode)}</span>
+            </div>
+            <div class="font-bold text-sm text-[#222120] dark:text-[#EDEDEB] leading-snug">${UI.escapeHtml(courseTitle || 'Khóa học')}</div>
+            <div class="flex items-center justify-between pt-1 text-xs border-t border-slate-100 dark:border-slate-800">
+              <span class="text-slate-500">Học phí hiện tại:</span>
+              <span class="font-mono font-bold text-slate-900 dark:text-slate-100">${currFmt}</span>
+            </div>
+          </div>
+
+          <div class="space-y-2">
+            <div class="flex items-center justify-between">
+              <label for="input-edit-course-price" class="block text-xs font-bold text-[#5C5B57] dark:text-[#9E9D99]">
+                Học phí mới (VNĐ) <span class="text-rose-500 font-bold">*</span>
+              </label>
+              <span id="price-live-preview-badge" class="font-mono font-bold text-xs text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded">
+                ${currFmt}
+              </span>
+            </div>
+            <div class="relative">
+              <input
+                type="number"
+                id="input-edit-course-price"
+                min="0"
+                step="1000"
+                value="${currentPriceNum}"
+                placeholder="Nhập số tiền (VD: 1500000 hoặc 0 nếu miễn phí)"
+                class="w-full pl-3.5 pr-12 py-2.5 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E] text-sm font-mono font-bold text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-indigo-500 transition-colors"
+              />
+              <span class="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 font-mono">VNĐ</span>
+            </div>
+
+            <div class="flex flex-wrap gap-1.5 pt-1">
+              <button type="button" class="btn-price-preset px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-400 text-slate-600 dark:text-slate-300 transition-colors" data-price="0">0 đ (Miễn phí)</button>
+              <button type="button" class="btn-price-preset px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-400 text-slate-600 dark:text-slate-300 transition-colors" data-price="499000">499.000 đ</button>
+              <button type="button" class="btn-price-preset px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-400 text-slate-600 dark:text-slate-300 transition-colors" data-price="999000">999.000 đ</button>
+              <button type="button" class="btn-price-preset px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-400 text-slate-600 dark:text-slate-300 transition-colors" data-price="1499000">1.499.000 đ</button>
+              <button type="button" class="btn-price-preset px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950/60 dark:hover:text-indigo-400 text-slate-600 dark:text-slate-300 transition-colors" data-price="1999000">1.999.000 đ</button>
+            </div>
+          </div>
+
+          <div class="space-y-1.5">
+            <label for="input-edit-course-price-reason" class="block text-xs font-bold text-[#5C5B57] dark:text-[#9E9D99]">
+              Lý do điều chỉnh học phí <span class="text-rose-500 font-bold">*</span>
+            </label>
+            <textarea
+              id="input-edit-course-price-reason"
+              rows="2"
+              placeholder="Nhập lý do thay đổi học phí (sẽ lưu vào Nhật ký kiểm toán và thông báo cho Giảng viên phụ trách)..."
+              class="w-full px-3.5 py-2.5 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E] text-xs text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-indigo-500 transition-colors resize-none font-medium"
+            ></textarea>
+          </div>
+
+          <div class="flex items-center justify-end gap-2.5 pt-2 border-t border-[#E8E6DF]/80 dark:border-[#2E2D2B]/80">
+            <button
+              type="button"
+              id="btn-cancel-edit-course-price"
+              class="px-4 py-2.5 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] text-xs font-bold text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#E8E6DF]/50 dark:hover:bg-[#2E2D2B]/50 transition-colors cursor-pointer"
+            >
+              Hủy
+            </button>
+            <button
+              type="button"
+              id="btn-confirm-edit-course-price"
+              class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-xs"
+            >
+              <span class="material-symbols-outlined text-[16px]">save</span>
+              <span>Lưu thay đổi</span>
+            </button>
+          </div>
+        </div>
+      `;
+
+      container.appendChild(modalLayer);
+      container.classList.remove('hidden');
+      window._modalOnClose = () => finish({ confirmed: false });
+
+      requestAnimationFrame(() => {
+        const card = modalLayer.querySelector('#edit-course-price-card');
+        if (card) {
+          card.classList.remove('scale-95', 'opacity-0');
+          card.classList.add('scale-100', 'opacity-100');
+        }
+      });
+
+      const priceInput = modalLayer.querySelector('#input-edit-course-price');
+      const reasonInput = modalLayer.querySelector('#input-edit-course-price-reason');
+      const previewBadge = modalLayer.querySelector('#price-live-preview-badge');
+      const confirmBtn = modalLayer.querySelector('#btn-confirm-edit-course-price');
+      const cancelBtn = modalLayer.querySelector('#btn-cancel-edit-course-price');
+      const closeBtn = modalLayer.querySelector('#price-modal-close-x-btn');
+
+      const formatPricePreview = (val) => {
+        const num = parseInt(val, 10);
+        if (isNaN(num) || num <= 0) return 'Miễn phí';
+        return `${num.toLocaleString('vi-VN')} đ`;
+      };
+
+      const updatePreview = () => {
+        const val = priceInput ? priceInput.value : '';
+        if (previewBadge) previewBadge.textContent = formatPricePreview(val);
+      };
+
+      priceInput?.addEventListener('input', updatePreview);
+
+      modalLayer.querySelectorAll('.btn-price-preset').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (priceInput) {
+            priceInput.value = btn.dataset.price;
+            updatePreview();
+          }
+        });
+      });
+
+      confirmBtn?.addEventListener('click', () => {
+        const rawPrice = priceInput ? priceInput.value.trim() : '';
+        const priceNum = parseInt(rawPrice, 10);
+        if (isNaN(priceNum) || priceNum < 0) {
+          UI.showToast('Vui lòng nhập số tiền hợp lệ (>= 0).', 'error');
+          priceInput?.focus();
+          return;
+        }
+
+        const reason = reasonInput ? reasonInput.value.trim() : '';
+        if (!reason || reason.length < 3) {
+          UI.showToast('Vui lòng nhập lý do điều chỉnh học phí (tối thiểu 3 ký tự).', 'error');
+          reasonInput?.focus();
+          return;
+        }
+
+        finish({ confirmed: true, price: priceNum, reason });
+      });
+
+      cancelBtn?.addEventListener('click', () => finish({ confirmed: false }));
+      closeBtn?.addEventListener('click', () => finish({ confirmed: false }));
+      modalLayer.addEventListener('click', (e) => {
+        if (e.target === modalLayer) finish({ confirmed: false });
+      });
+
+      const onKeyDown = (e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          finish({ confirmed: false });
+        }
+      };
+      document.addEventListener('keydown', onKeyDown);
+      cleanupKeyHandler = () => document.removeEventListener('keydown', onKeyDown);
+    });
+  }
+
+  static showQrLightbox({ qrSrc = '', title = 'Mã QR Thanh toán VietQR', bankName = '', accountNumber = '', amount = 0, transferCode = '' }) {
+    return new Promise((resolve) => {
+      const container = document.getElementById('modal-container');
+      if (!container) {
+        resolve();
+        return;
+      }
+
+      if (!UI._modalStack) UI._modalStack = [];
+      const activeLayer = container.querySelector('.modal-layer:last-child');
+      if (activeLayer) {
+        activeLayer.style.display = 'none';
+        UI._modalStack.push({
+          element: activeLayer,
+          onClose: window._modalOnClose
+        });
+      }
+
+      let settled = false;
+      let cleanupKeyHandler = null;
+
+      const finish = () => {
+        if (!settled) {
+          settled = true;
+          if (cleanupKeyHandler) cleanupKeyHandler();
+          window._modalOnClose = null;
+          UI.closeModal();
+          resolve();
+        }
+      };
+
+      const modalLayer = document.createElement('div');
+      modalLayer.className = 'modal-layer fixed inset-0 bg-[#222120]/70 backdrop-blur-md z-50 flex items-center justify-center p-4 sm:p-6';
+      modalLayer.innerHTML = `
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl w-full max-w-md p-6 sm:p-7 flex flex-col items-center gap-5 transform transition-all duration-200 scale-95 opacity-0" id="qr-lightbox-card">
+          <div class="w-full flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-primary text-[24px]">qr_code_2</span>
+              <h3 class="font-bold text-base text-slate-900 dark:text-white">${UI.escapeHtml(title)}</h3>
+            </div>
+            <button type="button" id="qr-lightbox-close-btn" class="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer" title="Đóng">
+              <span class="material-symbols-outlined text-[20px]">close</span>
+            </button>
+          </div>
+
+          <div class="w-72 h-72 sm:w-80 sm:h-80 bg-white p-3 rounded-2xl border-2 border-slate-200 dark:border-slate-700 shadow-md flex items-center justify-center shrink-0">
+            <img src="${qrSrc}" alt="Mã VietQR Phóng to" class="w-full h-full object-contain" />
+          </div>
+
+          <div class="w-full bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-4 border border-slate-200/70 dark:border-slate-700/60 space-y-2.5 text-xs">
+            ${bankName ? `
+              <div class="flex items-center justify-between">
+                <span class="text-slate-500">Ngân hàng:</span>
+                <span class="font-bold text-slate-900 dark:text-white">${UI.escapeHtml(bankName)}</span>
+              </div>
+            ` : ''}
+            ${accountNumber ? `
+              <div class="flex items-center justify-between">
+                <span class="text-slate-500">Số tài khoản:</span>
+                <div class="flex items-center gap-1.5">
+                  <span class="font-mono font-bold text-slate-900 dark:text-white">${UI.escapeHtml(accountNumber)}</span>
+                  <button type="button" class="text-primary hover:underline text-[10px] cursor-pointer" onclick="navigator.clipboard.writeText('${accountNumber}'); UI.showToast('Đã sao chép STK!', 'info');">Sao chép</button>
+                </div>
+              </div>
+            ` : ''}
+            ${amount > 0 ? `
+              <div class="flex items-center justify-between">
+                <span class="text-slate-500">Số tiền:</span>
+                <span class="font-mono font-bold text-rose-600 dark:text-rose-400 text-sm">${UI.formatMoney(amount)}</span>
+              </div>
+            ` : ''}
+            ${transferCode ? `
+              <div class="flex items-center justify-between">
+                <span class="text-slate-500">Nội dung CK:</span>
+                <div class="flex items-center gap-1.5">
+                  <span class="font-mono font-black text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 px-2 py-0.5 rounded text-xs">${UI.escapeHtml(transferCode)}</span>
+                  <button type="button" class="text-primary hover:underline text-[10px] cursor-pointer" onclick="navigator.clipboard.writeText('${transferCode}'); UI.showToast('Đã sao chép nội dung!', 'info');">Sao chép</button>
+                </div>
+              </div>
+            ` : ''}
+          </div>
+
+          <button
+            type="button"
+            id="qr-lightbox-ok-btn"
+            class="w-full py-2.5 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold hover:bg-slate-800 dark:hover:bg-slate-100 transition-colors cursor-pointer"
+          >
+            Đã quét xong / Đóng
+          </button>
+        </div>
+      `;
+
+      container.appendChild(modalLayer);
+      container.classList.remove('hidden');
+      window._modalOnClose = finish;
+
+      requestAnimationFrame(() => {
+        const card = modalLayer.querySelector('#qr-lightbox-card');
+        if (card) {
+          card.classList.remove('scale-95', 'opacity-0');
+          card.classList.add('scale-100', 'opacity-100');
+        }
+      });
+
+      modalLayer.querySelector('#qr-lightbox-close-btn')?.addEventListener('click', finish);
+      modalLayer.querySelector('#qr-lightbox-ok-btn')?.addEventListener('click', finish);
+      modalLayer.addEventListener('click', (e) => {
+        if (e.target === modalLayer) finish();
+      });
+
+      const onKeyDown = (e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          finish();
         }
       };
       document.addEventListener('keydown', onKeyDown);
@@ -1725,6 +2084,12 @@ class UI {
     } catch {
       return isoString;
     }
+  }
+
+  static formatMoney(amount) {
+    const num = Number(amount || 0);
+    if (num <= 0) return '0 đ';
+    return num.toLocaleString('vi-VN') + ' đ';
   }
 
   static formatDateTime(isoString) {

@@ -1,2165 +1,4533 @@
 /**
+
  * PWD301 LMS - Single Page Application (SPA) Master Router & Shell Controller
+
  * Warm Editorial Edition - Minimalist Instant Navigation, Role-based Menus,
+
  * Micro-Progress Transitions, Focus Fullscreen Exam Mode.
+
  */
 
+
+
 class AppRouter {
+
   static getNotificationActionLabel(item) {
+
     const event = String(item?.event_type || '');
+
     if (event === 'INSTRUCTOR_APPLICATION_SUBMITTED') return 'Xem Hồ Sơ';
+
     if (event === 'LESSON_CHANGE_REQUEST' || event === 'COURSE_PREREQUISITE_REQUEST') {
+
       return 'Xem Yêu Cầu';
+
     }
+
     if (event.startsWith('COURSE_CHANGE_')
+
       || event.startsWith('COURSE_PREREQUISITE_')
+
       || ['COURSE_SUBMITTED_FOR_REVIEW', 'COURSE_APPROVED', 'COURSE_REJECTED', 'COURSE_OWNER_REASSIGNED'].includes(event)) {
+
       return 'Xem Khóa Học';
+
     }
+
     return 'Mở Trang Liên Quan';
+
   }
+
+
 
   static getNotificationReviewTarget(item, link = '') {
+
     const target = String(link || item?.action_url || item?.target_url || '');
+
     if (!target.startsWith('#/admin/governance')) return null;
 
+
+
     const [path, queryString = ''] = target.split('?');
+
     const query = new URLSearchParams(queryString);
+
     let tab = query.get('tab');
+
     if (!tab && item?.category === 'COURSE') tab = 'courses';
+
     if (!tab && String(item?.event_type || '').includes('INSTRUCTOR_APPLICATION')) tab = 'applications';
+
     if (!['courses', 'applications'].includes(tab)) return null;
 
+
+
     query.set('tab', tab);
+
     if (tab === 'courses') query.set('queue', 'courses');
+
     return `${path}?${query.toString()}`;
+
   }
+
+
 
   static get instance() {
+
     return window.app || null;
+
   }
+
+
 
   constructor() {
+
     this.currentUser = null;
+
     this.currentRole = 'STUDENT';
+
     this.viewport = document.getElementById('app-viewport');
+
     this.sidebar = document.getElementById('app-sidebar');
+
     this.topbar = document.getElementById('app-topbar');
+
     this.adminNavBadges = {
+
       courses: 0,
+
       applications: 0
+
     };
+
   }
+
+
 
   async init() {
+
     // 0. Setup global anti-tamper security shield across all pages
+
     this.initGlobalSecurityShield();
 
+
+
     // 1. Initial auth state check
+
     await this.refreshCurrentUser();
 
+
+
     // 2. Setup hash change listener
+
     window.addEventListener('hashchange', () => this.handleRoute());
 
+
+
     // 3. Setup global theme listener
+
     this.initThemeToggle();
 
+
+
     // 3.5 Setup Avatar & Profile Dropdown
+
     this.initAvatarDropdown();
 
+
+
+    // 3.6 Setup Wallet Dropdown (TASK-121)
+
+    this.initWalletDropdown();
+
+
+
     // 4. Setup Notifications Bell & Badge Polling
+
     this.initNotifications();
 
+
+
     // 4.2 Initial Admin Navigation Badges (Pending approvals)
+
     if (this.currentRole === 'ADMIN') {
+
       this.fetchAdminPendingCounts();
+
     } else if (this.currentRole === 'INSTRUCTOR') {
+
       this.fetchInstructorPendingCounts();
+
     }
+
+
 
     // 4.5 Setup Mobile Navigation Drawer
+
     this.initMobileNav();
 
+
+
     // 5. Setup Floating AI Tutor
+
     if (window.FloatingAITutor) {
+
       FloatingAITutor.init();
+
     }
+
+
 
     // 6. Initial route resolution
+
     await this.handleRoute();
+
   }
+
+
 
   initGlobalSecurityShield() {
+
     if (this._securityShieldInitialized) return;
+
     this._securityShieldInitialized = true;
+
     this.isSecurityLocked = false;
 
+
+
     // Helper: is current view actively taking an exam/quiz?
+
     const isExamActive = () => {
+
       if (typeof ExamAntiCheatManager !== 'undefined' && ExamAntiCheatManager.activeInstance && ExamAntiCheatManager.activeInstance.isActive) {
+
         return true;
+
       }
+
       const hash = window.location.hash || '';
+
       if (hash.includes('/assessments/attempt') || hash.includes('/assessments/attempts/')) {
+
         return true;
+
       }
+
       if (document.getElementById('questions-viewport') || document.getElementById('lockdown-violation-count')) {
+
         return true;
+
       }
+
       return false;
+
     };
+
+
 
     // 1. Hotkeys Prevention (DevTools, View Source, Screenshot in Exams)
+
     window.addEventListener('keydown', (e) => {
+
       if (this.isSecurityLocked) return;
+
       const key = (e.key || '').toUpperCase();
+
       const code = e.keyCode || e.which;
+
       const isCtrlOrMeta = e.ctrlKey || e.metaKey;
+
       const isShift = e.shiftKey;
+
       const isAlt = e.altKey;
 
+
+
       // F12
+
       if (key === 'F12' || code === 123) {
+
         e.preventDefault();
+
         e.stopPropagation();
-        this.triggerGlobalSecurityLockdown('DEVTOOLS_DETECTED');
+
+        if (isExamActive()) {
+
+          this.triggerGlobalSecurityLockdown('DEVTOOLS_DETECTED');
+
+        }
+
         return false;
+
       }
+
+
 
       // Ctrl+Shift+I / J / C (DevTools Inspector, Console)
+
       if (isCtrlOrMeta && isShift && (key === 'I' || key === 'J' || key === 'C' || code === 73 || code === 74 || code === 67)) {
+
         e.preventDefault();
+
         e.stopPropagation();
-        this.triggerGlobalSecurityLockdown('DEVTOOLS_DETECTED');
+
+        if (isExamActive()) {
+
+          this.triggerGlobalSecurityLockdown('DEVTOOLS_DETECTED');
+
+        }
+
         return false;
+
       }
+
+
 
       // Ctrl+U (View Source)
+
       if (isCtrlOrMeta && (key === 'U' || code === 85)) {
+
         e.preventDefault();
+
         e.stopPropagation();
-        this.triggerGlobalSecurityLockdown('VIEW_SOURCE_ATTEMPT');
+
+        if (isExamActive()) {
+
+          this.triggerGlobalSecurityLockdown('VIEW_SOURCE_ATTEMPT');
+
+        }
+
         return false;
+
       }
+
+
 
       // PrintScreen / Win+Shift+S / Snipping Tool (Only restricted during exams)
+
       if (key === 'PRINTSCREEN' || code === 44 || (isShift && (isCtrlOrMeta || isAlt) && key === 'S')) {
+
         if (isExamActive()) {
+
           e.preventDefault();
+
           e.stopPropagation();
+
           try {
+
             if (navigator.clipboard && navigator.clipboard.writeText) {
+
               navigator.clipboard.writeText('');
+
             }
+
           } catch (_) {}
+
           if (typeof ExamAntiCheatManager !== 'undefined' && ExamAntiCheatManager.activeInstance) {
+
             ExamAntiCheatManager.activeInstance.recordSecurityViolation('SCREENSHOT_ATTEMPT');
+
           }
+
           if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
+
             UI.showToast('CẢNH BÁO KHẢO THÍ: Nghiêm cấm chụp màn hình trong bài thi. Vi phạm đã được ghi nhận vào báo cáo!', 'warning');
+
           }
+
           return false;
+
         }
+
       }
+
     }, true);
+
+
 
     // 2. Context Menu (Right Click) Prevention only during exams
+
     window.addEventListener('contextmenu', (e) => {
+
       if (isExamActive()) {
+
         const tag = (e.target && e.target.tagName ? e.target.tagName : '').toUpperCase();
+
         const isEditable = e.target && (e.target.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA');
+
         if (!isEditable) {
+
           e.preventDefault();
+
           e.stopPropagation();
+
           if (typeof ExamAntiCheatManager !== 'undefined' && ExamAntiCheatManager.activeInstance) {
+
             ExamAntiCheatManager.activeInstance.recordSecurityViolation('CONTEXT_MENU_ATTEMPT');
+
           }
+
           if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
+
             UI.showToast('CẢNH BÁO KHẢO THÍ: Nghiêm cấm thao tác chuột phải trong bài thi!', 'warning');
+
           }
+
           return false;
+
         }
+
       }
+
     }, true);
 
-    // 3. Periodic DevTools Detection (debugger delta & window dimensions)
-    const checkTiming = () => {
-      if (this.isSecurityLocked) return;
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
-      const start = Date.now();
-      try {
-        (function() { debugger; })();
-      } catch (_) {}
-      const delta = Date.now() - start;
-      if (delta > 100) {
-        this.triggerGlobalSecurityLockdown('DEVTOOLS_DETECTED');
-        return;
-      }
 
-      // Window dimension comparison removed in TASK-108 to eliminate zoom-in/out false positives
-    };
 
-    this._securityTimer = setInterval(checkTiming, 1000);
-    if (this._securityTimer && typeof this._securityTimer.unref === 'function') {
-      this._securityTimer.unref();
-    }
+    // NOTE: Obsolete timing delta trap ((function(){debugger;})() > 100ms) has been permanently removed
+
+    // in TASK-123 to eliminate false-positive lockouts on slow network/CPU spikes.
+
   }
+
+
 
   async triggerGlobalSecurityLockdown(reason = 'DEVTOOLS_DETECTED') {
+
+    // Only lock down in confirmed active exam mode to protect exam integrity,
+
+    // NEVER disrupt normal learning, administration, or page navigation.
+
+    const isExamActive = () => {
+
+      if (typeof ExamAntiCheatManager !== 'undefined' && ExamAntiCheatManager.activeInstance && ExamAntiCheatManager.activeInstance.isActive) {
+
+        return true;
+
+      }
+
+      if (document.getElementById('questions-viewport') || document.getElementById('lockdown-violation-count')) {
+
+        return true;
+
+      }
+
+      return false;
+
+    };
+
+
+
+    if (!isExamActive()) {
+
+      console.warn('Security event ignored in non-exam context:', reason);
+
+      return;
+
+    }
+
+
+
     if (this.isSecurityLocked) return;
+
     this.isSecurityLocked = true;
 
+
+
     // Pause all media
+
     try {
+
       document.querySelectorAll('video, audio').forEach(m => {
+
         try { m.pause(); } catch (_) {}
+
       });
+
     } catch (_) {}
+
+
 
     // Clear clipboard
+
     try {
+
       if (navigator.clipboard && navigator.clipboard.writeText) {
+
         navigator.clipboard.writeText('');
+
       }
+
     } catch (_) {}
+
+
 
     // Reason Text
+
     let reasonText = 'PHÁT HIỆN HÀNH VI CAN THIỆP MÃ NGUỒN';
+
     if (reason === 'DEVTOOLS_DETECTED') {
+
       reasonText = 'PHÁT HIỆN CÔNG CỤ DEVTOOLS / MÃ NGUỒN';
+
     } else if (reason === 'VIEW_SOURCE_ATTEMPT') {
+
       reasonText = 'PHÁT HIỆN THAO TÁC XEM MÃ NGUỒN HỆ THỐNG';
+
     } else if (reason === 'SCREEN_CAPTURE_ATTEMPT') {
+
       reasonText = 'PHÁT HIỆN THAO TÁC CHỤP / QUAY MÀN HÌNH';
+
     } else if (reason === 'CONTEXT_MENU_BLOCKED') {
+
       reasonText = 'PHÁT HIỆN THAO TÁC CHUỘT PHẢI MÃ NGUỒN';
+
     }
+
+
 
     // Render Fullscreen Blackout Shield
+
     let shield = document.getElementById('global-security-blackout-shield');
+
     if (!shield) {
+
       shield = document.createElement('div');
+
       shield.id = 'global-security-blackout-shield';
+
       shield.className = 'fixed inset-0 z-[999999] bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4 text-center select-none animate-fade-in';
+
       document.body.appendChild(shield);
+
     }
+
+
 
     shield.innerHTML = `
+
       <div class="max-w-md w-full p-8 rounded-2xl bg-slate-900 border border-rose-500/40 shadow-2xl space-y-4 text-white">
+
         <div class="w-16 h-16 mx-auto rounded-full bg-rose-500/10 text-rose-500 flex items-center justify-center">
+
           <span class="material-symbols-outlined text-[36px]">shield</span>
+
         </div>
+
         <h2 class="text-lg font-extrabold text-white tracking-wide">
+
           🛡️ CẢNH BÁO AN NINH HỆ THỐNG
+
         </h2>
+
         <div class="text-xs font-bold text-rose-400 bg-rose-950/40 py-1.5 px-3 rounded-lg border border-rose-900/60 font-mono">
+
           ${reasonText}
+
         </div>
+
         <p class="text-xs text-slate-300 leading-relaxed">
+
           Hệ thống phát hiện hành động can thiệp mã nguồn hoặc mở công cụ phát triển trái phép.
+
           Để đảm bảo an toàn bản quyền và mã nguồn, phiên làm việc đã bị thu hồi ngay lập tức.
+
         </p>
+
         <div class="pt-2">
+
           <button
+
             type="button"
+
             id="btn-security-lockdown-relogin"
+
             class="w-full py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-md cursor-pointer"
+
           >
+
             Đăng nhập lại
+
           </button>
+
         </div>
+
       </div>
+
     `;
 
+
+
     // Revoke Session on Server and Client
+
     try {
+
       if (window.ApiClient && typeof ApiClient.logout === 'function') {
+
         await ApiClient.logout().catch(() => {});
+
       }
+
     } catch (_) {}
+
+
 
     // Clear local states
+
     try {
+
       sessionStorage.clear();
+
       sessionStorage.setItem('pwd301_security_alert', 'Cảnh báo an ninh: Phiên làm việc đã bị thu hồi do phát hiện hành vi vi phạm chính sách bảo mật hệ thống.');
+
       localStorage.removeItem('pwd301_token');
+
       localStorage.removeItem('access_token');
+
     } catch (_) {}
 
+
+
     const reLogin = () => {
+
       this.isSecurityLocked = false;
+
       if (shield && shield.parentElement) {
+
         shield.parentElement.removeChild(shield);
+
       }
+
       window.location.hash = '#/auth/login?security_lockdown=1';
+
     };
+
+
 
     shield.querySelector('#btn-security-lockdown-relogin')?.addEventListener('click', reLogin);
+
     setTimeout(reLogin, 3500);
+
   }
+
+
 
   closeMobileDrawer() {
+
     const drawer = document.getElementById('mobile-nav-drawer');
+
     const backdrop = document.getElementById('mobile-nav-backdrop');
+
     const btn = document.getElementById('topbar-mobile-menu-btn');
+
     if (drawer) drawer.classList.add('hidden');
+
     if (backdrop) backdrop.classList.add('hidden');
+
     if (btn) btn.setAttribute('aria-expanded', 'false');
+
   }
+
+
 
   initMobileNav() {
+
     const btn = document.getElementById('topbar-mobile-menu-btn');
+
     const drawer = document.getElementById('mobile-nav-drawer');
+
     const backdrop = document.getElementById('mobile-nav-backdrop');
+
     const closeBtn = document.getElementById('mobile-nav-close-btn');
 
+
+
     if (!btn || !drawer || !backdrop) return;
+
     btn.setAttribute('aria-controls', 'mobile-nav-drawer');
+
     btn.setAttribute('aria-expanded', 'false');
 
+
+
     const open = () => {
+
       this.closeAvatarDropdown();
+
       this.closeNotificationsDropdown();
+
       drawer.classList.remove('hidden');
+
       backdrop.classList.remove('hidden');
+
       btn.setAttribute('aria-expanded', 'true');
+
     };
+
+
 
     const close = () => {
+
       this.closeMobileDrawer();
+
     };
 
+
+
     btn.onclick = open;
+
     if (closeBtn) closeBtn.onclick = close;
+
     backdrop.onclick = close;
 
+
+
     document.getElementById('mobile-navigation-items')?.addEventListener('click', (e) => {
+
       if (e.target.closest('a')) {
+
         close();
+
       }
+
     });
+
+
 
     document.addEventListener('keydown', (e) => {
+
       if (e.key === 'Escape' && !drawer.classList.contains('hidden')) {
+
         close();
+
       }
+
     });
+
   }
+
+
 
   async refreshCurrentUser() {
+
     try {
+
       const prevUserId = this.currentUser?.id;
+
       this.currentUser = await ApiClient.getCurrentUser();
+
       if (this.currentUser) {
+
         this.currentRole = this.currentUser.active_role || this.currentUser.primary_role || (this.currentUser.role_codes && this.currentUser.role_codes[0]) || 'STUDENT';
+
         if (prevUserId && prevUserId !== this.currentUser.id) {
+
           this.notificationsCache = null;
+
         }
+
         this.loadCachedNotifications();
+
       } else {
+
         this.currentRole = 'STUDENT';
+
         this.notificationsCache = null;
+
       }
+
     } catch {
+
       this.currentUser = null;
+
       this.notificationsCache = null;
+
     }
+
     this.updateUserUI();
+
     this.refreshNotificationBadge();
+
+    if (this.currentUser && window.RealtimeEngine && window.RealtimeEngine.status !== 'connected') {
+
+      window.RealtimeEngine.reconnect();
+
+    }
+
     return this.currentUser;
+
   }
+
+
 
   parseHash(rawHash = window.location.hash || '') {
+
     const raw = rawHash;
+
     const qIdx = raw.indexOf('?');
+
     const path = qIdx !== -1 ? raw.substring(0, qIdx) : raw;
+
     const query = {};
 
+
+
     if (qIdx !== -1) {
+
       const searchStr = raw.substring(qIdx + 1);
+
       const params = new URLSearchParams(searchStr);
+
       for (const [key, value] of params.entries()) {
+
         query[key] = value;
+
       }
+
     }
+
+
 
     return { path: path || '#/', query };
+
   }
+
+
 
   handleRoute() {
+
     const rawHash = window.location.hash || '';
+
     if (rawHash.startsWith('#') && !rawHash.startsWith('#/')) {
+
       const targetId = rawHash.slice(1);
+
       const targetEl = document.getElementById(targetId);
+
       if (targetEl) {
+
         targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
       }
+
       return Promise.resolve();
+
     }
+
+
 
     if (this._isRouting) {
+
       this._rerouteRequested = true;
+
       return this._routingPromise;
+
     }
+
     this._isRouting = true;
 
+
+
     if (typeof UI !== 'undefined' && typeof UI.startMicroLoading === 'function') {
+
       UI.startMicroLoading();
+
     }
+
+
 
     this._routingPromise = (async () => {
+
       try {
+
         let routeHash;
+
         do {
+
           this._rerouteRequested = false;
+
           routeHash = window.location.hash || '#/';
+
           const departureGuard = this.beforeRouteLeave;
+
           if (departureGuard) {
+
             const allowed = await departureGuard.leave();
+
             if (!allowed) {
+
               window.history.replaceState(null, '', departureGuard.routeHash);
+
               this._rerouteRequested = false;
+
               break;
+
             }
+
             if (this.beforeRouteLeave === departureGuard) this.beforeRouteLeave = null;
+
           }
+
           await this.renderRoute(routeHash);
+
         } while (
+
           this._rerouteRequested
+
           || (window.location.hash || '#/') !== routeHash
+
         );
+
       } finally {
+
         this._isRouting = false;
+
         this._routingPromise = null;
+
         if (typeof UI !== 'undefined' && typeof UI.stopMicroLoading === 'function') {
+
           UI.stopMicroLoading();
+
         }
+
       }
+
     })();
 
+
+
     return this._routingPromise;
+
   }
 
-  createRouteStagingViewport() {
-    const stagingViewport = document.createElement('div');
-    stagingViewport.className = 'route-render-stage';
-    stagingViewport.setAttribute('aria-hidden', 'true');
-    stagingViewport.inert = true;
-    Object.assign(stagingViewport.style, {
-      position: 'absolute',
-      inset: '0',
-      width: '100%',
-      visibility: 'hidden',
-      pointerEvents: 'none',
-    });
-    this.viewport.prepend(stagingViewport);
-    this.viewport.setAttribute('aria-busy', 'true');
-    return stagingViewport;
-  }
 
-  commitRouteStagingViewport(stagingViewport, path) {
-    const renderedContent = Array.from(stagingViewport.childNodes);
-    stagingViewport.remove();
-    this.viewport.replaceChildren(...renderedContent);
-    this.viewport.removeAttribute('aria-busy');
-    this.applyRouteChrome(path);
-  }
+
+
 
   applyRouteChrome(path) {
+
     if (this._needsUserUiRefresh) {
+
       this.updateUserUI();
+
       this._needsUserUiRefresh = false;
+
     }
+
     this.toggleShell(true);
+
     this.renderDynamicSidebar();
+
     this.updateTopbarBreadcrumb(path);
+
     this.refreshNotificationBadge(false);
+
     if (this.currentRole === 'ADMIN') {
+
       const now = Date.now();
+
       if (!this._lastAdminCountsFetch || now - this._lastAdminCountsFetch > 15000) {
+
         this._lastAdminCountsFetch = now;
+
         this.fetchAdminPendingCounts();
+
       }
+
     } else if (this.currentRole === 'INSTRUCTOR') {
+
       const now = Date.now();
+
       if (!this._lastInstCountsFetch || now - this._lastInstCountsFetch > 15000) {
+
         this._lastInstCountsFetch = now;
+
         this.fetchInstructorPendingCounts();
+
       }
+
     }
+
+
 
     if (typeof UI !== 'undefined') {
+
       if (typeof UI.closeModal === 'function') UI.closeModal();
+
       if (typeof UI.closeDrawer === 'function') UI.closeDrawer();
+
     }
+
     document.querySelectorAll('body > .fixed.inset-0:not(#app-drawer-backdrop):not(#modal-container)').forEach(m => m.remove());
+
     const isFocusRoute = this.isFocusRoute(path);
+
     document.body.classList.toggle('fullscreen-focus-mode', isFocusRoute);
 
+
+
     const isExamActive = isFocusRoute;
+
     const floatingAi = document.getElementById('floating-ai-container');
+
     if (!floatingAi) return;
+
     floatingAi.classList.toggle('hidden', isExamActive);
+
     if (isExamActive && window.FloatingAITutor && typeof window.FloatingAITutor.close === 'function') {
+
       window.FloatingAITutor.close();
+
     }
+
   }
+
+
 
   isFocusRoute(path = window.location.hash || '') {
+
     return ((path.includes('/attempt') && !path.includes('/results'))
+
       || path.includes('/waiting-room'));
+
   }
+
+
 
   async renderRoute(routeHash) {
+
     if (!this.viewport) return;
+
     const { path, query } = this.parseHash(routeHash);
 
+
+
+
+
     // Auth Guard: If not logged in and not on auth path, redirect to auth
-    if (!this.currentUser && path !== '#/auth' && path !== '#/login') {
+
+    if (!this.currentUser && !path.startsWith('#/auth') && !path.startsWith('#/login')) {
+
       await this.refreshCurrentUser();
+
       if (!this.currentUser) {
+
         this.toggleShell(false);
+
         this.renderAuth();
+
         return;
+
       }
+
     }
+
+
 
     if (!this.currentUser) {
+
       this.toggleShell(false);
+
       this.renderAuth();
+
       return;
+
     }
+
+
 
     // If logged in and on #/auth or #/login, redirect to role home
-    if (this.currentUser && (path === '#/auth' || path === '#/login' || path === '#/' || path === '')) {
+
+    if (this.currentUser && (path.startsWith('#/auth') || path.startsWith('#/login') || path === '#/' || path === '')) {
+
       this.redirectToRoleHome();
+
       return;
+
     }
+
+
 
     // Install or update global VideoArmor security shield for authenticated sessions
+
     if (typeof VideoArmor !== 'undefined' && typeof VideoArmor.installGlobalShield === 'function') {
+
       VideoArmor.installGlobalShield(this.currentUser);
+
     }
+
+
 
     // Role Permission Guard with Automatic Multi-Role Perspective Switching
+
     const userRoles = (this.currentUser && (this.currentUser.role_codes || [this.currentUser.primary_role || 'STUDENT'])) || ['STUDENT'];
+
     const hasAdminRole = userRoles.includes('ADMIN');
+
     const hasInstructorRole = userRoles.includes('INSTRUCTOR') || hasAdminRole;
 
+
+
     if (path.startsWith('#/admin')) {
+
       if (!hasAdminRole) {
+
         UI.showToast('Bạn không có quyền truy cập khu vực Quản trị viên.', 'warning');
+
         this.redirectToRoleHome();
+
         return;
+
       }
+
       if (this.currentRole !== 'ADMIN') {
+
         try {
+
           await ApiClient.switchRole('ADMIN');
+
           this.currentRole = 'ADMIN';
+
           if (this.currentUser) this.currentUser.active_role = 'ADMIN';
+
           this.notificationsCache = null;
+
           this.loadCachedNotifications();
+
           this.fetchNotifications(true);
+
           this.fetchAdminPendingCounts();
+
           this._needsUserUiRefresh = true;
+
         } catch (err) {
+
           console.warn('Auto switchRole to ADMIN error:', err);
+
           UI.showToast('Không thể chuyển đổi vai trò sang Quản trị viên.', 'warning');
+
           this.redirectToRoleHome();
+
           return;
+
         }
+
       }
+
     } else if (path.startsWith('#/instructor')) {
+
       if (!hasInstructorRole) {
+
         UI.showToast('Bạn không có quyền truy cập khu vực Giảng viên.', 'warning');
+
         this.redirectToRoleHome();
+
         return;
+
       }
+
       if (this.currentRole !== 'INSTRUCTOR') {
+
         try {
+
           await ApiClient.switchRole('INSTRUCTOR');
+
           this.currentRole = 'INSTRUCTOR';
+
           if (this.currentUser) this.currentUser.active_role = 'INSTRUCTOR';
+
           this.notificationsCache = null;
+
           this.loadCachedNotifications();
+
           this.fetchNotifications(true);
+
           this._needsUserUiRefresh = true;
+
         } catch (err) {
+
           console.warn('Auto switchRole to INSTRUCTOR error:', err);
+
           UI.showToast('Không thể chuyển đổi vai trò sang Giảng viên.', 'warning');
+
           this.redirectToRoleHome();
+
           return;
+
         }
+
       }
+
     } else if (path.startsWith('#/student')) {
+
       if (this.currentRole !== 'STUDENT') {
+
         try {
+
           await ApiClient.switchRole('STUDENT');
+
           this.currentRole = 'STUDENT';
+
           if (this.currentUser) this.currentUser.active_role = 'STUDENT';
+
           this.notificationsCache = null;
+
           this.loadCachedNotifications();
+
           this.fetchNotifications(true);
+
           this._needsUserUiRefresh = true;
+
         } catch (err) {
+
           console.warn('Auto switchRole to STUDENT error:', err);
+
           UI.showToast('Không thể chuyển đổi vai trò sang Học viên.', 'warning');
+
           this.redirectToRoleHome();
+
           return;
+
         }
+
       }
+
     }
+
+
 
     const examStep = ['editor', 'interactive', 'excel', 'moodle'].some(
+
       route => path === `#/instructor/exams/${route}`
+
     ) ? 2 : path === '#/instructor/exams/matrix' ? 3
+
       : path === '#/instructor/exams/settings' ? 4 : 1;
+
     if (path.startsWith('#/instructor/exams/') && examStep > 1
+
       && window.ExamStore && !window.ExamStore.canVisitStep(examStep)) {
+
       const draft = window.ExamStore.getDraft?.() || {};
+
       const methodRoute = ['manual', 'interactive', 'excel', 'moodle'].includes(draft.sourceMethod)
+
         ? (draft.sourceMethod === 'manual' ? 'editor' : draft.sourceMethod)
+
         : 'editor';
+
       const allowedStep = window.ExamStore.canVisitStep(3) ? 3
+
         : window.ExamStore.canVisitStep(2) ? 2 : 1;
+
       window.location.hash = allowedStep === 3 ? '#/instructor/exams/matrix'
+
         : allowedStep === 2 ? `#/instructor/exams/${methodRoute}` : '#/instructor/exams';
+
       UI.showToast?.('Hãy hoàn thành bước hiện tại trước khi tiếp tục.', 'warning');
+
       return;
+
     }
 
-    // Route Dispatcher
-    const stagingViewport = this.createRouteStagingViewport();
+
+
+    // Route Dispatcher (Direct Mount with Clean Slate - 0% Duplicate IDs)
+
+    this.viewport.setAttribute('aria-busy', 'true');
+
+    this.viewport.replaceChildren();
+
     try {
-      await this.dispatchRoute(path, query, stagingViewport);
-      if ((window.location.hash || '#/') === routeHash) {
-        if (stagingViewport.childNodes.length > 0) {
-          this.commitRouteStagingViewport(stagingViewport, path);
-        } else {
-          stagingViewport.remove();
-          this.viewport.removeAttribute('aria-busy');
-        }
-      } else {
-        stagingViewport.remove();
-        this.viewport.removeAttribute('aria-busy');
-        this._rerouteRequested = true;
-      }
-    } catch (error) {
-      stagingViewport.remove();
+
+      await this.dispatchRoute(path, query, this.viewport);
+
       this.viewport.removeAttribute('aria-busy');
+
+      if ((window.location.hash || '#/') === routeHash) {
+
+        this.applyRouteChrome(path);
+
+      } else {
+
+        this._rerouteRequested = true;
+
+      }
+
+    } catch (error) {
+
+      this.viewport.removeAttribute('aria-busy');
+
       throw error;
+
     }
+
   }
+
+
 
   redirectToRoleHome() {
+
     let target = '#/student/dashboard';
+
     if (this.currentRole === 'ADMIN') {
+
       const subRole = this.currentUser?.admin_sub_role;
+
       if (subRole === 'ADMIN_SYSTEM_MONITORING') {
+
         target = '#/admin/operations';
+
       } else {
+
         target = '#/admin/governance';
+
       }
+
     } else if (this.currentRole === 'INSTRUCTOR') {
+
       target = '#/instructor/dashboard';
+
     }
+
     this.navigate(target, true);
+
   }
+
+
 
   navigate(target, replace = false) {
+
     if (!target) return;
+
     const cleanHash = target.startsWith('#') ? target : `#${target}`;
+
     if (replace) {
+
       window.history.replaceState(null, '', cleanHash);
+
       if (window.location.hash !== cleanHash) {
+
         window.location.hash = cleanHash;
+
       }
+
       this.handleRoute();
+
     } else {
+
       if ((window.location.hash || '#/') === cleanHash) {
+
         this.handleRoute();
+
       } else {
+
         window.location.hash = cleanHash;
+
       }
+
     }
+
   }
+
+
 
   toggleShell(visible) {
+
     if (this.topbar) this.topbar.style.display = visible ? 'flex' : 'none';
+
     if (this.sidebar) this.sidebar.style.display = 'none';
+
   }
+
+
 
   renderAuth() {
+
     if (typeof VideoArmor !== 'undefined' && typeof VideoArmor.uninstallGlobalShield === 'function') {
+
       VideoArmor.uninstallGlobalShield();
+
     }
-    if (window.history && window.history.replaceState) {
-      window.history.replaceState(null, '', '#/auth');
-    } else {
-      window.location.hash = '#/auth';
+
+    const currentHash = window.location.hash || '';
+    if (!currentHash.includes('verify') && !currentHash.includes('verified=') && !currentHash.includes('security_lockdown=')) {
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState(null, '', '#/auth');
+      } else {
+        window.location.hash = '#/auth';
+      }
     }
+
     if (!this.viewport) return;
+
     this.viewport.innerHTML = AuthView.render();
+
     AuthView.attachEvents();
+
   }
+
+
 
   async dispatchRoute(path, query, viewport = this.viewport) {
+
     if (!viewport) return;
 
+
+
     if (path.startsWith('#/admin')) {
+
       const userRoles = (this.currentUser && (this.currentUser.role_codes || [this.currentUser.primary_role || 'STUDENT'])) || ['STUDENT'];
+
       if (!userRoles.includes('ADMIN')) {
+
         this.redirectToRoleHome();
+
         return;
+
       }
+
     }
+
+
 
     // --- Student Routes ---
+
     if (path === '#/student/dashboard') {
+
       await StudentView.renderDashboard(viewport);
+
     } else if (path === '#/student/catalog' || path === '#/student/courses/catalog') {
+
       await StudentView.renderCatalog(viewport);
+
     } else if (path === '#/student/courses') {
+
       await StudentView.renderMyLearning(viewport);
+
     } else if (path === '#/student/courses/intro' || path === '#/student/courses/overview' || (path.startsWith('#/student/courses/') && (path.endsWith('/intro') || path.endsWith('/overview')))) {
+
       const courseId = query.id || path.replace('#/student/courses/', '').replace('/intro', '').replace('/overview', '');
+
       await StudentView.renderCourseOverview(viewport, courseId);
+
     } else if (path === '#/student/courses/detail' || (path.startsWith('#/student/courses/') && !path.includes('/lessons/') && path !== '#/student/courses/catalog')) {
+
       const courseId = query.id || path.replace('#/student/courses/', '');
+
       await StudentView.renderCourseConsole(viewport, courseId, query.lesson_id || null, query.exam_id || null, query.tab || 'outline');
+
     } else if (path === '#/student/lessons/reader' || (path.startsWith('#/student/courses/') && path.includes('/lessons/'))) {
+
       let cId = query.course_id;
+
       let lId = query.lesson_id;
+
       const m = path.match(/#\/student\/courses\/([^/]+)\/lessons\/([^/]+)/);
+
       if (m) {
+
         cId = m[1];
+
         lId = m[2];
+
       }
+
       await StudentView.renderCourseConsole(viewport, cId, lId || null, query.exam_id || null, query.tab || 'outline');
+
     } else if (path === '#/student/assessments') {
+
       await StudentView.renderAssessmentsList(viewport);
+
     } else if (path === '#/student/assessments/waiting-room' || path.endsWith('/waiting-room')) {
+
       const aId = query.id || path.replace('#/student/assessments/', '').replace('/waiting-room', '');
+
       await StudentView.renderWaitingRoom(viewport, aId);
+
     } else if (path === '#/student/assessments/attempt' || (path.startsWith('#/student/assessments/attempts/') && !path.endsWith('/results'))) {
+
       const attId = query.id || path.replace('#/student/assessments/attempts/', '');
+
       await StudentView.renderAttemptConsole(viewport, attId);
+
     } else if (path === '#/student/assessments/results' || (path.startsWith('#/student/') && path.endsWith('/results'))) {
+
       const attId = query.id || query.attempt_id || path.replace('#/student/assessments/attempts/', '').replace('/results', '');
+
       await StudentView.renderAttemptResults(viewport, attId);
+
     } else if (path === '#/student/ai-assistant') {
+
       await StudentView.renderAIAssistant(viewport);
+
     } else if (path === '#/student/become-instructor') {
+
       await StudentView.renderBecomeInstructor(viewport);
+
+    } else if (path === '#/student/wallet') {
+
+      await StudentView.renderWallet(viewport, query);
+
     } else if (path === '#/student/settings' || path === '#/settings' || path === '#/instructor/settings' || path === '#/admin/settings') {
+
       await StudentView.renderSettings(viewport);
+
     }
+
+
 
     // --- Instructor Routes ---
+
     else if (path === '#/instructor/dashboard') {
+
       await InstructorView.renderDashboard(viewport);
+
     } else if (path === '#/instructor/courses') {
+
       await InstructorView.renderCourses(viewport);
+
     } else if (path === '#/instructor/courses/manage') {
+
       const targetCourseId = query.id;
+
       if (!targetCourseId || targetCourseId === 'undefined' || targetCourseId === 'null' || !String(targetCourseId).trim()) {
+
         UI.showToast('Vui lòng chọn một khóa học từ danh sách để quản lý.', 'info');
+
         window.location.hash = '#/instructor/courses';
+
         return;
+
       }
+
       await InstructorView.renderCourseManage(viewport, targetCourseId, query.tab || 'curriculum', query.lesson || query.lesson_id, query.learning_unit_id);
+
     } else if (path.startsWith('#/instructor/courses/') && path.endsWith('/manage')) {
+
       const parts = path.split('/');
+
       const targetCourseId = parts[3];
+
       if (!targetCourseId || targetCourseId === 'undefined' || targetCourseId === 'null' || !String(targetCourseId).trim()) {
+
         UI.showToast('Vui lòng chọn một khóa học từ danh sách để quản lý.', 'info');
+
         window.location.hash = '#/instructor/courses';
+
         return;
+
       }
+
       await InstructorView.renderCourseManage(viewport, targetCourseId, query.tab || 'curriculum', query.lesson || query.lesson_id, query.learning_unit_id);
+
     } else if (path.startsWith('#/instructor/courses/') && (path.endsWith('/changes') || path.endsWith('/diff'))) {
+
       const parts = path.split('/');
+
       const targetCourseId = parts[3];
+
       if (!targetCourseId || targetCourseId === 'undefined' || targetCourseId === 'null' || !String(targetCourseId).trim()) {
+
         UI.showToast('Vui lòng chọn một khóa học từ danh sách để xem thay đổi.', 'info');
+
         window.location.hash = '#/instructor/courses';
+
         return;
+
       }
+
       await InstructorView.renderCourseChangesPage(viewport, targetCourseId);
+
     } else if (path === '#/instructor/courses/changes' || path === '#/instructor/courses/diff') {
+
       const targetCourseId = query.id || query.course_id;
+
       if (!targetCourseId || targetCourseId === 'undefined' || targetCourseId === 'null' || !String(targetCourseId).trim()) {
+
         UI.showToast('Vui lòng chọn một khóa học từ danh sách để xem thay đổi.', 'info');
+
         window.location.hash = '#/instructor/courses';
+
         return;
+
       }
+
       await InstructorView.renderCourseChangesPage(viewport, targetCourseId);
+
     } else if (path.startsWith('#/instructor/courses/') && path.includes('/lessons/new')) {
+
       const parts = path.split('/');
+
       const courseId = parts[3];
+
       await InstructorView.renderCourseManage(viewport, courseId, 'curriculum', 'new', query.learning_unit_id);
+
     } else if (path.startsWith('#/instructor/courses/') && path.includes('/lessons/') && !path.includes('/lessons/new')) {
+
       const match = path.match(/#\/instructor\/courses\/([^/]+)\/lessons\/([^/]+)/);
+
       if (match) {
+
         const courseId = match[1];
+
         let lessonId = match[2];
+
         if (lessonId === 'new') lessonId = 'new';
+
         else if (lessonId === 'edit') lessonId = query.id || query.lesson_id || null;
+
         else if (lessonId === 'undefined' || lessonId === 'null') lessonId = null;
+
         await InstructorView.renderCourseManage(viewport, courseId, 'curriculum', lessonId, query.learning_unit_id);
+
       }
+
+
 
     } else if (path === '#/instructor/appeals') {
+
       await InstructorView.renderAppeals(viewport, query);
+
     } else if (path === '#/instructor/prerequisites/requests' || path === '#/instructor/prerequisite-requests') {
+
       await InstructorView.renderPrerequisiteApprovalRequests(viewport);
+
     } else if (path === '#/instructor/exams' || path === '#/instructor/exams/hub') {
+
       await InstructorView.renderExamsHub(viewport, query);
+
     } else if (path === '#/instructor/exams/editor') {
+
       InstructorView.renderExamEditor(viewport);
+
     } else if (path === '#/instructor/exams/interactive') {
+
       InstructorView.renderExamInteractive(viewport);
+
     } else if (path === '#/instructor/exams/excel') {
+
       InstructorView.renderExamExcel(viewport);
+
     } else if (path === '#/instructor/exams/moodle') {
+
       InstructorView.renderExamMoodle(viewport);
+
     } else if (path === '#/instructor/exams/matrix') {
+
       InstructorView.renderExamMatrix(viewport);
+
     } else if (path === '#/instructor/exams/settings') {
+
       InstructorView.renderExamSettings(viewport);
+
     } else if (path.startsWith('#/instructor/courses/') && path.includes('/assessments/') && path.endsWith('/results')) {
+
       const parts = path.split('/');
+
       const courseId = parts[3];
+
       const assessmentId = parts[5];
+
       await InstructorView.renderAssessmentResultsPage(viewport, assessmentId, courseId);
+
     } else if (path.startsWith('#/instructor/assessments/') && path.endsWith('/results')) {
+
       const parts = path.split('/');
+
       const assessmentId = parts[3];
+
       await InstructorView.renderAssessmentResultsPage(viewport, assessmentId, query.course_id || null);
+
     } else if (path === '#/instructor/exams/results') {
+
       const assessmentId = query.id || query.assessment_id;
+
       await InstructorView.renderAssessmentResultsPage(viewport, assessmentId, query.course_id || null);
+
     } else if (path === '#/instructor/exams/edit') {
+
       await InstructorView.renderExamEdit(viewport, query.id || query.assessment_id, query);
+
     }
+
+
 
     // --- Admin Routes ---
+
     else if (path === '#/admin/courses/review') {
+
       const subRole = this.currentUser?.admin_sub_role || 'ADMIN_PRIMARY';
+
       const isPrimary = this.currentUser?.is_primary_admin || subRole === 'ADMIN_PRIMARY';
+
       if (!isPrimary && subRole !== 'ADMIN_COURSE_REVIEW') {
+
         UI.showToast('Bạn không có quyền truy cập duyệt khóa học.', 'warning');
+
         this.navigate('#/admin/governance', true);
+
         return;
+
       }
+
       await AdminView.renderCourseReviewPage(viewport, query.id);
+
     } else if (path === '#/admin/change-requests/review') {
+
       const subRole = this.currentUser?.admin_sub_role || 'ADMIN_PRIMARY';
+
       const isPrimary = this.currentUser?.is_primary_admin || subRole === 'ADMIN_PRIMARY';
+
       if (!isPrimary && subRole !== 'ADMIN_COURSE_REVIEW') {
+
         UI.showToast('Bạn không có quyền truy cập duyệt yêu cầu thay đổi.', 'warning');
+
         this.navigate('#/admin/governance', true);
+
         return;
+
       }
+
       await AdminView.renderChangeRequestReviewPage(viewport, query.id);
+
     } else if (path === '#/admin/governance') {
+
       const subRole = this.currentUser?.admin_sub_role || 'ADMIN_PRIMARY';
+
       const isPrimary = this.currentUser?.is_primary_admin || subRole === 'ADMIN_PRIMARY';
+
       const defaultTab = {
+
         ADMIN_COURSE_REVIEW: 'courses',
+
         ADMIN_INSTRUCTOR_REVIEW: 'applications',
+
         ADMIN_TEACHING_ASSIGNMENT: 'reassign',
+
         ADMIN_SYSTEM_MONITORING: 'security',
+
       }[subRole] || 'users';
 
+
+
       // Validate requested tab against subRole permissions
+
       let requestedTab = query.tab || defaultTab;
+
       if (!isPrimary) {
+
         const allowedTabs = {
+
           ADMIN_COURSE_REVIEW: ['courses', 'review'],
+
           ADMIN_INSTRUCTOR_REVIEW: ['applications', 'instructors'],
+
           ADMIN_TEACHING_ASSIGNMENT: ['reassign'],
+
           ADMIN_SYSTEM_MONITORING: ['security'],
+
         }[subRole] || [];
 
+
+
         if (!allowedTabs.includes(requestedTab)) {
+
           requestedTab = defaultTab;
+
         }
+
       }
+
+
+
+      // Chuẩn hóa URL cho #/admin/governance: nếu không có query.tab, dùng replaceState
+
+      if (!query.tab) {
+
+        const queueParam = query.queue ? `&queue=${query.queue}` : '';
+
+        window.history.replaceState(null, '', `#/admin/governance?tab=${requestedTab}${queueParam}`);
+
+      }
+
+
 
       await AdminView.renderGovernance(viewport, requestedTab, query.queue || null);
+
     } else if (path === '#/admin/operations') {
+
       const subRole = this.currentUser?.admin_sub_role || 'ADMIN_PRIMARY';
+
       const isPrimary = this.currentUser?.is_primary_admin || subRole === 'ADMIN_PRIMARY';
+
       if (!isPrimary && subRole !== 'ADMIN_SYSTEM_MONITORING') {
+
         UI.showToast('Bạn không có quyền truy cập khu vực Vận hành hệ thống.', 'warning');
+
         this.navigate('#/admin/governance', true);
+
         return;
+
       }
+
       await AdminView.renderOperations(viewport);
+
+    } else if (path === '#/admin/notifications') {
+
+      const subRole = this.currentUser?.admin_sub_role || 'ADMIN_PRIMARY';
+
+      const isPrimary = this.currentUser?.is_primary_admin || subRole === 'ADMIN_PRIMARY';
+
+      if (!isPrimary && subRole !== 'ADMIN_SYSTEM_MONITORING') {
+
+        UI.showToast('Bạn không có quyền truy cập khu vực Quản lý thông báo.', 'warning');
+
+        this.navigate('#/admin/governance', true);
+
+        return;
+
+      }
+
+      await AdminView.renderNotificationsPage(viewport);
+
+    } else if (path === '#/admin/cashflow') {
+
+      const subRole = this.currentUser?.admin_sub_role || 'ADMIN_PRIMARY';
+
+      const isPrimary = this.currentUser?.is_primary_admin || subRole === 'ADMIN_PRIMARY';
+
+      if (!isPrimary && subRole !== 'ADMIN_FINANCIAL') {
+
+        UI.showToast('Bạn không có quyền truy cập khu vực Quản lý dòng tiền.', 'warning');
+
+        this.navigate('#/admin/governance', true);
+
+        return;
+
+      }
+
+      await AdminView.renderCashflow(viewport, query);
+
     }
+
+
 
     // Fallback
+
     else {
+
       this.redirectToRoleHome();
+
     }
+
   }
 
+
+
   // =========================================================================
+
   // Top Navigation Bar & Mobile Drawer Menus (Warm Editorial Pill Tabs)
+
   // =========================================================================
+
   updateAdminNavBadges(badges = {}) {
+
     this.adminNavBadges = { ...this.adminNavBadges, ...badges };
+
     this.renderDynamicSidebar();
+
   }
+
+
 
   async fetchAdminPendingCounts() {
+
     if (this.currentRole !== 'ADMIN') return;
+
     try {
+
       const subRole = this.currentUser?.admin_sub_role || 'ADMIN_PRIMARY';
+
       const isPrimary = !subRole || subRole === 'ADMIN_PRIMARY' || Boolean(this.currentUser?.is_primary_admin);
+
       const canReviewCourses = isPrimary || subRole === 'ADMIN_COURSE_REVIEW';
+
       const canReviewInstructors = isPrimary || subRole === 'ADMIN_INSTRUCTOR_REVIEW';
+
       const [coursesRes, crRes, appsRes] = await Promise.allSettled([
+
         canReviewCourses ? ApiClient.getPendingCourses() : Promise.resolve(null),
+
         canReviewCourses ? ApiClient.getAdminChangeRequests('PENDING') : Promise.resolve(null),
+
         canReviewInstructors ? ApiClient.getAdminInstructorApplications('PENDING') : Promise.resolve(null)
+
       ]);
 
+
+
       let pendingCoursesCount = 0;
+
       if (coursesRes.status === 'fulfilled' && coursesRes.value) {
+
         pendingCoursesCount = coursesRes.value.pending_count || (coursesRes.value.courses ? coursesRes.value.courses.length : 0);
+
       }
+
       let pendingCrCount = 0;
+
       if (crRes.status === 'fulfilled' && crRes.value) {
+
         pendingCrCount = crRes.value.pending_count || (crRes.value.change_requests ? crRes.value.change_requests.length : 0);
+
       }
+
       let pendingAppsCount = 0;
+
       if (appsRes.status === 'fulfilled' && appsRes.value) {
+
         pendingAppsCount = appsRes.value.pending_count || (appsRes.value.applications ? appsRes.value.applications.length : 0);
+
       }
+
+
 
       this.adminNavBadges.courses = pendingCoursesCount + pendingCrCount;
+
       this.adminNavBadges.applications = pendingAppsCount;
+
       this.renderDynamicSidebar();
+
     } catch (err) {
+
       console.warn('Silent admin pending badge fetch warning:', err);
+
     }
+
   }
+
+
 
   async fetchInstructorPendingCounts() {
+
     if (this.currentRole !== 'INSTRUCTOR') return;
+
     try {
+
       if (typeof ApiClient.getInstructorPrerequisitePendingCount === 'function') {
+
         const res = await ApiClient.getInstructorPrerequisitePendingCount();
+
         this.instructorPrereqPendingCount = (res && typeof res.count === 'number') ? res.count : 0;
+
       }
+
       if (typeof ApiClient.getInstructorAppeals === 'function') {
+
         const resAppeals = await ApiClient.getInstructorAppeals({ status: 'PENDING' });
-        const appealsList = (resAppeals && resAppeals.data && resAppeals.data.appeals) ? resAppeals.data.appeals : (resAppeals?.appeals || []);
-        this.instructorAppealsPendingCount = (resAppeals && resAppeals.data && typeof resAppeals.data.total === 'number') ? resAppeals.data.total : appealsList.length;
+
+        const appealsList = (resAppeals && resAppeals.data && resAppeals.data.appeals) ? resAppeals.data.appeals : (resAppeals?.appeals || resAppeals?.items || []);
+
+        this.instructorAppealsPendingCount = (resAppeals && typeof resAppeals.pending_count === 'number') ? resAppeals.pending_count : ((resAppeals && resAppeals.data && typeof resAppeals.data.total === 'number') ? resAppeals.data.total : appealsList.length);
+
       }
+
       this.renderDynamicSidebar();
+
     } catch (err) {
+
       console.warn('Silent instructor prereq/appeals badge fetch warning:', err);
+
     }
+
   }
 
+
+
   // =========================================================================
+
   // Top Navigation Bar & Mobile Drawer Menus (Warm Editorial Pill Tabs)
+
   // =========================================================================
+
   checkPathActive(currentHashOrPath = window.location.hash || '#/', menuPath = '', subRole = null) {
+
     const { path: curPath, query: curQuery } = this.parseHash(currentHashOrPath);
+
     const [mPath, mQueryStr] = menuPath.split('?');
 
+
+
     let isPathMatch = (curPath === mPath);
+
     if (!isPathMatch) {
+
       if (mPath === '#/instructor/exams' && curPath.startsWith('#/instructor/exams/')) isPathMatch = true;
+
       else if (mPath === '#/instructor/courses' && curPath.startsWith('#/instructor/courses/')) isPathMatch = true;
+
       else if (mPath === '#/instructor/appeals' && curPath.startsWith('#/instructor/appeals')) isPathMatch = true;
+
       else if (mPath === '#/instructor/prerequisites/requests' && (curPath.startsWith('#/instructor/prerequisites') || curPath === '#/instructor/prerequisite-requests')) isPathMatch = true;
+
       else if (mPath === '#/student/courses' && (curPath.startsWith('#/student/courses/') || curPath.startsWith('#/student/lessons/'))) isPathMatch = true;
+
       else if (mPath === '#/student/assessments' && curPath.startsWith('#/student/assessments/')) isPathMatch = true;
+
       else if (mPath === '#/admin/operations' && curPath.startsWith('#/admin/operations/')) isPathMatch = true;
-      else if (mPath === '#/admin/governance' && curPath === '#/admin/courses/review') {
-        if (mQueryStr && mQueryStr.includes('tab=courses')) return true;
+
+      else if (mPath === '#/admin/notifications' && curPath === '#/admin/notifications') isPathMatch = true;
+
+      else if (mPath === '#/admin/cashflow' && curPath === '#/admin/cashflow') isPathMatch = true;
+
+      else if (mPath === '#/student/wallet' && curPath === '#/student/wallet') isPathMatch = true;
+
+      else if (mPath === '#/admin/governance' && (curPath === '#/admin/courses/review' || curPath === '#/admin/change-requests/review')) {
+
+        const mParams = new URLSearchParams(mQueryStr || '');
+
+        if (mParams.get('tab') === 'courses') return true;
+
       }
+
     }
+
     if (!isPathMatch) return false;
 
-    if (!mQueryStr) {
-      return !curQuery.tab || curQuery.tab === 'users';
-    }
-    const mParams = new URLSearchParams(mQueryStr);
-    const mTab = mParams.get('tab');
-    if (mTab) {
-      if (curQuery.tab) return curQuery.tab === mTab;
+
+
+    if (mPath === '#/admin/governance') {
+
+      const mParams = new URLSearchParams(mQueryStr || '');
+
+      const mTab = mParams.get('tab') || 'users';
+
       const role = subRole || this.currentUser?.admin_sub_role || 'ADMIN_PRIMARY';
+
       const defaultTab = {
+
         ADMIN_COURSE_REVIEW: 'courses',
+
         ADMIN_INSTRUCTOR_REVIEW: 'applications',
+
         ADMIN_TEACHING_ASSIGNMENT: 'reassign',
+
         ADMIN_SYSTEM_MONITORING: 'security',
+
       }[role] || 'users';
-      return defaultTab === mTab;
+
+      const curTab = curQuery.tab || defaultTab;
+
+      return curTab === mTab;
+
     }
+
+
+
+    if (!mQueryStr) return true;
+
+    const mParams = new URLSearchParams(mQueryStr);
+
+    for (const [k, v] of mParams.entries()) {
+
+      if (curQuery[k] !== v) return false;
+
+    }
+
     return true;
+
   }
+
+
 
   renderDynamicTopbar() {
+
     return this.renderDynamicSidebar();
+
   }
 
+
+
   renderDynamicSidebar() {
+
     const role = this.currentRole;
+
     const { path } = this.parseHash();
+
     const userRoles = (this.currentUser && (this.currentUser.role_codes || [this.currentUser.primary_role || 'STUDENT'])) || ['STUDENT'];
+
     const canSwitchToInstructor = userRoles.includes('INSTRUCTOR') || userRoles.includes('ADMIN');
+
+
 
     let menu = [];
 
+
+
     if (role === 'ADMIN') {
+
       const subRole = this.currentUser?.admin_sub_role || 'ADMIN_PRIMARY';
+
       if (subRole === 'ADMIN_COURSE_REVIEW') {
+
         menu = [
+
           { label: 'Duyệt khóa học', path: '#/admin/governance?tab=courses', icon: 'fact_check', badge: this.adminNavBadges?.courses || 0 },
+
         ];
+
       } else if (subRole === 'ADMIN_INSTRUCTOR_REVIEW') {
+
         menu = [
+
           { label: 'Duyệt giảng viên', path: '#/admin/governance?tab=applications', icon: 'badge', badge: this.adminNavBadges?.applications || 0 },
+
         ];
+
       } else if (subRole === 'ADMIN_TEACHING_ASSIGNMENT') {
+
         menu = [
+
           { label: 'Phân công giảng dạy', path: '#/admin/governance?tab=reassign', icon: 'swap_horiz', badge: 0 },
+
         ];
+
       } else if (subRole === 'ADMIN_SYSTEM_MONITORING') {
+
         menu = [
+
           { label: 'Vận hành hệ thống', path: '#/admin/operations', icon: 'monitoring', badge: 0 },
+
+          { label: 'Thông báo', path: '#/admin/notifications', icon: 'campaign', badge: 0 },
+
           { label: 'Bảo mật & Nhật ký', path: '#/admin/governance?tab=security', icon: 'policy', badge: 0 },
+
         ];
+
+      } else if (subRole === 'ADMIN_FINANCIAL') {
+
+        menu = [
+
+          { label: 'Quản lý dòng tiền', path: '#/admin/cashflow', icon: 'account_balance_wallet', badge: 0 },
+
+          { label: 'Bảo mật & Nhật ký', path: '#/admin/governance?tab=security', icon: 'policy', badge: 0 },
+
+        ];
+
       } else {
-        // ADMIN_PRIMARY / Super Admin
+
+        // ADMIN_PRIMARY / Super Admin (TASK-120: Added Cashflow, removed Settings shortcut)
+
         menu = [
+
           { label: 'Người dùng & Phân quyền', path: '#/admin/governance', icon: 'manage_accounts', badge: 0 },
+
+          { label: 'Quản lý dòng tiền', path: '#/admin/cashflow', icon: 'account_balance_wallet', badge: 0 },
+
           { label: 'Duyệt khóa học', path: '#/admin/governance?tab=courses', icon: 'fact_check', badge: this.adminNavBadges?.courses || 0 },
+
           { label: 'Duyệt giảng viên', path: '#/admin/governance?tab=applications', icon: 'badge', badge: this.adminNavBadges?.applications || 0 },
+
           { label: 'Phân công giảng dạy', path: '#/admin/governance?tab=reassign', icon: 'swap_horiz', badge: 0 },
+
+          { label: 'Thông báo', path: '#/admin/notifications', icon: 'campaign', badge: 0 },
+
           { label: 'Bảo mật & Nhật ký', path: '#/admin/governance?tab=security', icon: 'policy', badge: 0 },
+
           { label: 'Vận hành hệ thống', path: '#/admin/operations', icon: 'monitoring', badge: 0 },
-          { label: 'Cài đặt tài khoản', path: '#/admin/settings', icon: 'settings', badge: 0 },
+
         ];
+
       }
+
     } else if (role === 'INSTRUCTOR') {
+
       menu = [
+
         { label: 'Trang chủ', path: '#/instructor/dashboard', icon: 'home' },
+
         { label: 'Khóa học', path: '#/instructor/courses', icon: 'auto_stories' },
+
         { label: 'Soạn đề thi', path: '#/instructor/exams', icon: 'assignment_add' },
+
         { label: 'Phúc khảo', path: '#/instructor/appeals', icon: 'rate_review', badge: this.instructorAppealsPendingCount || 0 },
+
         { label: 'Duyệt môn tiên quyết', path: '#/instructor/prerequisites/requests', icon: 'account_tree', badge: this.instructorPrereqPendingCount || 0 },
-        { label: 'Cài đặt', path: '#/instructor/settings', icon: 'settings' },
+
       ];
+
     } else {
+
       menu = [
+
         { label: 'Trang chủ', path: '#/student/dashboard', icon: 'home' },
+
         { label: 'Khám phá Khóa học', path: '#/student/catalog', icon: 'explore' },
+
         { label: 'Khóa học của tôi', path: '#/student/courses', icon: 'school' },
+
         { label: 'Bài kiểm tra', path: '#/student/assessments', icon: 'quiz' },
+
+        { label: 'Ví & Nạp tiền', path: '#/student/wallet', icon: 'account_balance_wallet' },
+
       ];
+
       if (!canSwitchToInstructor) {
+
         menu.push({ label: 'Đăng ký Giảng viên', path: '#/student/become-instructor', icon: 'badge' });
+
       }
-      menu.push({ label: 'Cài đặt', path: '#/student/settings', icon: 'settings' });
+
     }
+
+
 
     const currentFullHash = window.location.hash || '#/';
+
     const checkPathActive = (menuPath) => this.checkPathActive(currentFullHash, menuPath);
 
+
+
     // 1. Populate Desktop Topbar Navigation Items (Warm Editorial Pill Tabs)
+
     const topNav = document.getElementById('topbar-navigation-items');
+
     if (topNav) {
+
       topNav.innerHTML = menu.map(m => {
+
         const isPathActive = checkPathActive(m.path);
+
         const badgeNum = Number(m.badge) || 0;
+
         return `
+
           <a
+
             href="${m.path}"
+
             class="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+
               isPathActive
+
                 ? 'bg-[#FAF9F5] dark:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] font-bold shadow-2xs'
+
                 : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#FAF9F5] dark:hover:bg-[#262524] hover:text-[#222120] dark:hover:text-[#EDEDEB]'
+
             }"
+
             ${badgeNum > 0 ? `title="${m.label} (${badgeNum} việc cần xử lý)"` : ''}
+
           >
+
             <span class="material-symbols-outlined text-[16px]">${m.icon}</span>
+
             <span class="inline-flex items-center">
+
               <span>${m.label}</span>
+
               ${badgeNum > 0 ? `
+
                 <sup class="ml-0.5 -top-1.5 text-[11px] font-black text-amber-600 dark:text-amber-400 select-none leading-none tracking-tight">${badgeNum > 99 ? '99+' : badgeNum}</sup>
+
               ` : ''}
+
             </span>
+
           </a>
+
         `;
+
       }).join('');
+
+
 
       topNav.querySelectorAll('a').forEach(link => {
+
         link.addEventListener('click', () => {
+
           this.closeAvatarDropdown();
+
           this.closeNotificationsDropdown();
+
         });
+
       });
+
     }
+
+
 
     // 2. Populate Mobile Drawer Navigation Items
+
     const mobileNav = document.getElementById('mobile-navigation-items');
+
     if (mobileNav) {
+
       mobileNav.innerHTML = menu.map(m => {
+
         const isPathActive = checkPathActive(m.path);
+
         const badgeNum = Number(m.badge) || 0;
+
         return `
+
           <a
+
             href="${m.path}"
+
             class="flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+
               isPathActive
+
                 ? 'bg-[#222120] text-[#FAF9F5] dark:bg-[#EDEDEB] dark:text-[#191919] font-bold'
+
                 : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] hover:text-[#222120] dark:hover:text-[#EDEDEB]'
+
             }"
+
           >
+
             <div class="flex items-center gap-2.5">
+
               <span class="material-symbols-outlined text-[17px]">${m.icon}</span>
+
               <span class="inline-flex items-center">
+
                 <span>${m.label}</span>
+
                 ${badgeNum > 0 ? `
+
                   <sup class="ml-0.5 -top-1.5 text-[11px] font-black text-amber-600 dark:text-amber-400 select-none leading-none tracking-tight">${badgeNum > 99 ? '99+' : badgeNum}</sup>
+
                 ` : ''}
+
               </span>
+
             </div>
+
             ${badgeNum > 0 ? `
+
               <span class="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">${badgeNum} chờ</span>
+
             ` : ''}
+
           </a>
+
         `;
+
       }).join('');
 
+
+
       mobileNav.querySelectorAll('a').forEach(link => {
+
         link.addEventListener('click', () => {
+
           this.closeMobileDrawer();
+
         });
+
       });
+
     }
+
+
 
     // 3. Fallback compatibility for sidebar container
+
     const navBox = document.getElementById('sidebar-navigation-items');
+
     if (navBox && mobileNav) {
+
       navBox.innerHTML = mobileNav.innerHTML;
+
     }
+
   }
+
+
 
   updateTopbarBreadcrumb(path) {
+
     const titleEl = document.getElementById('topbar-page-title');
+
     if (titleEl) {
+
       titleEl.textContent = '';
+
       titleEl.style.display = 'none';
+
     }
+
   }
 
+
+
   // =========================================================================
+
   // Topbar Profile, Avatar & Multi-Role Switcher Dropdown
+
   // =========================================================================
+
   updateUserUI() {
+
     const user = this.currentUser;
+
     const nameEl = document.getElementById('topbar-user-name');
+
     const avatarInitials = document.getElementById('topbar-avatar-initials');
+
     const roleBadge = document.getElementById('topbar-role-badge');
+
     const roleDropdown = document.getElementById('topbar-role-dropdown');
+
+
 
     if (!user) return;
 
+
+
     const displayName = user.display_name || user.email;
+
     if (nameEl) nameEl.textContent = displayName;
 
+    this.refreshTopbarWalletBalance?.();
+
+
+
     const initials = displayName.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
+
     if (avatarInitials) avatarInitials.textContent = initials || 'US';
 
+
+
     const roleName = this.currentRole === 'ADMIN'
+
       ? (user.admin_sub_role_label ? user.admin_sub_role_label.toUpperCase() : 'QUẢN TRỊ VIÊN')
+
       : this.currentRole === 'INSTRUCTOR' ? 'GIẢNG VIÊN' : 'HỌC VIÊN';
+
     if (roleBadge) {
+
       roleBadge.textContent = roleName;
+
       roleBadge.className = `px-1.5 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider border leading-none ${
+
         this.currentRole === 'ADMIN'
+
           ? 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300'
+
           : this.currentRole === 'INSTRUCTOR'
+
           ? 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300'
+
           : 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300'
+
       }`;
+
     }
+
+
 
     let avatarUrl = user.avatar_url;
+
     if (!avatarUrl && typeof localStorage !== 'undefined') {
+
       try {
+
         const idKey = user.public_id || user.id;
+
         avatarUrl = (idKey ? localStorage.getItem(`pwd301:random-avatar:${idKey}`) : null)
-          || (user.email ? localStorage.getItem(`pwd301:random-avatar:${user.email}`) : null)
-          || localStorage.getItem('pwd301_avatar');
+
+          || (user.email ? localStorage.getItem(`pwd301:random-avatar:${user.email}`) : null);
+
       } catch {
+
         avatarUrl = null;
+
       }
+
     }
+
+
 
     if (avatarInitials) {
+
       if (avatarUrl) {
+
         const safeName = typeof UI !== 'undefined' && typeof UI.escapeHtml === 'function'
+
           ? UI.escapeHtml(displayName)
+
           : String(displayName).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
         avatarInitials.innerHTML = `<img src="${avatarUrl}" alt="${safeName}" class="w-full h-full object-cover rounded-full" onerror="this.onerror=null; this.parentElement.textContent='${initials || 'US'}';" />`;
+
       } else {
+
         avatarInitials.textContent = initials || 'US';
+
       }
+
       avatarInitials.className = `w-7 h-7 rounded-full font-bold flex items-center justify-center text-[11px] shadow-xs transition-all border overflow-hidden ${
+
         this.currentRole === 'ADMIN'
+
           ? 'bg-rose-900 text-rose-100 border-rose-400/50'
+
           : this.currentRole === 'INSTRUCTOR'
+
           ? 'bg-blue-900 text-blue-100 border-blue-400/50'
+
           : 'bg-[#222120] dark:bg-[#2A2928] text-[#FAF9F5] dark:text-[#EDEDEB] border-[#E8E6DF] dark:border-[#3E3D3A]'
+
       }`;
+
     }
+
+
 
     // Build Role Switcher buttons
+
     const userRoles = user.role_codes || [user.primary_role || 'STUDENT'];
+
     const canSwitchToInstructor = userRoles.includes('INSTRUCTOR') || userRoles.includes('ADMIN');
+
     const canSwitchToAdmin = userRoles.includes('ADMIN');
 
+
+
     if (roleDropdown) {
+
       roleDropdown.innerHTML = `
+
         <div class="px-3 py-2 border-b border-[#E8E6DF] dark:border-[#2E2D2B]">
+
           <div class="font-bold text-xs text-[#222120] dark:text-[#EDEDEB] truncate">${displayName}</div>
+
           <div class="text-[11px] text-[#8F8E8A] truncate">${user.email}</div>
+
         </div>
+
+
 
         ${(canSwitchToInstructor || canSwitchToAdmin) ? `
+
           <div class="p-1.5 border-b border-[#E8E6DF] dark:border-[#2E2D2B] space-y-0.5">
+
             <div class="px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-[#8F8E8A]">Chuyển góc nhìn</div>
+
             
+
             <button type="button" class="switch-role-action w-full flex items-center justify-between px-2 py-1.5 rounded-md text-xs font-semibold ${this.currentRole === 'STUDENT' ? 'bg-[#ECE8DF] dark:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB]' : 'hover:bg-[#FAF9F5] dark:hover:bg-[#262524] text-[#5C5B57] dark:text-[#9E9D99]'}" data-target-role="STUDENT">
+
               <span class="flex items-center gap-2"><span class="material-symbols-outlined text-[15px]">school</span> Học viên</span>
+
               ${this.currentRole === 'STUDENT' ? '<span class="material-symbols-outlined text-[14px]">check</span>' : ''}
+
             </button>
 
+
+
             ${canSwitchToInstructor ? `
+
               <button type="button" class="switch-role-action w-full flex items-center justify-between px-2 py-1.5 rounded-md text-xs font-semibold ${this.currentRole === 'INSTRUCTOR' ? 'bg-[#ECE8DF] dark:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB]' : 'hover:bg-[#FAF9F5] dark:hover:bg-[#262524] text-[#5C5B57] dark:text-[#9E9D99]'}" data-target-role="INSTRUCTOR">
+
                 <span class="flex items-center gap-2"><span class="material-symbols-outlined text-[15px]">person_apron</span> Giảng viên</span>
+
                 ${this.currentRole === 'INSTRUCTOR' ? '<span class="material-symbols-outlined text-[14px]">check</span>' : ''}
+
               </button>
+
             ` : ''}
+
+
 
             ${canSwitchToAdmin ? `
+
               <button type="button" class="switch-role-action w-full flex items-center justify-between px-2 py-1.5 rounded-md text-xs font-semibold ${this.currentRole === 'ADMIN' ? 'bg-[#ECE8DF] dark:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB]' : 'hover:bg-[#FAF9F5] dark:hover:bg-[#262524] text-[#5C5B57] dark:text-[#9E9D99]'}" data-target-role="ADMIN">
+
                 <span class="flex items-center gap-2"><span class="material-symbols-outlined text-[15px]">admin_panel_settings</span> Quản trị viên</span>
+
                 ${this.currentRole === 'ADMIN' ? '<span class="material-symbols-outlined text-[14px]">check</span>' : ''}
+
               </button>
+
             ` : ''}
+
           </div>
+
         ` : ''}
+
         ${!canSwitchToInstructor ? `
+
           <div class="p-1.5 border-b border-[#E8E6DF] dark:border-[#2E2D2B]">
+
             <a
+
               href="#/student/become-instructor"
+
               class="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs font-semibold text-primary dark:text-blue-400 hover:bg-[#FAF9F5] dark:hover:bg-[#262524] transition-colors"
+
               onclick="window.app?.closeAvatarDropdown?.() || document.getElementById('topbar-role-dropdown')?.classList.add('hidden')"
+
             >
+
               <span class="material-symbols-outlined text-[16px]">badge</span>
+
               <span>Đăng ký làm Giảng viên</span>
+
             </a>
+
           </div>
+
         ` : ''}
+
+
 
         <div class="p-1.5 border-b border-[#E8E6DF] dark:border-[#2E2D2B]">
+
           <a
-            href="${this.currentRole === 'ADMIN' ? '#/admin/settings' : this.currentRole === 'INSTRUCTOR' ? '#/instructor/settings' : '#/student/settings'}"
-            class="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs font-semibold text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#FAF9F5] dark:hover:bg-[#262524] hover:text-[#222120] dark:hover:text-[#EDEDEB] transition-colors"
+
+            href="#/student/wallet"
+
+            class="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:bg-[#FAF9F5] dark:hover:bg-[#262524] transition-colors"
+
             onclick="window.app?.closeAvatarDropdown?.() || document.getElementById('topbar-role-dropdown')?.classList.add('hidden')"
+
           >
-            <span class="material-symbols-outlined text-[16px]">settings</span>
-            <span>Cài đặt tài khoản</span>
+
+            <span class="material-symbols-outlined text-[16px]">account_balance_wallet</span>
+
+            <span>Ví tài khoản & Nạp tiền</span>
+
           </a>
+
         </div>
+
+
+
+        <div class="p-1.5 border-b border-[#E8E6DF] dark:border-[#2E2D2B]">
+
+          <a
+
+            href="${this.currentRole === 'ADMIN' ? '#/admin/settings' : this.currentRole === 'INSTRUCTOR' ? '#/instructor/settings' : '#/student/settings'}"
+
+            class="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs font-semibold text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#FAF9F5] dark:hover:bg-[#262524] hover:text-[#222120] dark:hover:text-[#EDEDEB] transition-colors"
+
+            onclick="window.app?.closeAvatarDropdown?.() || document.getElementById('topbar-role-dropdown')?.classList.add('hidden')"
+
+          >
+
+            <span class="material-symbols-outlined text-[16px]">settings</span>
+
+            <span>Cài đặt tài khoản</span>
+
+          </a>
+
+        </div>
+
+
 
         <div class="p-1">
+
           <button type="button" id="topbar-logout-btn" class="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors">
+
             <span class="material-symbols-outlined text-[15px]">logout</span>
+
             <span>Đăng xuất tài khoản</span>
+
           </button>
+
         </div>
+
       `;
 
+
+
       // Handle role switch buttons
+
       roleDropdown.querySelectorAll('.switch-role-action').forEach(btn => {
+
         btn.onclick = async () => {
+
           const target = btn.dataset.targetRole;
+
           if (target === this.currentRole) return;
+
           try {
+
             this.closeAvatarDropdown();
+
             await ApiClient.switchRole(target);
+
             this.currentRole = target;
+
             if (this.currentUser) this.currentUser.active_role = target;
+
             if (target === 'ADMIN') {
+
               this._lastAdminCountsFetch = Date.now();
+
               this.fetchAdminPendingCounts();
+
             }
+
             UI.showToast(`Đã chuyển sang góc nhìn ${target === 'ADMIN' ? 'Quản trị viên' : target === 'INSTRUCTOR' ? 'Giảng viên' : 'Học viên'}!`, 'info');
+
             this.updateUserUI();
+
             this.notificationsCache = null;
+
             this.loadCachedNotifications();
+
             this.fetchNotifications(true);
+
             this.redirectToRoleHome();
+
           } catch (err) {
+
             UI.showToast(err.message || 'Không thể chuyển đổi vai trò.', 'error');
+
           }
+
         };
+
       });
+
+
 
       // Handle Logout
+
       const logoutBtn = document.getElementById('topbar-logout-btn');
+
       if (logoutBtn) {
+
         logoutBtn.onclick = async () => {
+
           this.closeAvatarDropdown();
+
           this.closeNotificationsDropdown();
+
           if (this.currentUser && this.currentUser.id) {
+
             try {
+
               ['STUDENT', 'INSTRUCTOR', 'ADMIN'].forEach(r => {
+
                 sessionStorage.removeItem(`pwd301_notifs_${this.currentUser.id}_${r}`);
+
               });
+
               sessionStorage.removeItem(`pwd301_notifs_${this.currentUser.id}`);
+
             } catch {}
+
           }
+
           if (typeof ExamStore !== 'undefined' && typeof ExamStore.clearMemoryDraft === 'function') {
+
             ExamStore.clearMemoryDraft();
+
           }
+
           this.notificationsCache = null;
+
           this.currentUser = null;
+
           this.currentRole = null;
+
           this.toggleShell(false);
+
           if (typeof VideoArmor !== 'undefined' && typeof VideoArmor.uninstallGlobalShield === 'function') {
+
             VideoArmor.uninstallGlobalShield();
+
           }
+
           if (window.UI && typeof window.UI.closeAllModals === 'function') {
+
             window.UI.closeAllModals();
+
           }
+
           let logoutResult = { revoked: true };
+
           try {
+
             logoutResult = await ApiClient.logout();
+
           } catch (err) {
+
             logoutResult = { revoked: false, error: err };
+
           }
+
           if (window.history && window.history.replaceState) {
+
             window.history.replaceState(null, '', '#/auth');
+
           }
+
           this.renderAuth();
+
           if (logoutResult && logoutResult.revoked === false) {
+
             UI.showToast('Đã xóa phiên làm việc cục bộ. Cảnh báo: Máy chủ chưa xác nhận thu hồi phiên do sự cố mạng.', 'warning');
+
           } else {
+
             UI.showToast('Đã đăng xuất tài khoản an toàn.', 'info');
+
           }
+
         };
+
       }
+
     }
+
     this.renderDynamicSidebar();
+
   }
+
+
 
   initThemeToggle() {
+
     const btn = document.getElementById('topbar-theme-toggle');
+
     const icon = document.getElementById('theme-toggle-icon');
 
+
+
     const updateThemeIcon = () => {
+
       const isDark = document.documentElement.classList.contains('dark');
+
       if (icon) icon.textContent = isDark ? 'light_mode' : 'dark_mode';
+
     };
+
+
 
     if (btn) {
+
       btn.onclick = () => {
+
         const isDark = document.documentElement.classList.toggle('dark');
+
         localStorage.setItem('theme', isDark ? 'dark' : 'light');
+
         updateThemeIcon();
+
       };
+
     }
+
+
 
     updateThemeIcon();
+
   }
+
+
+
+  closeWalletDropdown() {
+
+    const dropdown = document.getElementById('topbar-wallet-dropdown');
+
+    const chevron = document.getElementById('topbar-wallet-chevron');
+
+    const btn = document.getElementById('topbar-wallet-btn');
+
+    if (dropdown) dropdown.classList.add('hidden');
+
+    if (chevron) chevron.style.transform = 'rotate(0deg)';
+
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+
+  }
+
+
+
+  async refreshTopbarWalletBalance() {
+
+    const valEl = document.getElementById('topbar-wallet-balance-val');
+
+    if (!valEl) return;
+
+    try {
+
+      if (typeof ApiClient !== 'undefined' && typeof ApiClient.getMyWallet === 'function') {
+
+        const data = await ApiClient.getMyWallet();
+
+        const bal = Number(data.balance || 0);
+
+        valEl.textContent = typeof UI !== 'undefined' && typeof UI.formatMoney === 'function'
+
+          ? UI.formatMoney(bal)
+
+          : (bal.toLocaleString('vi-VN') + ' đ');
+
+      }
+
+    } catch {
+
+      // Ignore if unauthenticated or network failure
+
+    }
+
+  }
+
+
+
+  initWalletDropdown() {
+
+    const btn = document.getElementById('topbar-wallet-btn');
+
+    const dropdown = document.getElementById('topbar-wallet-dropdown');
+
+    const chevron = document.getElementById('topbar-wallet-chevron');
+
+    const depositAction = document.getElementById('topbar-wallet-deposit-action');
+
+
+
+    if (btn && dropdown) {
+
+      btn.onclick = (e) => {
+
+        e.stopPropagation();
+
+        this.closeAvatarDropdown?.();
+
+        this.closeNotificationsDropdown?.();
+
+        this.closeMobileDrawer?.();
+
+
+
+        const isHidden = dropdown.classList.toggle('hidden');
+
+        if (chevron) {
+
+          chevron.style.transform = isHidden ? 'rotate(0deg)' : 'rotate(180deg)';
+
+        }
+
+        btn.setAttribute('aria-expanded', String(!isHidden));
+
+
+
+        if (!isHidden) {
+
+          this.refreshTopbarWalletBalance();
+
+        }
+
+      };
+
+
+
+      if (depositAction) {
+
+        depositAction.onclick = () => {
+
+          this.closeWalletDropdown();
+
+          window.location.hash = '#/student/wallet';
+
+        };
+
+      }
+
+
+
+      document.addEventListener('click', (e) => {
+
+        if (!dropdown.contains(e.target) && !btn.contains(e.target)) {
+
+          this.closeWalletDropdown();
+
+        }
+
+      });
+
+
+
+      document.addEventListener('keydown', (e) => {
+
+        if (e.key === 'Escape' && !dropdown.classList.contains('hidden')) {
+
+          this.closeWalletDropdown();
+
+        }
+
+      });
+
+    }
+
+  }
+
+
 
   closeAvatarDropdown() {
+
     const dropdown = document.getElementById('topbar-role-dropdown');
+
     const chevron = document.getElementById('topbar-avatar-chevron');
+
     const avatarBtn = document.getElementById('topbar-avatar-btn');
+
     if (dropdown) dropdown.classList.add('hidden');
+
     if (chevron) chevron.style.transform = 'rotate(0deg)';
+
     if (avatarBtn) avatarBtn.setAttribute('aria-expanded', 'false');
+
   }
+
+
 
   initAvatarDropdown() {
+
     const avatarBtn = document.getElementById('topbar-avatar-btn');
+
     const dropdown = document.getElementById('topbar-role-dropdown');
+
     const chevron = document.getElementById('topbar-avatar-chevron');
+
     if (avatarBtn && dropdown) {
+
       avatarBtn.setAttribute('aria-haspopup', 'true');
+
       avatarBtn.setAttribute('aria-expanded', 'false');
+
       avatarBtn.setAttribute('aria-controls', 'topbar-role-dropdown');
+
       avatarBtn.onclick = (e) => {
+
         e.stopPropagation();
+
         this.closeNotificationsDropdown();
+
         this.closeMobileDrawer?.();
+
         const isHidden = dropdown.classList.toggle('hidden');
+
         if (chevron) {
+
           chevron.style.transform = isHidden ? 'rotate(0deg)' : 'rotate(180deg)';
+
         }
+
         avatarBtn.setAttribute('aria-expanded', String(!isHidden));
+
       };
+
       document.addEventListener('click', (e) => {
+
         if (!dropdown.contains(e.target) && !avatarBtn.contains(e.target)) {
+
           this.closeAvatarDropdown();
+
         }
+
       });
+
       document.addEventListener('keydown', (e) => {
+
         if (e.key === 'Escape' && !dropdown.classList.contains('hidden')) {
+
           this.closeAvatarDropdown();
+
         }
+
       });
+
     }
+
   }
 
+
+
   // =========================================================================
+
   // 4. Instant Notification Dropdown & Cache Management (0ms SWR)
+
   // =========================================================================
+
+
 
   getNotificationCacheKey() {
+
     if (!this.currentUser || !this.currentUser.id) return null;
+
     const role = (this.currentRole || 'STUDENT').toUpperCase();
+
     return `pwd301_notifs_${this.currentUser.id}_${role}`;
+
   }
+
+
 
   loadCachedNotifications() {
+
     const key = this.getNotificationCacheKey();
+
     if (!key) return;
+
     try {
+
       const raw = sessionStorage.getItem(key);
+
       if (raw) {
+
         const parsed = JSON.parse(raw);
+
         if (parsed && Array.isArray(parsed.items)) {
+
           this.notificationsCache = parsed;
+
           this.updateBadgeFromCache();
+
         }
+
       }
+
     } catch {
+
       // Ignore sessionStorage errors
+
     }
+
   }
+
+
 
   saveCachedNotifications() {
+
     const key = this.getNotificationCacheKey();
+
     if (!key || !this.notificationsCache) return;
+
     try {
+
       sessionStorage.setItem(key, JSON.stringify(this.notificationsCache));
+
     } catch {
+
       // Ignore quota errors
+
     }
+
   }
+
+
 
   hasUsableNotificationCache() {
+
     return Boolean(
+
       this.notificationsCache
+
       && Array.isArray(this.notificationsCache.items)
+
       && this.notificationsCache.items.length > 0,
+
     );
+
   }
+
+
 
   beginNotificationFetch() {
+
     this.notificationFetchState = {
+
       status: 'loading',
+
       last_attempt: Date.now(),
+
     };
+
     const dropdown = document.getElementById('topbar-notifications-dropdown');
+
     const isVisible = dropdown && !dropdown.classList.contains('hidden');
+
     if (isVisible && !this.hasUsableNotificationCache()) {
+
       this.renderNotificationsSkeleton();
+
     }
+
   }
+
+
 
   static decodeHtmlEntities(str) {
+
     if (!str || typeof str !== 'string') return '';
+
     try {
+
       const doc = new DOMParser().parseFromString(str, 'text/html');
+
       return doc.body.textContent || '';
+
     } catch {
+
       return str;
+
     }
+
   }
+
+
 
   getNotificationRole(item) {
+
     if (!item) return 'ALL';
+
     const tr = (item.target_role || '').toUpperCase();
+
     if (tr && tr !== 'ALL') return tr;
+
     return 'ALL';
+
   }
+
+
 
   getVisibleNotificationsForCurrentRole() {
+
     if (!this.notificationsCache || !Array.isArray(this.notificationsCache.items)) {
+
       return [];
+
     }
+
     const currentRole = (this.currentRole || 'STUDENT').toUpperCase();
+
     const rawItems = this.notificationsCache.items;
 
+
+
     // 1. Partition by role first: universal ('ALL' or null) or strictly matching currentRole
+
     const roleItems = rawItems.filter(item => {
+
       const tr = (item.target_role || '').toUpperCase();
+
       return !tr || tr === 'ALL' || tr === currentRole;
+
     });
+
+
 
     // 2. Deduplicate within role by (title, body): collapse duplicates, keeping only newest item
+
     const seenKeys = new Set();
+
     const deduplicated = [];
+
     for (const item of roleItems) {
+
       const titleDecoded = AppRouter.decodeHtmlEntities(item.title || '');
+
       const bodyDecoded = AppRouter.decodeHtmlEntities(item.body || item.message || '');
+
       const key = `${titleDecoded.trim()}:::${bodyDecoded.trim()}`;
+
       if (!seenKeys.has(key)) {
+
         seenKeys.add(key);
+
         deduplicated.push(item);
+
       }
+
     }
+
+
 
     return deduplicated;
+
   }
+
+
 
   updateBadgeFromCache() {
+
     const badge = document.getElementById('topbar-notifications-badge');
+
     if (!badge || !this.notificationsCache) return;
+
     const items = this.getVisibleNotificationsForCurrentRole();
+
     const count = items.filter(i => !i.is_read && !i.read).length;
+
     if (count > 0) {
+
       badge.textContent = count > 99 ? '99+' : count;
+
       badge.classList.remove('hidden');
+
       badge.style.display = 'flex';
+
     } else {
+
       badge.classList.add('hidden');
+
       badge.style.display = 'none';
+
     }
+
   }
+
+
 
   initNotifications() {
+
     this.activeNotificationTab = 'ALL';
+
     const bellBtn = document.getElementById('topbar-notifications-btn');
+
     const dropdown = document.getElementById('topbar-notifications-dropdown');
+
+
 
     if (bellBtn && dropdown) {
+
       bellBtn.onclick = (e) => {
+
         e.stopPropagation();
+
         this.toggleNotificationsDropdown();
+
       };
+
+
 
       // Click outside to dismiss dropdown
+
       document.addEventListener('click', (e) => {
+
         const wrapper = document.getElementById('topbar-notifications-wrapper');
+
         if (wrapper && !wrapper.contains(e.target)) {
+
           this.closeNotificationsDropdown();
+
         }
+
       });
+
+
 
       // Escape key to dismiss
+
       document.addEventListener('keydown', (e) => {
+
         if (e.key === 'Escape' && !dropdown.classList.contains('hidden')) {
+
           this.closeNotificationsDropdown();
+
         }
+
       });
+
     }
+
+
 
     // Initial load from cache or background fetch
+
     this.loadCachedNotifications();
+
     this.refreshNotificationBadge(true);
 
+
+
     // Periodic background polling (every 8 seconds for real-time reactivity)
+
     if (this._notifInterval) clearInterval(this._notifInterval);
+
     this._notifInterval = setInterval(() => {
+
       this.refreshNotificationBadge(true);
+
       if (this.currentRole === 'ADMIN') {
+
         this.fetchAdminPendingCounts();
+
       }
+
     }, 8000);
 
+
+
     // Instant update on tab focus (silent badge sync only, never destroy and re-render route)
+
     if (!this._notifFocusBound) {
+
       this._notifFocusBound = true;
+
       window.addEventListener('focus', () => {
+
         this.refreshNotificationBadge(true);
+
         if (this.currentRole === 'ADMIN') {
+
           this.fetchAdminPendingCounts();
+
         }
+
       });
+
     }
+
   }
+
+
 
   toggleNotificationsDropdown() {
+
     const dropdown = document.getElementById('topbar-notifications-dropdown');
+
     if (!dropdown) return;
+
     if (dropdown.classList.contains('hidden')) {
+
       this.openNotificationsDropdown();
+
     } else {
+
       this.closeNotificationsDropdown();
+
     }
+
   }
+
+
 
   openNotificationsDropdown() {
+
     const dropdown = document.getElementById('topbar-notifications-dropdown');
+
     const bellBtn = document.getElementById('topbar-notifications-btn');
+
     this.closeAvatarDropdown();
+
     this.closeMobileDrawer?.();
 
+
+
     if (dropdown) {
+
       dropdown.classList.remove('hidden');
+
       if (bellBtn) bellBtn.setAttribute('aria-expanded', 'true');
 
+
+
       // Do not expose a cached empty state before revalidation confirms it.
+
       this.beginNotificationFetch();
+
       if (this.hasUsableNotificationCache()) {
+
         this.renderNotificationsDropdownContent();
+
       }
+
+
 
       // SWR: Silent background revalidation
+
       this.fetchNotifications(false);
+
     }
+
   }
+
+
 
   closeNotificationsDropdown() {
+
     const dropdown = document.getElementById('topbar-notifications-dropdown');
+
     const bellBtn = document.getElementById('topbar-notifications-btn');
+
     if (dropdown && !dropdown.classList.contains('hidden')) {
+
       dropdown.classList.add('hidden');
+
       if (bellBtn) bellBtn.setAttribute('aria-expanded', 'false');
+
     }
+
   }
+
+
 
   formatRelativeTime(dateStr) {
+
     if (!dateStr) return '';
+
     try {
+
       let s = String(dateStr).trim();
+
       if (s.includes('T') && !s.endsWith('Z') && !/[+-]\d{2}(:\d{2})?$/.test(s)) {
+
         s += 'Z';
+
       }
+
       const date = new Date(s);
+
       const now = new Date();
+
       const diffSec = Math.floor((now.getTime() - date.getTime()) / 1000);
+
       if (isNaN(diffSec) || diffSec < 0) return 'Vừa xong';
+
       if (diffSec < 60) return 'Vừa xong';
+
       if (diffSec < 3600) return `${Math.floor(diffSec / 60)} phút trước`;
+
       if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} giờ trước`;
+
       if (diffSec < 86400 * 2) return 'Hôm qua';
+
       if (diffSec < 86400 * 7) return `${Math.floor(diffSec / 86400)} ngày trước`;
+
       return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
     } catch {
+
       return '';
+
     }
+
   }
+
+
 
   getCategoryMeta(cat) {
+
     const c = (cat || 'SYSTEM').toUpperCase();
+
     switch (c) {
+
       case 'SECURITY':
+
         return {
+
           icon: 'security',
+
           iconColor: 'bg-rose-50 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400 border border-rose-200 dark:border-rose-800/40',
+
           label: 'Bảo mật',
+
           badgeColor: 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300'
+
         };
+
       case 'ASSESSMENT':
+
         return {
+
           icon: 'quiz',
+
           iconColor: 'bg-purple-50 text-purple-600 dark:bg-purple-950/50 dark:text-purple-400 border border-purple-200 dark:border-purple-800/40',
+
           label: 'Khảo thí',
+
           badgeColor: 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300'
+
         };
+
       case 'COURSE':
+
         return {
+
           icon: 'menu_book',
+
           iconColor: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40',
+
           label: 'Khóa học',
+
           badgeColor: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+
         };
+
       case 'GRADE':
+
         return {
+
           icon: 'military_tech',
+
           iconColor: 'bg-amber-50 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400 border border-amber-200 dark:border-amber-800/40',
+
           label: 'Điểm số',
+
           badgeColor: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
+
         };
+
       default:
+
         return {
+
           icon: 'campaign',
+
           iconColor: 'bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400 border border-blue-200 dark:border-blue-800/40',
+
           label: 'Hệ thống',
+
           badgeColor: 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300'
+
         };
+
     }
+
   }
+
+
 
   renderNotificationsSkeleton() {
+
     const dropdown = document.getElementById('topbar-notifications-dropdown');
+
     if (!dropdown) return;
+
     dropdown.innerHTML = `
+
       <div class="p-4 border-b border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-between bg-[#FAF9F5] dark:bg-[#242423]">
+
         <div class="h-4 w-24 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"></div>
+
         <div class="h-3 w-16 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"></div>
+
       </div>
+
       <div class="p-3 space-y-3">
+
         ${[1, 2, 3].map(() => `
+
           <div class="flex items-start gap-3 p-2 rounded-xl bg-slate-50 dark:bg-[#262524] animate-pulse">
+
             <div class="w-8 h-8 rounded-lg bg-slate-200 dark:bg-slate-700 shrink-0"></div>
+
             <div class="flex-1 space-y-2 py-0.5">
+
               <div class="h-3 w-3/4 bg-slate-200 dark:bg-slate-700 rounded"></div>
+
               <div class="h-2.5 w-full bg-slate-200 dark:bg-slate-700 rounded"></div>
+
             </div>
+
           </div>
+
         `).join('')}
+
       </div>
+
     `;
+
   }
+
+
 
   renderNotificationsUnavailable() {
+
     const dropdown = document.getElementById('topbar-notifications-dropdown');
+
     if (!dropdown) return;
+
     dropdown.innerHTML = `
+
       <div class="p-4 border-b border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#242423]">
+
         <div class="font-bold text-sm text-[#222120] dark:text-[#EDEDEB]">Thông báo</div>
+
       </div>
+
       <div class="p-8 text-center text-[#5C5B57] dark:text-[#9E9D99]" role="status" aria-live="polite">
+
         <span class="material-symbols-outlined text-3xl text-amber-600 mb-2 inline-block">cloud_off</span>
+
         <p class="font-semibold text-xs">Không thể tải thông báo.</p>
+
         <p class="text-[11px] mt-1">Dữ liệu hiện chưa xác định. Vui lòng thử lại.</p>
+
         <button type="button" id="notif-retry-btn" class="mt-4 px-4 py-2 rounded-lg bg-primary text-white text-xs font-semibold">
+
           Thử lại
+
         </button>
+
       </div>
+
     `;
+
     const retryButton = dropdown.querySelector?.('#notif-retry-btn');
+
     if (retryButton) retryButton.onclick = () => this.fetchNotifications(true);
+
   }
+
+
 
   markNotificationFetchDegraded(error, forceRender = false) {
+
     this.notificationFetchState = {
+
       status: 'degraded',
+
       code: error?.code || 'NOTIFICATIONS_UNAVAILABLE',
+
       message: error?.message || 'Không thể tải dữ liệu thông báo.',
+
       last_attempt: Date.now(),
+
     };
+
     const dropdown = document.getElementById('topbar-notifications-dropdown');
+
     const isVisible = dropdown && !dropdown.classList.contains('hidden');
+
     if (!this.hasUsableNotificationCache() && (forceRender || isVisible)) {
+
       this.renderNotificationsUnavailable();
+
     }
+
   }
+
+
 
   renderNotificationsDropdownContent() {
+
     const dropdown = document.getElementById('topbar-notifications-dropdown');
+
     if (!dropdown || !this.notificationsCache) return;
 
+
+
     const items = this.getVisibleNotificationsForCurrentRole();
+
     const unreadCount = items.filter(i => !i.is_read && !i.read).length;
+
     const activeTab = this.activeNotificationTab || 'ALL';
 
+
+
     // Filter items based on active tab
+
     const filtered = items.filter(item => {
+
       const isRead = item.is_read ?? item.read ?? false;
+
       const cat = (item.category || '').toUpperCase();
+
       if (activeTab === 'UNREAD') return !isRead;
+
       if (activeTab === 'ASSESSMENT') return cat === 'ASSESSMENT' || cat === 'GRADE';
+
       if (activeTab === 'COURSE') return cat === 'COURSE';
+
       if (activeTab === 'SYSTEM') return cat === 'SYSTEM' || cat === 'SECURITY';
+
       return true;
+
     });
+
+
 
     const roleName = this.currentRole === 'ADMIN'
+
       ? 'Quản trị viên'
+
       : (this.currentRole === 'INSTRUCTOR' ? 'Giảng viên' : 'Học viên');
 
+
+
     dropdown.innerHTML = `
+
       <!-- Header -->
+
       <div class="p-3 sm:px-4 sm:py-3 border-b border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#242423] flex items-center justify-between select-none">
+
         <div class="flex items-center gap-2">
+
           <span class="font-bold text-sm text-[#222120] dark:text-[#EDEDEB]">Thông báo</span>
+
           <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold ${unreadCount > 0 ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300' : 'bg-[#E8E6DF] dark:bg-[#2E2D2B] text-[#5C5B57] dark:text-[#9E9D99]'}">
+
             ${unreadCount > 0 ? `${unreadCount} mới` : '0 mới'}
+
           </span>
+
         </div>
+
         ${unreadCount > 0 ? `
+
           <button
+
             type="button"
+
             id="notif-dropdown-mark-all"
+
             class="text-[11px] font-semibold text-primary hover:text-primary-hover hover:underline inline-flex items-center gap-1 transition-colors"
+
             title="Đánh dấu tất cả thông báo là đã đọc"
+
           >
+
             <span class="material-symbols-outlined text-[15px]">done_all</span>
+
             <span>Đã đọc tất cả</span>
+
           </button>
+
         ` : ''}
+
       </div>
+
+
 
       <!-- Filter Tabs -->
+
       <div class="flex items-center gap-1 px-3 py-2 border-b border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#202020] overflow-x-auto no-scrollbar text-[11px]">
+
         <button type="button" class="notif-filter-tab px-2.5 py-1 rounded-lg font-medium transition-all ${activeTab === 'ALL' ? 'bg-[#222120] dark:bg-[#EDEDEB] text-[#FAF9F5] dark:text-[#191919] font-bold shadow-xs' : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524]'}" data-tab="ALL">Tất cả</button>
+
         <button type="button" class="notif-filter-tab px-2.5 py-1 rounded-lg font-medium transition-all ${activeTab === 'UNREAD' ? 'bg-[#222120] dark:bg-[#EDEDEB] text-[#FAF9F5] dark:text-[#191919] font-bold shadow-xs' : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524]'}" data-tab="UNREAD">Chưa đọc (${unreadCount})</button>
+
         <button type="button" class="notif-filter-tab px-2.5 py-1 rounded-lg font-medium transition-all ${activeTab === 'ASSESSMENT' ? 'bg-[#222120] dark:bg-[#EDEDEB] text-[#FAF9F5] dark:text-[#191919] font-bold shadow-xs' : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524]'}" data-tab="ASSESSMENT">Khảo thí</button>
+
         <button type="button" class="notif-filter-tab px-2.5 py-1 rounded-lg font-medium transition-all ${activeTab === 'COURSE' ? 'bg-[#222120] dark:bg-[#EDEDEB] text-[#FAF9F5] dark:text-[#191919] font-bold shadow-xs' : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524]'}" data-tab="COURSE">Khóa học</button>
+
         <button type="button" class="notif-filter-tab px-2.5 py-1 rounded-lg font-medium transition-all ${activeTab === 'SYSTEM' ? 'bg-[#222120] dark:bg-[#EDEDEB] text-[#FAF9F5] dark:text-[#191919] font-bold shadow-xs' : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524]'}" data-tab="SYSTEM">Hệ thống</button>
+
       </div>
+
+
 
       <!-- Notifications List (Scrollable) -->
+
       <div class="max-h-[360px] sm:max-h-[400px] overflow-y-auto divide-y divide-[#F4F1EA] dark:divide-[#2E2D2B]" id="notif-dropdown-list">
+
         ${filtered.length === 0 ? `
+
           <div class="py-12 px-4 text-center text-[#8F8E8A]">
+
             <span class="material-symbols-outlined text-3xl text-[#D3D0C8] dark:text-[#3E3D3A] mb-1.5 inline-block">notifications_off</span>
+
             <p class="font-semibold text-xs text-[#5C5B57] dark:text-[#9E9D99]">Không có thông báo nào</p>
+
             <p class="text-[11px] text-[#8F8E8A] dark:text-[#6D6C68] mt-0.5">Bạn đã xem hết các thông báo trong mục này.</p>
+
           </div>
+
         ` : filtered.map(item => {
+
           const isRead = item.is_read ?? item.read ?? false;
+
           const meta = this.getCategoryMeta(item.category);
+
           const relTime = this.formatRelativeTime(item.created_at);
+
           const targetUrl = item.action_url || item.target_url || '';
 
+
+
           return `
+
             <div
+
               class="notif-dropdown-item group p-3 sm:p-3.5 hover:bg-[#FAF9F5] dark:hover:bg-[#262524] transition-colors cursor-pointer flex items-start gap-3 relative ${isRead ? 'opacity-70 bg-[#FAF9F5] dark:bg-[#202020]' : 'bg-primary/[0.02] dark:bg-primary/[0.04]'}"
+
               data-id="${item.id}"
+
               data-link="${targetUrl ? targetUrl.replace(/"/g, '&quot;') : ''}"
+
             >
+
               <!-- Category Icon -->
+
               <div class="w-8 h-8 rounded-xl ${meta.iconColor} flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+
                 <span class="material-symbols-outlined text-[17px]">${meta.icon}</span>
+
               </div>
+
+
 
               <!-- Content -->
+
               <div class="flex-1 min-w-0 space-y-1">
+
                 <div class="flex items-center justify-between gap-1.5">
+
                   <span class="text-[10px] font-bold uppercase tracking-wider ${meta.badgeColor} px-1.5 py-0.2 rounded">
+
                     ${meta.label}
+
                   </span>
+
                   <div class="flex items-center gap-1.5 shrink-0">
+
                     <span class="text-[10.5px] text-[#8F8E8A] dark:text-[#6D6C68]">${relTime}</span>
+
                     ${!isRead ? '<span class="w-2 h-2 rounded-full bg-rose-600 ring-2 ring-[#FAF9F5] dark:ring-[#202020] shrink-0" title="Chưa đọc"></span>' : ''}
+
                     <button
+
                       type="button"
+
                       class="notif-delete-btn p-1 rounded-md text-[#8F8E8A] hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors opacity-80 sm:opacity-0 group-hover:opacity-100 focus:opacity-100 cursor-pointer"
+
                       data-id="${item.id}"
+
                       title="Xóa thông báo"
+
                     >
+
                       <span class="material-symbols-outlined text-[15px]">delete</span>
+
                     </button>
+
                   </div>
+
                 </div>
+
+
 
                 <div class="text-xs ${isRead ? 'font-medium text-[#222120] dark:text-[#EDEDEB]' : 'font-bold text-[#222120] dark:text-[#EDEDEB]'} leading-snug">
+
                   ${window.UI ? UI.escapeHtml(AppRouter.decodeHtmlEntities(item.title || '')) : AppRouter.decodeHtmlEntities(item.title || '')}
+
                 </div>
 
+
+
                 <p class="text-[11.5px] text-[#5C5B57] dark:text-[#9E9D99] leading-relaxed line-clamp-2">
+
                   ${window.UI ? UI.escapeHtml(AppRouter.decodeHtmlEntities(item.body || item.message || '')) : AppRouter.decodeHtmlEntities(item.body || item.message || '')}
+
                 </p>
+
               </div>
+
             </div>
+
           `;
+
         }).join('')}
+
       </div>
+
+
 
       <!-- Footer with Role Context -->
+
       <div class="p-2.5 px-3.5 border-t border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#242423] flex items-center justify-between text-[11px] text-[#8F8E8A] dark:text-[#9E9D99] select-none">
+
         <span class="flex items-center gap-1">
+
           <span class="material-symbols-outlined text-[14px]">shield_person</span>
+
           <span>Góc nhìn: <strong class="text-[#222120] dark:text-[#EDEDEB] font-bold">${roleName}</strong></span>
+
         </span>
+
         <button type="button" class="text-primary hover:underline font-semibold" onclick="window.app?.refreshNotificationBadge?.(true)">
+
           Làm mới
+
         </button>
+
       </div>
+
     `;
+
+
 
     // Hook up tab buttons
+
     dropdown.querySelectorAll('.notif-filter-tab').forEach(tabBtn => {
+
       tabBtn.onclick = (e) => {
+
         e.stopPropagation();
+
         this.activeNotificationTab = tabBtn.dataset.tab;
+
         this.renderNotificationsDropdownContent();
+
       };
+
     });
+
+
 
     // Hook up delete buttons
+
     dropdown.querySelectorAll('.notif-delete-btn').forEach(delBtn => {
+
       delBtn.onclick = async (e) => {
+
         e.stopPropagation();
+
         e.preventDefault();
+
         const id = delBtn.dataset.id;
+
         await this.handleDeleteNotification(id);
+
       };
+
     });
+
+
 
     // Hook up mark all read
+
     const markAllBtn = document.getElementById('notif-dropdown-mark-all');
+
     if (markAllBtn) {
+
       markAllBtn.onclick = async (e) => {
+
         e.stopPropagation();
+
         await this.handleMarkAllRead();
+
       };
+
     }
+
+
 
     // Hook up item clicks
+
     dropdown.querySelectorAll('.notif-dropdown-item').forEach(itemEl => {
+
       itemEl.onclick = async (e) => {
+
         e.stopPropagation();
+
         const id = itemEl.dataset.id;
+
         const link = (itemEl.dataset.link || '').replace(/&amp;/g, '&');
+
         await this.handleNotificationItemClick(id, link);
+
       };
+
     });
+
   }
+
+
 
   async handleDeleteNotification(notifId) {
+
     if (!notifId || !this.notificationsCache) return;
+
     const owner = this.getNotificationCacheKey();
+
     this._notifFetchGen = (this._notifFetchGen || 0) + 1;
+
     try {
+
       await ApiClient.deleteNotification(notifId);
+
       if (!owner || owner !== this.getNotificationCacheKey()) return;
+
       this._notifFetchGen++;
+
       const index = (this.notificationsCache?.items || []).findIndex(i => String(i.id) === String(notifId));
+
       if (index >= 0) {
+
         const item = this.notificationsCache.items[index];
+
         this.notificationsCache.items.splice(index, 1);
+
         if (!item.is_read && !item.read) {
+
           this.notificationsCache.unread_count = Math.max(0, (this.notificationsCache.unread_count || 0) - 1);
+
         }
+
         this.saveCachedNotifications();
+
         this.updateBadgeFromCache();
+
         this.renderNotificationsDropdownContent();
+
       }
+
       if (window.UI) UI.showToast('Đã xóa thông báo.', 'info');
+
       if (typeof ApiClient.getNotifications === 'function') await this.fetchNotifications(true);
+
     } catch (err) {
+
       if (!owner || owner !== this.getNotificationCacheKey()) return;
+
       if (window.UI) UI.showToast('Không thể xóa thông báo: ' + (err.message || ''), 'error');
+
     }
+
   }
+
+
 
   async handleNotificationItemClick(notifId, link) {
+
     if (!notifId || !this.notificationsCache) return;
 
+
+
     const owner = this.getNotificationCacheKey();
+
     const item = (this.notificationsCache.items || []).find(i => i.id === notifId);
+
     if (item && !item.is_read && !item.read) {
+
       this._notifFetchGen = (this._notifFetchGen || 0) + 1;
+
       try {
+
         await ApiClient.markNotificationRead(notifId);
+
         if (!owner || owner !== this.getNotificationCacheKey()) return;
+
         this._notifFetchGen++;
+
         const current = (this.notificationsCache?.items || []).find(i => String(i.id) === String(notifId));
+
         if (current && !current.is_read && !current.read) {
+
           current.is_read = true;
+
           current.read = true;
+
           this.notificationsCache.unread_count = Math.max(0, (this.notificationsCache.unread_count || 0) - 1);
+
           this.saveCachedNotifications();
+
           this.updateBadgeFromCache();
+
           this.renderNotificationsDropdownContent();
+
         }
+
       } catch (err) {
+
         if (!owner || owner !== this.getNotificationCacheKey()) return;
+
         if (window.UI) UI.showToast('Chưa lưu được trạng thái đã đọc. Vui lòng thử lại.', 'error');
+
       }
+
     }
+
     if (!owner || owner !== this.getNotificationCacheKey()) return;
 
+
+
     // Open detailed reading modal so user can fully read notification
+
     if (item) {
+
       const reviewTarget = AppRouter.getNotificationReviewTarget(item, link);
+
       if (reviewTarget) {
+
         this.closeNotificationsDropdown();
+
         this.navigate(reviewTarget);
+
         return;
+
       }
+
       this.openNotificationModal(item, link);
+
     } else if (link) {
+
       this.closeNotificationsDropdown();
+
       this.navigate(link);
+
     }
+
   }
+
+
 
   openNotificationModal(item, link) {
+
     this.closeNotificationsDropdown();
+
     if (!item) return;
 
+
+
     const meta = this.getCategoryMeta(item.category);
+
     const relTime = this.formatRelativeTime(item.created_at);
+
     const exactTime = window.UI ? UI.formatDateTime(item.created_at) : (item.created_at || '');
+
     const targetLink = link || item.action_url || item.target_url || '';
 
+
+
     const bodyHtml = `
+
       <div class="space-y-4 text-xs">
+
         <div class="flex items-center justify-between pb-3 border-b border-[#E8E6DF] dark:border-[#2E2D2B]">
+
           <div class="flex items-center gap-2">
+
             <span class="text-[10px] font-bold uppercase tracking-wider ${meta.badgeColor} px-2 py-0.5 rounded">
+
               ${meta.label}
+
             </span>
+
             <span class="text-[11px] text-[#8F8E8A] dark:text-[#6D6C68] font-mono">${exactTime} (${relTime})</span>
+
           </div>
+
           <span class="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+
             <span class="material-symbols-outlined text-[14px]">done_all</span> Đã đọc
+
           </span>
+
         </div>
+
+
 
         <div class="space-y-2">
+
           <h4 class="text-sm sm:text-base font-bold text-[#222120] dark:text-[#EDEDEB] leading-snug">
+
             ${window.UI ? UI.escapeHtml(AppRouter.decodeHtmlEntities(item.title || '')) : AppRouter.decodeHtmlEntities(item.title || '')}
+
           </h4>
+
           <div class="p-4 rounded-xl bg-[#FAF9F5] dark:bg-[#262524] border border-[#E8E6DF] dark:border-[#2E2D2B] text-[#5C5B57] dark:text-[#EDEDEB] leading-relaxed text-xs sm:text-sm whitespace-pre-line select-text">
+
             ${window.UI ? UI.escapeHtml(AppRouter.decodeHtmlEntities(item.body || item.message || '')) : AppRouter.decodeHtmlEntities(item.body || item.message || '')}
+
           </div>
+
         </div>
+
       </div>
+
     `;
+
+
 
     const footerHtml = `
+
       <div class="flex items-center justify-between w-full">
+
         <button type="button" class="px-4 py-2 rounded-xl text-xs font-semibold text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524]" onclick="UI.closeModal()">
+
           Đóng
+
         </button>
+
         ${targetLink ? `
+
           <button type="button" id="notif-modal-navigate-btn" class="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold flex items-center gap-2 shadow-sm transition-all">
+
             <span>${AppRouter.getNotificationActionLabel(item)}</span>
+
             <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+
           </button>
+
         ` : ''}
+
       </div>
+
     `;
 
+
+
     if (window.UI && typeof UI.openModal === 'function') {
+
       UI.openModal({
+
         title: 'Chi Tiết Thông Báo',
+
         bodyHtml,
+
         footerHtml,
+
         size: 'md'
+
       });
 
+
+
       const navBtn = document.getElementById('notif-modal-navigate-btn');
+
       if (navBtn) {
+
         navBtn.onclick = () => {
+
           UI.closeModal();
+
           this.navigate(targetLink);
+
         };
+
       }
+
     }
+
   }
+
+
 
   async handleMarkAllRead() {
+
     if (!this.notificationsCache) return;
+
     const owner = this.getNotificationCacheKey();
+
     const role = this.currentRole;
+
     this._notifFetchGen = (this._notifFetchGen || 0) + 1;
+
     try {
+
       await ApiClient.markAllNotificationsRead(null, role);
+
       if (!owner || owner !== this.getNotificationCacheKey()) return;
+
       this._notifFetchGen++;
+
       if (this.notificationsCache) {
+
         (this.notificationsCache.items || []).forEach(i => { i.is_read = true; i.read = true; });
+
         this.notificationsCache.unread_count = 0;
+
         this.saveCachedNotifications();
+
         this.updateBadgeFromCache();
+
         this.renderNotificationsDropdownContent();
+
       }
+
       if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
+
         UI.showToast('Đã đánh dấu tất cả thông báo là đã đọc.', 'success');
+
       }
+
       if (typeof ApiClient.getNotifications === 'function') await this.fetchNotifications(true);
+
     } catch (err) {
+
       if (!owner || owner !== this.getNotificationCacheKey()) return;
+
       if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
+
         UI.showToast('Không thể đánh dấu tất cả đã đọc: ' + (err.message || ''), 'error');
+
       }
+
     }
+
   }
+
+
 
   async fetchNotifications(forceRender = false) {
+
     if (!this.currentUser) return;
+
     const fetchUserId = this.currentUser.id;
+
     const fetchRole = this.currentRole || 'STUDENT';
+
     this._notifFetchGen = (this._notifFetchGen || 0) + 1;
+
     const fetchGen = this._notifFetchGen;
+
     const ownsFetch = () => Boolean(this.currentUser) && this.currentUser.id === fetchUserId
+
       && (this.currentRole || 'STUDENT') === fetchRole && this._notifFetchGen === fetchGen;
+
     this.beginNotificationFetch();
+
     if (typeof ApiClient === 'undefined' || typeof ApiClient.getNotifications !== 'function') {
+
       const error = new Error('Notification client is unavailable.');
+
       error.code = 'NOTIFICATIONS_CLIENT_UNAVAILABLE';
+
       this.markNotificationFetchDegraded(error, forceRender);
+
       return;
+
     }
+
     try {
+
       const currentRole = fetchRole;
+
       const data = await ApiClient.getNotifications({ role: currentRole });
+
       if (!ownsFetch()) {
+
         return; // Discard stale cross-user / cross-role response
+
       }
+
       if (data && Array.isArray(data.items)) {
+
         const items = data.items.map(i => ({
+
           ...i,
+
           is_read: i.is_read ?? i.read ?? false,
+
           read: i.is_read ?? i.read ?? false,
+
         }));
+
         const unreadCount = data.unread_count ?? items.filter(i => !i.is_read).length;
 
+
+
         const previousFirstId = this._lastSeenNotifId;
+
         const newFirstId = items[0]?.id;
 
+
+
         this.notificationsCache = {
+
           items: items,
+
           unread_count: unreadCount,
+
           last_fetched: Date.now(),
+
           user_id: this.currentUser.id,
+
           role: currentRole,
+
         };
+
         this.notificationFetchState = {
+
           status: 'ready',
+
           last_attempt: Date.now(),
+
         };
+
         this.saveCachedNotifications();
+
         this.updateBadgeFromCache();
 
+
+
         // If a new unread notification arrived in the background, alert user without blowing away active route
+
         if (previousFirstId && newFirstId && newFirstId !== previousFirstId) {
+
           const newest = items[0];
+
           if (newest && !newest.is_read) {
+
             if (window.UI && typeof UI.showToast === 'function') {
+
               UI.showToast(newest.title || 'Bạn có thông báo mới', 'info');
+
             }
+
           }
+
         }
+
         if (items.length > 0) {
+
           this._lastSeenNotifId = items[0].id;
+
         }
+
+
 
         // If dropdown is currently open or forceRender requested, re-render
+
         const dropdown = document.getElementById('topbar-notifications-dropdown');
+
         if ((dropdown && !dropdown.classList.contains('hidden')) || forceRender) {
+
           this.renderNotificationsDropdownContent();
+
         }
+
       }
+
     } catch (e) {
+
       if (!ownsFetch()) return;
+
       this.markNotificationFetchDegraded(e, forceRender);
+
     }
+
   }
+
+
 
   async refreshNotificationBadge(forceFetch = false) {
+
     if (!this.currentUser) return;
+
     if (this.notificationsCache && !forceFetch) {
+
       this.updateBadgeFromCache();
+
       return;
+
     }
+
     await this.fetchNotifications(false);
+
   }
+
+
+
 }
 
+
+
 window.AppRouter = AppRouter;
+

@@ -68,6 +68,14 @@ def instructor_user(app: Flask, setup_roles: dict[str, Role]) -> User:
     return assign_role_to_user(u.id, "INSTRUCTOR")
 
 
+@pytest.fixture(autouse=True)
+def _enable_assessment_authoring(app: Flask):
+    """Enable direct course authoring & live publishing in enrollment tests."""
+    db.session.info["course_workflow_applying"] = True
+    yield
+    db.session.info.pop("course_workflow_applying", None)
+
+
 @pytest.fixture
 def student_user(app: Flask, setup_roles: dict[str, Role]) -> User:
     """Create primary student user."""
@@ -472,7 +480,7 @@ def test_prerequisite_dag_cycle_detection(
     sess.commit()
 
     # 3. Direct cycle: B requires A (would create A -> B -> A)
-    with pytest.raises(PrerequisiteCycleError, match="creates a cyclic dependency"):
+    with pytest.raises(PrerequisiteCycleError, match=r"(cyclic dependency|chu trình)"):
         add_course_prerequisite(instructor_user, course_b.id, course_a.id, session=sess)
 
     # 4. Chain: B requires C (so A -> B -> C)
@@ -480,7 +488,7 @@ def test_prerequisite_dag_cycle_detection(
     sess.commit()
 
     # 5. Indirect cycle: C requires A (would create A -> B -> C -> A)
-    with pytest.raises(PrerequisiteCycleError, match="creates a cyclic dependency"):
+    with pytest.raises(PrerequisiteCycleError, match=r"(cyclic dependency|chu trình)"):
         add_course_prerequisite(instructor_user, course_c.id, course_a.id, session=sess)
 
 

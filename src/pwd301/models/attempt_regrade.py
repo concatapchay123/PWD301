@@ -206,6 +206,15 @@ class AssessmentAttempt(Base):
         cascade="all, delete-orphan",
     )
 
+    @property
+    def user_id(self) -> int:
+        """Alias for student_user_id for backward compatibility and unified actor semantics."""
+        return self.student_user_id
+
+    @user_id.setter
+    def user_id(self, value: int) -> None:
+        self.student_user_id = value
+
 
 class AttemptQuestion(Base):
     """Frozen question presentation for an attempt mapping to 'attempt_questions' table."""
@@ -1216,8 +1225,11 @@ class AssessmentAppeal(Base):
             "evidence_url": self.evidence_url,
             "status": self.status,
             "original_score": float(self.original_score) if self.original_score is not None else 0.0,
+            "previous_score": float(self.original_score) if self.original_score is not None else 0.0,
             "final_score": float(self.final_score) if self.final_score is not None else None,
             "instructor_feedback": self.instructor_feedback,
+            "resolution_note": self.instructor_feedback,
+            "reviewer_note": self.instructor_feedback,
             "reviewed_by_name": self.reviewed_by.display_name if self.reviewed_by else None,
             "reviewed_at": self.reviewed_at.isoformat() if self.reviewed_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,

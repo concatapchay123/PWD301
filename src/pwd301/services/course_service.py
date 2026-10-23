@@ -460,6 +460,16 @@ def create_course(
     if thumbnail_file_asset_id is not None:
         raise CourseValidationError("Create the course before uploading its cover image.")
 
+    raw_price = data.get("price")
+    course_price = 0
+    if raw_price is not None:
+        try:
+            course_price = int(raw_price)
+            if course_price < 0:
+                raise ValueError
+        except (ValueError, TypeError):
+            raise CourseValidationError("Giá khóa học (price) phải là số nguyên không âm (>= 0).") from None
+
     # 3. Check uniqueness constraints (COURSE-001, COURSE-002)
     norm_code = course_code.strip().upper()
     existing_code = (
@@ -516,6 +526,7 @@ def create_course(
         category=data.get("category"),
         difficulty=difficulty,
         capacity=capacity,
+        price=course_price,
         storage_quota_bytes=storage_quota_bytes,
         thumbnail_file_asset_id=thumbnail_file_asset_id,
         owner_instructor_id=owner_instructor_id,
@@ -552,6 +563,7 @@ def create_course(
                 "course_code": course.course_code,
                 "title": course.title,
                 "status": course.status,
+                "price": course.price,
                 "owner_instructor_id": course.owner_instructor_id,
             }
         ),
@@ -666,11 +678,25 @@ def update_course(
         "category": course.category,
         "difficulty": course.difficulty,
         "capacity": course.capacity,
+        "price": getattr(course, "price", 0),
         "storage_quota_bytes": course.storage_quota_bytes,
         "thumbnail_file_asset_id": course.thumbnail_file_asset_id,
     }
 
     # Whitelist writable fields (defense against mass-assignment)
+    if "price" in data:
+        raw_price = data["price"]
+        if raw_price is not None:
+            try:
+                p_int = int(raw_price)
+                if p_int < 0:
+                    raise ValueError
+                course.price = p_int
+            except (ValueError, TypeError):
+                raise CourseValidationError("Giá khóa học (price) phải là số nguyên không âm (>= 0).") from None
+        else:
+            course.price = 0
+
     if "title" in data:
         raw_title = data["title"]
         if not raw_title or not isinstance(raw_title, str) or not raw_title.strip():
@@ -804,6 +830,7 @@ def update_course(
         "category": course.category,
         "difficulty": course.difficulty,
         "capacity": course.capacity,
+        "price": getattr(course, "price", 0),
         "storage_quota_bytes": course.storage_quota_bytes,
         "thumbnail_file_asset_id": course.thumbnail_file_asset_id,
     }
@@ -1021,6 +1048,19 @@ def queue_course_metadata_review(
             proposed["thumbnail_file_asset_id"] = asset.id
         else:
             proposed["thumbnail_file_asset_id"] = None
+
+    if "price" in data:
+        raw_price = data["price"]
+        if raw_price is not None:
+            try:
+                p_int = int(raw_price)
+                if p_int < 0:
+                    raise ValueError
+                proposed["price"] = p_int
+            except (ValueError, TypeError):
+                raise CourseValidationError("Giá khóa học (price) phải là số nguyên không âm (>= 0).") from None
+        else:
+            proposed["price"] = 0
 
     from pwd301.services.course_workflow_service import (
         active_changeset,

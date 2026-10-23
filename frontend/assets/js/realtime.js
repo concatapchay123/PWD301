@@ -230,14 +230,14 @@
     // 3. Default Built-in Reactive Subscriptions
     // =======================================================================
     _initDefaultSubscribers() {
-      // A0. Concurrent Login Detection -> Immediate Dual-Device Termination (WF23)
+      // A0. Single Active Device Takeover (Eviction) & Polite Informational Modal (WF23)
       EventBus.on('auth:concurrent_session_revoked', (data) => {
         if (global.UI && typeof global.UI.showConcurrentSessionModal === 'function') {
           global.UI.showConcurrentSessionModal(data);
         } else if (global.app && typeof global.app.handleConcurrentSessionLogout === 'function') {
           global.app.handleConcurrentSessionLogout(data);
         } else {
-          alert('CẢNH BÁO AN NINH: Tài khoản của bạn đã được đăng nhập từ một thiết bị khác. Hệ thống đã tự động đăng xuất trên tất cả thiết bị.');
+          alert('Phiên làm việc trên thiết bị này đã kết thúc do tài khoản vừa được đăng nhập trên một thiết bị khác.');
           window.location.hash = '#/auth/login';
           window.location.reload();
         }
@@ -245,14 +245,27 @@
 
       // A. Notifications (Instant Toast + Badge Update without F5)
       EventBus.on('notification:new', (data) => {
-        if (global.UI && typeof global.UI.showToast === 'function') {
+        const isSelfBroadcast = (
+          window._lastBroadcastSent &&
+          Date.now() - window._lastBroadcastSent.timestamp < 10000 &&
+          (window._lastBroadcastSent.title === (data.title || data.message))
+        );
+        if (!isSelfBroadcast && global.UI && typeof global.UI.showToast === 'function') {
           global.UI.showToast(data.title || data.message || 'Bạn có thông báo mới.', 'info');
         }
         this._updateNotificationBadgeUI();
       });
 
       EventBus.on('notification:broadcast', (data) => {
-        if (global.UI && typeof global.UI.showToast === 'function') {
+        const isSelfBroadcast = (
+          (window._lastBroadcastSent &&
+           Date.now() - window._lastBroadcastSent.timestamp < 10000 &&
+           (window._lastBroadcastSent.title === (data.title || data.message) ||
+            window._lastBroadcastSent.body === (data.body || ''))) ||
+          (data.sender_id && global.app?.currentUser?.id && String(data.sender_id) === String(global.app.currentUser.id)) ||
+          (data.created_by_user_id && global.app?.currentUser?.id && String(data.created_by_user_id) === String(global.app.currentUser.id))
+        );
+        if (!isSelfBroadcast && global.UI && typeof global.UI.showToast === 'function') {
           global.UI.showToast(data.title || data.message || 'Thông báo từ Ban Quản Trị.', 'info');
         }
         this._updateNotificationBadgeUI();
@@ -368,12 +381,21 @@
   global.RealtimeEngine = RealtimeEngine;
   global.RealtimeClient = RealtimeEngine;
 
-  // Auto connect when DOM is ready
+  // Connect when authenticated session exists
+  function _tryAutoConnect() {
+    const isAuthRoute = (window.location.hash || '').startsWith('#/auth');
+    const hasToken = RealtimeEngine.getAuthToken();
+    const hasSessionUser = window.App?.router?.currentUser || window.currentUser;
+    if (!isAuthRoute && (hasToken || hasSessionUser)) {
+      RealtimeEngine.connect();
+    }
+  }
+
   if (typeof document !== 'undefined') {
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', () => RealtimeEngine.connect());
+      document.addEventListener('DOMContentLoaded', _tryAutoConnect);
     } else {
-      RealtimeEngine.connect();
+      _tryAutoConnect();
     }
   }
 })(typeof window !== 'undefined' ? window : this);

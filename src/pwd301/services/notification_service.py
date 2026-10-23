@@ -810,3 +810,190 @@ def broadcast_system_notification(
 
 broadcast_notification = broadcast_system_notification
 create_notification = dispatch_notification
+
+
+def list_admin_broadcasts(
+    actor: User,
+    session: Session | scoped_session | None = None,
+) -> list[dict[str, Any]]:
+    """List system broadcast notification events with recipient metrics.
+
+    Admin RBAC: Only administrators may view broadcast history.
+    """
+    s = session or db.session
+    if not actor or not actor.is_admin:
+        raise ForbiddenError("Only administrators can view broadcast history.")
+
+    events = (
+        s.query(NotificationEvent)
+        .filter(
+            sa.or_(
+                NotificationEvent.event_type.in_(["SYSTEM_BROADCAST", "NOTIFICATION_BROADCAST"]),
+                NotificationEvent.event_type.ilike("%BROADCAST%"),
+            )
+        )
+        .order_by(NotificationEvent.created_at.desc())
+        .all()
+    )
+
+    results: list[dict[str, Any]] = []
+    for event in events:
+        payload: dict[str, Any] = {}
+        if event.payload_json:
+            try:
+                payload = json.loads(event.payload_json)
+            except Exception:
+                payload = {}
+
+        recipient_count = (
+            s.query(sa.func.count(Notification.id))
+            .filter(Notification.notification_event_id == event.id)
+            .scalar()
+            or 0
+        )
+
+        first_notif = event.notifications[0] if event.notifications else None
+        title = payload.get("title") or (first_notif.title if first_notif else "")
+        body = payload.get("body") or (first_notif.body if first_notif else "")
+        category = payload.get("category") or (first_notif.category if first_notif else "SYSTEM")
+        target_role = payload.get("target_role") or (first_notif.target_role if first_notif else None)
+
+        actor_name = "Hệ thống"
+        if event.actor:
+            actor_name = event.actor.display_name or event.actor.email
+
+        results.append(
+            {
+                "id": event.id,
+                "event_key": str(event.event_key),
+                "public_id": str(event.event_key),
+                "event_type": event.event_type,
+                "title": title,
+                "body": body,
+                "category": category,
+                "target_role": target_role,
+                "recipient_count": recipient_count,
+                "notifications_count": recipient_count,
+                "actor_user_id": event.actor_user_id,
+                "actor_name": actor_name,
+                "created_at": event.created_at.isoformat() if event.created_at else None,
+            }
+        )
+
+    return results
+
+
+def hard_delete_broadcast(
+    actor: User,
+    event_key_or_id: str | int | uuid.UUID,
+    session: Session | scoped_session | None = None,
+) -> dict[str, Any]:
+    """Hard-delete a broadcast NotificationEvent and all child Notification records.
+
+    Strict 2-Tier RBAC:
+    - Primary Admin: May delete any broadcast.
+    - System Monitoring Admin: May only delete broadcasts with category == 'SYSTEM'.
+    - Other users: Forbidden.
+    """
+    s = session or db.session
+    if not actor or not actor.is_admin:
+        raise ForbiddenError("Only administrators can delete broadcasts.")
+
+    event: NotificationEvent | None = None
+    str_val = str(event_key_or_id).strip()
+    parsed_uuid = None
+    try:
+        parsed_uuid = uuid.UUID(str_val)
+    except Exception:
+        pass
+
+    if parsed_uuid is not None:
+        event = s.query(NotificationEvent).filter(NotificationEvent.event_key == parsed_uuid).first()
+
+    if event is None and str_val.isdigit():
+        event = s.query(NotificationEvent).filter(NotificationEvent.id == int(str_val)).first()
+
+    if event is None:
+        raise NotificationNotFoundError("Broadcast notification not found.")
+
+    payload: dict[str, Any] = {}
+    if event.payload_json:
+        try:
+            payload = json.loads(event.payload_json)
+        except Exception:
+            payload = {}
+
+    category = (payload.get("category") or "").upper()
+    if not category and event.notifications:
+        category = (event.notifications[0].category or "").upper()
+    if not category:
+        category = "SYSTEM"
+
+    if actor.is_primary_admin:
+        pass
+    elif actor.admin_sub_role == "ADMIN_SYSTEM_MONITORING":
+        if category != "SYSTEM":
+            raise ForbiddenError(
+                "Admin giám sát hệ thống chỉ được phép xóa thông báo liên quan đến hệ thống."
+            )
+    else:
+        raise ForbiddenError("Bạn không có quyền xóa thông báo phát sóng.")
+
+    deleted_notifs = (
+        s.query(Notification)
+        .filter(Notification.notification_event_id == event.id)
+        .delete(synchronize_session=False)
+    )
+    key_str = str(event.event_key)
+    s.delete(event)
+    s.commit()
+
+    return {
+        "deleted": True,
+        "event_key": key_str,
+        "deleted_notifications_count": deleted_notifs,
+    }
+
+
+def cleanup_expired_notifications(
+    days: int = 15,
+    session: Session | scoped_session | None = None,
+) -> dict[str, int]:
+    """Hard-delete notifications created over `days` ago and prune orphaned broadcast/notification events."""
+    s = session or db.session
+    cutoff = utc_now() - datetime.timedelta(days=days)
+
+    # 1. Hard-delete expired user notification records
+    deleted_notifs = (
+        s.query(Notification)
+        .filter(Notification.created_at <= cutoff)
+        .delete(synchronize_session=False)
+    )
+
+    # 2. Prune orphan NotificationEvent records older than cutoff that have no remaining notifications
+    orphan_event_ids = [
+        r[0]
+        for r in s.query(NotificationEvent.id)
+        .filter(NotificationEvent.created_at <= cutoff)
+        .outerjoin(Notification, Notification.notification_event_id == NotificationEvent.id)
+        .filter(Notification.id.is_(None))
+        .all()
+    ]
+
+    deleted_events = 0
+    if orphan_event_ids:
+        deleted_events = (
+            s.query(NotificationEvent)
+            .filter(NotificationEvent.id.in_(orphan_event_ids))
+            .delete(synchronize_session=False)
+        )
+
+    s.commit()
+    logger.info(
+        "Cleaned up expired notifications older than %d days: %d notifications, %d orphan events deleted.",
+        days,
+        deleted_notifs,
+        deleted_events,
+    )
+    return {"deleted_notifications": deleted_notifs, "deleted_events": deleted_events}
+

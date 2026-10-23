@@ -101,11 +101,15 @@ from pwd301.models.question_bank import (
     QuestionRevisionChoice,
 )
 from pwd301.models.types import register_sqlite_functions
+from pwd301.models.wallet import UserBalance, WalletTransaction
 
 __all__ = [
     "PlaybackSession",
     "MediaProgress",
     "PlaybackReceipt",
+    # Wallet & Payments
+    "UserBalance",
+    "WalletTransaction",
     # Identity & Auth
     "User",
     "AnonymousUser",

@@ -53,6 +53,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     ffmpeg \
     fonts-dejavu-core \
+    fonts-freefont-ttf \
+    fonts-noto-cjk \
+    chromium \
     libcairo2 \
     libfreetype6 \
     && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \

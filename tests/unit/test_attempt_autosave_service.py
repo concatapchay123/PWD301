@@ -41,6 +41,7 @@ from pwd301.services.attempt_service import (
     sync_offline_answers,
 )
 from pwd301.services.course_service import change_course_status, create_course
+from pwd301.services.course_workflow_service import applying_review
 from pwd301.services.enrollment_service import enroll_student
 from pwd301.services.exceptions import (
     AttemptAlreadySubmittedError,
@@ -128,55 +129,56 @@ def _make_assessment_with_questions(
     close_delta_hours: int = 24,
 ) -> Assessment:
     """Helper to create and publish an assessment with MCQ and essay questions."""
-    now = datetime.now(UTC)
-    payload = {
-        "title": "Autosave Test Assessment",
-        "assessment_type": "QUIZ",
-        "time_limit_minutes": time_limit,
-        "open_at": (now + timedelta(hours=open_delta_hours)).isoformat(),
-        "close_at": (now + timedelta(hours=close_delta_hours)).isoformat(),
-        "passing_score": 50.0,
-    }
-    assessment = create_assessment(instructor, course.id, payload, session=db.session)
-    sec = create_section(instructor, assessment.id, {"title": "Section A"}, session=db.session)
+    with applying_review(db.session):
+        now = datetime.now(UTC)
+        payload = {
+            "title": "Autosave Test Assessment",
+            "assessment_type": "QUIZ",
+            "time_limit_minutes": time_limit,
+            "open_at": (now + timedelta(hours=open_delta_hours)).isoformat(),
+            "close_at": (now + timedelta(hours=close_delta_hours)).isoformat(),
+            "passing_score": 50.0,
+        }
+        assessment = create_assessment(instructor, course.id, payload, session=db.session)
+        sec = create_section(instructor, assessment.id, {"title": "Section A"}, session=db.session)
 
-    # Question 1: Multiple Choice
-    q1_data: dict[str, Any] = {
-        "question_type": "SINGLE_CHOICE",
-        "difficulty": "REMEMBER",
-        "content": "Which protocol is used for web browsing?",
-        "default_points": 5.0,
-        "choices": [
-            {"content": "HTTP", "is_correct": True, "position": 1},
-            {"content": "FTP", "is_correct": False, "position": 2},
-            {"content": "SMTP", "is_correct": False, "position": 3},
-        ],
-    }
-    q1 = create_question(instructor, course.id, q1_data, session=db.session)
-    assign_question(
-        instructor,
-        assessment.id,
-        {"question_id": q1.id, "points_assigned": 5.0, "section_id": sec.id},
-        session=db.session,
-    )
+        # Question 1: Multiple Choice
+        q1_data: dict[str, Any] = {
+            "question_type": "SINGLE_CHOICE",
+            "difficulty": "REMEMBER",
+            "content": "Which protocol is used for web browsing?",
+            "default_points": 5.0,
+            "choices": [
+                {"content": "HTTP", "is_correct": True, "position": 1},
+                {"content": "FTP", "is_correct": False, "position": 2},
+                {"content": "SMTP", "is_correct": False, "position": 3},
+            ],
+        }
+        q1 = create_question(instructor, course.id, q1_data, session=db.session)
+        assign_question(
+            instructor,
+            assessment.id,
+            {"question_id": q1.id, "points_assigned": 5.0, "section_id": sec.id},
+            session=db.session,
+        )
 
-    # Question 2: Essay
-    q2_data: dict[str, Any] = {
-        "question_type": "ESSAY",
-        "difficulty": "UNDERSTAND",
-        "content": "Explain the concept of idempotency in distributed systems.",
-        "default_points": 10.0,
-    }
-    q2 = create_question(instructor, course.id, q2_data, session=db.session)
-    assign_question(
-        instructor,
-        assessment.id,
-        {"question_id": q2.id, "points_assigned": 10.0, "section_id": sec.id},
-        session=db.session,
-    )
+        # Question 2: Essay
+        q2_data: dict[str, Any] = {
+            "question_type": "ESSAY",
+            "difficulty": "UNDERSTAND",
+            "content": "Explain the concept of idempotency in distributed systems.",
+            "default_points": 10.0,
+        }
+        q2 = create_question(instructor, course.id, q2_data, session=db.session)
+        assign_question(
+            instructor,
+            assessment.id,
+            {"question_id": q2.id, "points_assigned": 10.0, "section_id": sec.id},
+            session=db.session,
+        )
 
-    publish_assessment(instructor, assessment.id, session=db.session)
-    db.session.commit()
+        publish_assessment(instructor, assessment.id, session=db.session)
+        db.session.commit()
     return assessment
 
 

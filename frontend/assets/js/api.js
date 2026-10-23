@@ -169,6 +169,15 @@ class ApiClient {
       }
 
       if (!res.ok) {
+        // Rate Limiting (HTTP 429) friendly handling
+        if (res.status === 429) {
+          const retryAfter = res.headers.get('retry-after') || (data && data.retry_after) || 60;
+          const limitMsg = (data && data.error) ? (typeof data.error === 'string' ? data.error : (data.error.message || 'Thao tác quá nhanh.')) : `Hệ thống ghi nhận quá nhiều yêu cầu. Vui lòng thử lại sau ${retryAfter} giây.`;
+          if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
+            UI.showToast(limitMsg, 'warning');
+          }
+        }
+
         // Automatic single-retry on CSRF error / expiration
         if (res.status === 400 && data && data.error && data.error.code === 'CSRF_ERROR' && !options._isCsrfRetry) {
           console.info('[ApiClient] CSRF session token expired. Refreshing and retrying request once...');
@@ -194,6 +203,20 @@ class ApiClient {
         err.status = res.status;
         err.data = data;
         throw err;
+      }
+
+      if (isStateChanging && typeof SWRCache !== 'undefined') {
+        if (url.includes('/courses')) {
+          SWRCache.invalidate(/(\/admin\/courses|\/admin\/governance|\/instructor\/courses)/);
+        } else if (url.includes('/users') || url.includes('/roles')) {
+          SWRCache.invalidate(/(\/admin\/users|\/admin\/governance)/);
+        } else if (url.includes('/change-requests')) {
+          SWRCache.invalidate(/(\/admin\/change-requests|\/admin\/governance)/);
+        } else if (url.includes('/instructor-applications')) {
+          SWRCache.invalidate(/(\/admin\/instructor-applications|\/admin\/governance)/);
+        } else {
+          SWRCache.invalidate();
+        }
       }
 
       return data;
@@ -242,6 +265,19 @@ class ApiClient {
     return await ApiClient.request('/auth/register', {
       method: 'POST',
       body: { name, email, password },
+    });
+  }
+
+  static async verifyEmail(token) {
+    return await ApiClient.request(`/auth/verify-email/${encodeURIComponent(token)}`, {
+      method: 'GET',
+    });
+  }
+
+  static async resendVerification(email) {
+    return await ApiClient.request('/auth/resend-verification', {
+      method: 'POST',
+      body: { email },
     });
   }
 
@@ -548,6 +584,10 @@ class ApiClient {
 
   static async getAttemptAppeal(attemptId) {
     return await ApiClient.request(`/student/attempts/${attemptId}/appeal`);
+  }
+
+  static async getInstructorAttemptAppeal(attemptId) {
+    return await ApiClient.request(`/instructor/attempts/${attemptId}/appeal`);
   }
 
   static async getAttemptGradeHistory(attemptId) {
@@ -1098,6 +1138,30 @@ class ApiClient {
     return await ApiClient.request('/admin/dashboard');
   }
 
+  static async getAdminGovernanceSummary(force = false) {
+    if (typeof SWRCache !== 'undefined') {
+      return await SWRCache.wrap('/admin/governance/summary', () => ApiClient.request('/admin/governance/summary'), { force, ttl: 2 * 60 * 1000 });
+    }
+    return await ApiClient.request('/admin/governance/summary');
+  }
+
+  static async updateCoursePrice(courseId, price, reason = '') {
+    const isAdmin = (window.app?.currentRole === 'ADMIN') || 
+                    (window.Router?.currentRole === 'ADMIN') || 
+                    (window.location.hash.startsWith('#/admin'));
+    const endpoint = isAdmin
+      ? `/admin/courses/${courseId}/price`
+      : `/instructor/courses/${courseId}/price`;
+    const payload = { price: Math.max(0, parseInt(price, 10) || 0) };
+    if (reason && typeof reason === 'string' && reason.trim()) {
+      payload.reason = reason.trim();
+    }
+    return await ApiClient.request(endpoint, {
+      method: 'PUT',
+      body: payload
+    });
+  }
+
   static async getAdminUsers(params = {}) {
     const query = new URLSearchParams(params).toString();
     const url = query ? `/admin/users?${query}` : '/admin/users';
@@ -1182,7 +1246,10 @@ class ApiClient {
     return await ApiClient.request('/admin/faculty/workload');
   }
 
-  static async getPendingCourses() {
+  static async getPendingCourses(force = false) {
+    if (typeof SWRCache !== 'undefined') {
+      return await SWRCache.wrap('/admin/courses/pending', () => ApiClient.request('/admin/courses/pending'), { force, ttl: 2 * 60 * 1000 });
+    }
     return await ApiClient.request('/admin/courses/pending');
   }
 
@@ -1288,6 +1355,28 @@ class ApiClient {
       body: { title, body, target_role: targetRole, category },
       headers
     });
+  }
+
+  static async getAdminBroadcasts() {
+    try {
+      const res = await ApiClient.request('/admin/notifications/broadcasts');
+      return res?.data || res?.broadcasts || (Array.isArray(res) ? res : []);
+    } catch (err) {
+      return [];
+    }
+  }
+
+  static async deleteAdminBroadcast(eventId) {
+    if (!eventId) throw new Error('eventId is required to delete broadcast');
+    try {
+      return await ApiClient.request(`/admin/notifications/broadcasts/${eventId}`, {
+        method: 'DELETE'
+      });
+    } catch (err) {
+      return await ApiClient.request(`/admin/notifications/broadcasts/${eventId}/delete`, {
+        method: 'POST'
+      });
+    }
   }
 
   static async retryFailedEmails(maxEmails = 50) {
@@ -1558,6 +1647,84 @@ class ApiClient {
   static async downloadMoodleJsonSample() {
     window.location.href = '/instructor/exams/samples/json';
   }
+
+  // =========================================================================
+  // 6. Digital Wallet & PayOS Payments (TASK-120)
+  // =========================================================================
+  static async getMyWallet(page = 1, pageSize = 5) {
+    return await ApiClient.request(`/api/payments/wallet/me?page=${page}&page_size=${pageSize}`);
+  }
+
+  static async createDepositRequest(amount, returnUrl = '', cancelUrl = '') {
+    return await ApiClient.request('/api/payments/deposit/create', {
+      method: 'POST',
+      body: { amount, return_url: returnUrl, cancel_url: cancelUrl }
+    });
+  }
+
+  static async purchaseCourseWithWallet(courseId) {
+    return await ApiClient.request('/api/payments/course/purchase', {
+      method: 'POST',
+      body: { course_id: courseId }
+    });
+  }
+
+  static async createDirectCourseQr(courseId, returnUrl = '', cancelUrl = '') {
+    return await ApiClient.request('/api/payments/course/create-direct-qr', {
+      method: 'POST',
+      body: { course_id: courseId, return_url: returnUrl, cancel_url: cancelUrl }
+    });
+  }
+
+  static async checkTransactionStatus(txId) {
+    return await ApiClient.request('/api/payments/check-status/' + txId);
+  }
+
+  static async getAdminCashflowDashboard() {
+    return await ApiClient.request('/admin/cashflow/dashboard');
+  }
+
+  static async getAdminCashflowTransactions(options = {}) {
+    const params = new URLSearchParams();
+    if (options.limit) params.append('limit', options.limit);
+    if (options.offset) params.append('offset', options.offset);
+    if (options.tx_type) params.append('tx_type', options.tx_type);
+    if (options.user_id) params.append('user_id', options.user_id);
+    const qs = params.toString() ? '?' + params.toString() : '';
+    return await ApiClient.request('/admin/cashflow/transactions' + qs);
+  }
+
+  static async verifyAdminCashflowTransaction(txId) {
+    return await ApiClient.request('/admin/cashflow/verify/' + txId, {
+      method: 'POST'
+    });
+  }
+
+  static async revokeAdminCashflowTransaction(txId, reason = '') {
+    return await ApiClient.request('/admin/cashflow/revoke/' + txId, {
+      method: 'POST',
+      body: { reason }
+    });
+  }
+
+
+
+  static async getCashflowDashboard() {
+    return await ApiClient.getAdminCashflowDashboard();
+  }
+
+  static async getCashflowTransactions(options = {}) {
+    return await ApiClient.getAdminCashflowTransactions(options);
+  }
+
+  static async verifyCashflowTransaction(txId) {
+    return await ApiClient.verifyAdminCashflowTransaction(txId);
+  }
+
+  static async revokeCashflowTransaction(txId, reason = '') {
+    return await ApiClient.revokeAdminCashflowTransaction(txId, reason);
+  }
 }
+
 
 window.ApiClient = ApiClient;

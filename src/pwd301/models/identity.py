@@ -38,6 +38,7 @@ VALID_ADMIN_SUB_ROLES: set[str] = {
     "ADMIN_INSTRUCTOR_REVIEW",
     "ADMIN_TEACHING_ASSIGNMENT",
     "ADMIN_SYSTEM_MONITORING",
+    "ADMIN_FINANCIAL",
 }
 
 
@@ -226,13 +227,7 @@ class User(Base, UserMixin):
                     part = part.strip()
                     if part.startswith("SUB_ROLE:"):
                         code = part.split(":", 1)[1].strip()
-                        if code in (
-                            "ADMIN_PRIMARY",
-                            "ADMIN_COURSE_REVIEW",
-                            "ADMIN_INSTRUCTOR_REVIEW",
-                            "ADMIN_TEACHING_ASSIGNMENT",
-                            "ADMIN_SYSTEM_MONITORING",
-                        ):
+                        if code in VALID_ADMIN_SUB_ROLES:
                             return code
                 # Fallback: if an ADMIN has no explicit SUB_ROLE tag,
                 # do not default to ADMIN_PRIMARY (SEC-02 fail-closed)
@@ -253,6 +248,7 @@ class User(Base, UserMixin):
             "ADMIN_INSTRUCTOR_REVIEW": "Admin duyệt giảng viên",
             "ADMIN_TEACHING_ASSIGNMENT": "Admin phân công giảng dạy",
             "ADMIN_SYSTEM_MONITORING": "Admin giám sát hệ thống",
+            "ADMIN_FINANCIAL": "Admin tài chính & dòng tiền",
         }
         return labels.get(self.admin_sub_role or "", "Quản trị viên")
 

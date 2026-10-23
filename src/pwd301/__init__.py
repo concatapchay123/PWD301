@@ -39,6 +39,7 @@ from pwd301.blueprints.api_files import api_file_bp
 from pwd301.blueprints.api_import import api_import_bp
 from pwd301.blueprints.api_lessons import api_lesson_bp
 from pwd301.blueprints.api_notifications import api_notification_bp
+from pwd301.blueprints.api_payments import api_payments_bp
 from pwd301.services.realtime_service import events_bp
 from pwd301.blueprints.api_student import api_student_bp
 from pwd301.blueprints.auth import auth_bp
@@ -49,6 +50,7 @@ from pwd301.blueprints.student import student_bp
 from pwd301.cli import register_cli_commands
 from pwd301.config import config_by_name
 from pwd301.extensions import csrf, db, login_manager, migrate
+from pwd301.middlewares.rate_limiter import init_rate_limiter
 from pwd301.models.identity import AnonymousUser
 from pwd301.services.exceptions import (
     ActiveAttemptExistsError,
@@ -507,6 +509,7 @@ def create_app(
     # Initialize extensions
     db.init_app(app)
     migrate.init_app(app, db)
+    init_rate_limiter(app)
 
     # Pre-CSRF middleware: guarantee session['csrf_token'] exists before
     # Flask-WTF _csrf_protect runs
@@ -906,6 +909,7 @@ def create_app(
     app.register_blueprint(api_file_bp)
     app.register_blueprint(api_import_bp)
     app.register_blueprint(api_notification_bp)
+    app.register_blueprint(api_payments_bp)
     app.register_blueprint(api_ai_bp)
     app.register_blueprint(events_bp)
 
@@ -917,6 +921,7 @@ def create_app(
         csrf.exempt(unversioned_auth)
     csrf.exempt(api_admin_bp)
     csrf.exempt(api_course_bp)
+    csrf.exempt(api_payments_bp)
     csrf.exempt(api_lesson_bp)
     csrf.exempt(api_student_bp)
     csrf.exempt(api_assessment_bp)

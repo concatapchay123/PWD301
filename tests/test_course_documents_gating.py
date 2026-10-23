@@ -58,8 +58,14 @@ def published_course_with_file(app: Flask, instructor_actor: User, client: Flask
             "difficulty": "BEGINNER",
         },
     )
-    c.status = "PUBLISHED"
-    db.session.commit()
+    from pwd301.services.lesson_service import create_lesson
+    from pwd301.services.file_service import attach_resource_to_lesson
+    from pwd301.models.file_import import FileAsset
+    les = create_lesson(
+        instructor_actor,
+        c.id,
+        {"title": "Lesson 1", "markdown_content": "# Lesson 1 Content"},
+    )
 
     login_web_user(client, instructor_actor)
 
@@ -73,10 +79,13 @@ def published_course_with_file(app: Flask, instructor_actor: User, client: Flask
     assert up_resp.status_code in (200, 201)
     asset_id = up_resp.get_json()["asset_id"]
 
-    cr = db.session.query(CourseChangeRequest).filter_by(course_id=c.id).first()
-    if cr:
-        cr.status = "APPLIED"
-        db.session.commit()
+    fa = db.session.query(FileAsset).filter_by(public_id=uuid.UUID(asset_id)).first()
+    if fa:
+        attach_resource_to_lesson(instructor_actor, les.id, fa.id, label="Tài liệu bài 1", session=db.session)
+
+    c.status = "PUBLISHED"
+    les.status = "PUBLISHED"
+    db.session.commit()
 
     return c, asset_id
 
@@ -118,8 +127,12 @@ def test_enrolled_student_can_see_and_download_documents(
     data = detail_resp.get_json()
 
     assert data.get("enrollment") is not None
-    assert len(data.get("resources", [])) >= 1
-    assert any(r.get("asset_id") == asset_id for r in data["resources"])
+    # Invariant: Root general course resources list is purged empty
+    assert data.get("resources") == []
+    # Lesson resources contain the actual learning attachment
+    lesson_resources = [r for les in data.get("lessons", []) for r in les.get("resources", [])]
+    assert len(lesson_resources) >= 1
+    assert any(r.get("asset_id") == asset_id for r in lesson_resources)
 
     dl_resp = client.get(f"/student/courses/{course.public_id}/files/{asset_id}/download")
     assert dl_resp.status_code == 200

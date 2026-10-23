@@ -134,6 +134,7 @@ Content of lesson 1
         session=sess,
     )
     asset.status = "ACTIVE"
+    asset.change_request_id = None
     sess.flush()
 
     attach_resource_to_lesson(
@@ -145,6 +146,11 @@ Content of lesson 1
         session=sess,
     )
 
+    lesson1.status = "PUBLISHED"
+    lesson2.status = "PUBLISHED"
+    from pwd301.models.course import CourseChangeRequest
+    for ccr in sess.query(CourseChangeRequest).filter_by(course_id=course.id).all():
+        ccr.status = "APPROVED"
     sess.commit()
 
     return {
@@ -282,7 +288,7 @@ def test_student_course_certificate_endpoint(
     csrf_token = login_client(client, student.email)
 
     resp = client.get(
-        f"/student/courses/{course.public_id}/certificate",
+        f"/student/courses/{course.public_id}/certificate?format=json",
         headers={"X-CSRFToken": csrf_token},
     )
     assert resp.status_code == 200

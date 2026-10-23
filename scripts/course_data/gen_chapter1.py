@@ -129,7 +129,7 @@ curl -s --socks5-hostname 127.0.0.1:9050 https://check.torproject.org/api/ip
                 "explanation": "Khái niệm Surface Web, Deep Web và Darknet được phân tách rõ ràng theo khả năng lập chỉ mục và cơ chế bảo mật."
             }
         ]
-    })
+    )
 })
 
 # Lesson 1.2
@@ -255,7 +255,7 @@ print(f"[+] R3 bóc lớp cuối -> Dữ liệu đích: {original.decode()}")"""
                 "explanation": "Sai. Mỗi relay chỉ biết trạm ngay trước nó và trạm ngay sau nó, hoàn toàn không biết trạm còn lại trong mạch 3 node."
             }
         ]
-    })
+    )
 })
 
 # Lesson 1.3
@@ -367,7 +367,7 @@ curl -6 -s https://ifconfig.me 2>/dev/null || echo "IPv6 không hoạt động h
                 "explanation": "Honeypotting (bẫy mật phục) là chiến thuật cơ quan điều tra bí mật kiểm soát hạ tầng tội phạm để thu thập dữ liệu người dùng."
             }
         ]
-    })
+    )
 })
 
 # Lesson 1.4
@@ -479,7 +479,7 @@ head -n 30 /tmp/tor-consensus.txt"""
                 "explanation": "Tấn công Sybil là kịch bản kẻ thù tạo hàng loạt danh tính giả để thao túng mạng lưới ngang hàng."
             }
         ]
-    })
+    )
 })
 
 print(f"Loaded {len(LESSONS)} lessons for Chapter 1 successfully.")

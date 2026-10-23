@@ -29,17 +29,23 @@ def test_seed_baseline_success(app):
         role_codes = {r.code for r in roles}
         assert role_codes == {"STUDENT", "INSTRUCTOR", "ADMIN"}
 
-        # Verify root admin in database
-        admin = db.session.query(User).filter(User.email == "admin@pwd301.local").one_or_none()
-        assert admin is not None
-        assert admin.status == "ACTIVE"
-        assert admin.display_name == "System Administrator"
-        assert check_password_hash(admin.password_hash, "Admin@123456")
-        assert admin.email_verified_at is not None
-
-        # Verify admin has all 3 roles assigned
-        admin_roles = {r.code for r in admin.roles}
-        assert admin_roles == {"STUDENT", "INSTRUCTOR", "ADMIN"}
+        # Verify root admins in database
+        admins = db.session.query(User).all()
+        assert len(admins) == 4
+        emails = {u.email for u in admins}
+        assert emails == {
+            "vinhphu2020.nt@gmail.com",
+            "danglyquan@gmail.com",
+            "tqtphamnguyenhoangphuc@gmail.com",
+            "callmewin06@gmail.com",
+        }
+        for admin in admins:
+            assert admin.status == "ACTIVE"
+            assert check_password_hash(admin.password_hash, "Password123!")
+            assert admin.email_verified_at is not None
+            assert admin.is_admin is True
+            assert admin.is_primary_admin is True
+            assert {r.code for r in admin.roles} == {"STUDENT", "INSTRUCTOR", "ADMIN"}
 
 
 def test_seed_baseline_idempotency(app):
@@ -56,10 +62,10 @@ def test_seed_baseline_idempotency(app):
         assert res2["admin_created"] is False
         assert res2["admin_roles_assigned"] == []
 
-        # Verify counts remain exact
+        # Verify counts remain exact (3 roles, 4 admins, 12 user_roles)
         assert db.session.query(Role).count() == 3
-        assert db.session.query(User).count() == 1
-        assert db.session.query(UserRole).count() == 3
+        assert db.session.query(User).count() == 4
+        assert db.session.query(UserRole).count() == 12
 
 
 def test_seed_baseline_cli_commands(app, runner):
@@ -116,7 +122,7 @@ def test_seed_baseline_partial_role_recovery(app):
         seed_baseline(db.session)
 
         # Intentionally strip INSTRUCTOR and ADMIN roles from root admin
-        admin = db.session.query(User).filter(User.email == "admin@pwd301.local").one()
+        admin = db.session.query(User).filter(User.email == "tqtphamnguyenhoangphuc@gmail.com").one()
         admin_id = admin.id
 
         instructor_role = db.session.query(Role).filter(Role.code == "INSTRUCTOR").one()

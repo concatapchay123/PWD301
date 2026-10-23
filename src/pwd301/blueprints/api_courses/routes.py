@@ -91,6 +91,7 @@ def _serialize_course(c: Course) -> dict[str, Any]:
         "category": c.category,
         "difficulty": c.difficulty,
         "capacity": c.capacity,
+        "price": int(getattr(c, "price", 0) or 0),
         "status": c.status,
         "thumbnail_url": (
             f"/api/files/{thumbnail.public_id}/download?disposition=inline"
@@ -173,6 +174,107 @@ def get_course_thumbnail_api(course_id: str) -> Response:
         public_course_thumbnail=is_public,
     )
     return send_file(physical_path, mimetype=blob.detected_mime_type, conditional=True)
+
+
+@api_course_bp.route("/<course_id>/trailer/stream", methods=["GET"])
+def get_course_trailer_stream_api(course_id: str) -> Response:
+    """Stream course introduction trailer video with HTTP 206 Partial Content support."""
+    import json
+    import re
+    import uuid
+    import sqlalchemy as sa
+    from pwd301.models.file_import import FileAsset, FileRevision
+    from pwd301.services.course_service import _resolve_course
+    from pwd301.services.exceptions import ResourceNotFoundError
+    from pwd301.services.file_service import materialize_authorized_blob
+
+    course = _resolve_course(course_id, session=db.session)
+    if course is None or course.status == "TRASH" or course.deleted_at is not None:
+        raise ResourceNotFoundError("Course not found.")
+
+    asset: FileAsset | None = None
+
+    # 1. Check explicit course.trailer_file_asset_id
+    explicit_asset_id = getattr(course, "trailer_file_asset_id", None)
+    if explicit_asset_id:
+        if isinstance(explicit_asset_id, int):
+            asset = db.session.get(FileAsset, explicit_asset_id)
+        else:
+            try:
+                parsed_u = uuid.UUID(str(explicit_asset_id))
+                asset = db.session.query(FileAsset).filter(FileAsset.public_id == parsed_u).first()
+            except (ValueError, AttributeError):
+                if str(explicit_asset_id).isdigit():
+                    asset = db.session.get(FileAsset, int(explicit_asset_id))
+
+    # 2. Check metadata in course description (<!-- trailer_url: ... --> or JSON)
+    if asset is None and course.description:
+        m_tr = re.search(r"<!--\s*trailer_url:\s*(.*?)\s*-->", course.description, re.DOTALL)
+        trailer_ref = m_tr.group(1).strip() if m_tr else None
+        if not trailer_ref and course.description.strip().startswith("{"):
+            try:
+                p_desc = json.loads(course.description)
+                trailer_ref = p_desc.get("video_url") or p_desc.get("trailer_url")
+            except Exception:
+                trailer_ref = None
+
+        if trailer_ref:
+            uuid_match = re.search(
+                r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+                trailer_ref,
+            )
+            if uuid_match:
+                try:
+                    target_u = uuid.UUID(uuid_match.group(0))
+                    asset = db.session.query(FileAsset).filter(FileAsset.public_id == target_u).first()
+                except Exception:
+                    pass
+
+    # 3. Find FileAsset attached to course with video or trailer/intro in name
+    if asset is None:
+        asset = (
+            db.session.query(FileAsset)
+            .filter(
+                FileAsset.course_id == course.id,
+                FileAsset.deleted_at.is_(None),
+                FileAsset.status == "ACTIVE",
+                sa.or_(
+                    FileAsset.display_name.ilike("%trailer%"),
+                    FileAsset.display_name.ilike("%intro%"),
+                    FileAsset.display_name.ilike("%.mp4"),
+                    FileAsset.display_name.ilike("%.webm"),
+                ),
+            )
+            .order_by(FileAsset.created_at.desc())
+            .first()
+        )
+
+    if asset is None or asset.status == "TRASH" or asset.deleted_at is not None:
+        raise ResourceNotFoundError("Course trailer video asset not found.")
+
+    revision = asset.current_revision or (
+        db.session.query(FileRevision)
+        .filter(
+            FileRevision.file_asset_id == asset.id,
+            FileRevision.status.in_(["ACTIVE", "REPLACED"]),
+        )
+        .order_by(FileRevision.revision_no.desc())
+        .first()
+    )
+    if revision is None or revision.blob is None:
+        raise ResourceNotFoundError("Trailer video file content not found.")
+
+    blob = revision.blob
+    physical_path = materialize_authorized_blob(blob)
+    if not physical_path.is_file():
+        raise ResourceNotFoundError("Physical trailer video file not found on storage.")
+
+    mime_type = blob.detected_mime_type or revision.detected_mime_type or "video/mp4"
+    return send_file(
+        physical_path,
+        mimetype=mime_type,
+        conditional=True,
+    )
 
 
 @api_course_bp.route("/<course_id>", methods=["GET"])

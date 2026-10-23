@@ -36,6 +36,7 @@ from pwd301.services.attempt_service import (
     submit_assessment_attempt,
 )
 from pwd301.services.course_service import change_course_status, create_course
+from pwd301.services.course_workflow_service import applying_review
 from pwd301.services.enrollment_service import enroll_student
 from pwd301.services.exceptions import (
     AttemptExpiredError,
@@ -121,38 +122,39 @@ def _make_assessment_with_question(
     close_delta_hours: int = 24,
 ) -> Assessment:
     """Helper to create and publish an assessment with one assigned question."""
-    now = datetime.now(UTC)
-    payload = {
-        "title": "Submission Test Assessment",
-        "assessment_type": "QUIZ",
-        "time_limit_minutes": time_limit,
-        "open_at": (now + timedelta(hours=open_delta_hours)).isoformat(),
-        "close_at": (now + timedelta(hours=close_delta_hours)).isoformat(),
-        "passing_score": 50.0,
-    }
-    assessment = create_assessment(instructor, course.id, payload, session=db.session)
-    sec = create_section(instructor, assessment.id, {"title": "Main Section"}, session=db.session)
+    with applying_review(db.session):
+        now = datetime.now(UTC)
+        payload = {
+            "title": "Submission Test Assessment",
+            "assessment_type": "QUIZ",
+            "time_limit_minutes": time_limit,
+            "open_at": (now + timedelta(hours=open_delta_hours)).isoformat(),
+            "close_at": (now + timedelta(hours=close_delta_hours)).isoformat(),
+            "passing_score": 50.0,
+        }
+        assessment = create_assessment(instructor, course.id, payload, session=db.session)
+        sec = create_section(instructor, assessment.id, {"title": "Main Section"}, session=db.session)
 
-    q_data: dict[str, Any] = {
-        "question_type": "SINGLE_CHOICE",
-        "difficulty": "REMEMBER",
-        "content": "Which HTTP status represents Conflict?",
-        "default_points": 10.0,
-        "choices": [
-            {"content": "409", "is_correct": True, "position": 1},
-            {"content": "404", "is_correct": False, "position": 2},
-        ],
-    }
-    q = create_question(instructor, course.id, q_data, session=db.session)
-    assign_question(
-        instructor,
-        assessment.id,
-        {"question_id": q.id, "points_assigned": 10.0, "section_id": sec.id},
-        session=db.session,
-    )
+        q_data: dict[str, Any] = {
+            "question_type": "SINGLE_CHOICE",
+            "difficulty": "REMEMBER",
+            "content": "Which HTTP status represents Conflict?",
+            "default_points": 10.0,
+            "choices": [
+                {"content": "409", "is_correct": True, "position": 1},
+                {"content": "404", "is_correct": False, "position": 2},
+            ],
+        }
+        q = create_question(instructor, course.id, q_data, session=db.session)
+        assign_question(
+            instructor,
+            assessment.id,
+            {"question_id": q.id, "points_assigned": 10.0, "section_id": sec.id},
+            session=db.session,
+        )
 
-    publish_assessment(instructor, assessment.id, session=db.session)
-    db.session.commit()
+        publish_assessment(instructor, assessment.id, session=db.session)
+        db.session.commit()
     return assessment
 
 

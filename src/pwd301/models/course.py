@@ -126,6 +126,12 @@ class Course(Base):
         default="DRAFT",
         server_default=sa.text("'DRAFT'"),
     )
+    price = db.Column(
+        sa.BigInteger,
+        nullable=False,
+        default=0,
+        server_default=sa.text("0"),
+    )
     capacity = db.Column(sa.Integer, nullable=True)
     storage_quota_bytes = db.Column(sa.BigInteger, nullable=True)
     published_at = db.Column(UTCDateTime, nullable=True)
@@ -240,6 +246,20 @@ class Course(Base):
         if self.thumbnail_file_asset_id:
             return f"/api/courses/{self.public_id}/thumbnail"
         return None
+
+    @property
+    def trailer_stream_url(self) -> str:
+        """Return the public streaming endpoint for the course intro trailer."""
+        return f"/api/courses/{self.public_id}/trailer/stream"
+
+    @property
+    def trailer_file_asset_id(self) -> int | None:
+        """Return the trailer file asset id if explicitly configured."""
+        return self.__dict__.get("_trailer_file_asset_id")
+
+    @trailer_file_asset_id.setter
+    def trailer_file_asset_id(self, value: int | None) -> None:
+        self.__dict__["_trailer_file_asset_id"] = value
 
     @validates("course_code")
     def _validate_course_code(self, key: str, value: str | None) -> str | None:

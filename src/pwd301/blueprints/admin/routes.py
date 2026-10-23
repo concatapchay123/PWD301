@@ -9,7 +9,7 @@ from pwd301.blueprints.admin import admin_bp
 from pwd301.extensions import db
 from pwd301.models.course import Course, CourseChangeRequest, LearningUnit, Lesson
 from pwd301.models.file_import import FileAsset, LessonResource
-from pwd301.models.identity import User
+from pwd301.models.identity import InstructorApplication, User
 from pwd301.services.analytics_service import get_admin_system_overview
 from pwd301.services.authorization_service import (
     _resolve_user,
@@ -63,6 +63,8 @@ def _serialize_course(c: Course) -> dict[str, Any]:
         owner_name = getattr(c.owner_instructor, "full_name", None) or getattr(
             c.owner_instructor, "display_name", None
         )
+    price_val = int(getattr(c, "price", 0) or 0)
+    price_fmt = f"{price_val:,} đ".replace(",", ".") if price_val > 0 else "Miễn phí"
     return {
         "course_id": str(c.public_id),
         "id": str(c.public_id),
@@ -73,6 +75,8 @@ def _serialize_course(c: Course) -> dict[str, Any]:
         "difficulty": c.difficulty,
         "description": c.description,
         "summary": getattr(c, "summary", None),
+        "price": price_val,
+        "price_formatted": price_fmt,
         "thumbnail_url": thumb_url,
         "review_version": course_review_version(c, db.session),
         "thumbnail_file_asset_id": c.thumbnail_file_asset_id,
@@ -96,6 +100,52 @@ def dashboard() -> tuple[Response, int] | Response | str:
     actor = require_authenticated_actor()
     overview = get_admin_system_overview(actor, session=db.session)
     return jsonify(overview), 200
+
+
+@admin_bp.route("/governance/summary", methods=["GET"])
+@admin_required
+def admin_governance_summary() -> tuple[Response, int] | Response:
+    """Consolidated administrative governance summary counts."""
+    actor = require_authenticated_actor()
+    sess = db.session
+
+    pending_courses_count = (
+        sess.query(sa.func.count(Course.id))
+        .filter(Course.status == "SUBMITTED_FOR_REVIEW", Course.deleted_at.is_(None))
+        .scalar()
+        or 0
+    )
+    pending_change_requests_count = (
+        sess.query(sa.func.count(CourseChangeRequest.id))
+        .filter(CourseChangeRequest.status == "PENDING")
+        .scalar()
+        or 0
+    )
+    pending_instructor_applications_count = (
+        sess.query(sa.func.count(InstructorApplication.id))
+        .filter(InstructorApplication.status == "PENDING")
+        .scalar()
+        or 0
+    )
+    total_users_count = (
+        sess.query(sa.func.count(User.id))
+        .scalar()
+        or 0
+    )
+    total_pending_work = (
+        pending_courses_count
+        + pending_change_requests_count
+        + pending_instructor_applications_count
+    )
+
+    data = {
+        "pending_courses_count": int(pending_courses_count),
+        "pending_change_requests_count": int(pending_change_requests_count),
+        "pending_instructor_applications_count": int(pending_instructor_applications_count),
+        "total_users_count": int(total_users_count),
+        "total_pending_work": int(total_pending_work),
+    }
+    return jsonify({"success": True, "data": data}), 200
 
 
 @admin_bp.route("/courses", methods=["GET"])
@@ -837,6 +887,43 @@ def admin_broadcast_notifications() -> tuple[Response, int] | Response:
     )
     response_data = {"broadcasted_count": count, "idempotent_replay": idempotent_replay}
     return jsonify({"success": True, "data": response_data, **response_data}), 200
+
+
+@admin_bp.route("/notifications/broadcasts", methods=["GET"])
+@admin_required
+def admin_list_broadcasts() -> tuple[Response, int] | Response:
+    """List system broadcast history with recipient counts and auto-cleanup expired notifications."""
+    from pwd301.services.notification_service import (
+        cleanup_expired_notifications,
+        list_admin_broadcasts,
+    )
+
+    actor = require_authenticated_actor()
+    cleanup_result = cleanup_expired_notifications(days=15, session=db.session)
+    broadcasts = list_admin_broadcasts(actor=actor, session=db.session)
+    return jsonify({
+        "success": True,
+        "data": broadcasts,
+        "broadcasts": broadcasts,
+        "cleanup": cleanup_result,
+    }), 200
+
+
+@admin_bp.route("/notifications/broadcasts/<event_key>", methods=["DELETE"])
+@admin_bp.route("/notifications/broadcasts/<event_key>/delete", methods=["POST"])
+@admin_required
+def admin_hard_delete_broadcast(event_key: str) -> tuple[Response, int] | Response:
+    """Hard delete a broadcast NotificationEvent and all associated notification records."""
+    from pwd301.services.notification_service import hard_delete_broadcast
+
+    actor = require_authenticated_actor()
+    result = hard_delete_broadcast(actor=actor, event_key_or_id=event_key, session=db.session)
+    return jsonify({
+        "success": True,
+        "data": result,
+        "message": "Đã xóa cứng thông báo phát sóng thành công.",
+        **result,
+    }), 200
 
 
 @admin_bp.route("/emails/retry-failed", methods=["POST"])
@@ -2606,3 +2693,153 @@ def admin_export_assessment_gradebook_pdf_route(assessment_id: str) -> Response:
     response.headers["Cache-Control"] = "private, no-store"
     response.headers["X-Content-Type-Options"] = "nosniff"
     return response
+
+
+# =========================================================================
+# CASHFLOW & FINANCIAL GOVERNANCE (ADMIN_PRIMARY & ADMIN_FINANCIAL)
+# =========================================================================
+
+@admin_bp.route("/cashflow/dashboard", methods=["GET"])
+@admin_required
+def admin_cashflow_dashboard() -> tuple[Response, int] | Response:
+    actor = require_authenticated_actor()
+    if not (actor.is_primary_admin or actor.admin_sub_role in ("ADMIN_FINANCIAL", "ADMIN_PRIMARY")):
+        return jsonify({"success": False, "error": "Bạn không có quyền truy cập quản lý dòng tiền."}), 403
+
+    from pwd301.services.wallet_service import get_cashflow_stats
+    stats = get_cashflow_stats(session=db.session)
+    return jsonify({"success": True, "data": stats, **stats}), 200
+
+
+@admin_bp.route("/cashflow/transactions", methods=["GET"])
+@admin_required
+def admin_cashflow_transactions() -> tuple[Response, int] | Response:
+    actor = require_authenticated_actor()
+    if not (actor.is_primary_admin or actor.admin_sub_role in ("ADMIN_FINANCIAL", "ADMIN_PRIMARY")):
+        return jsonify({"success": False, "error": "Bạn không có quyền truy cập nhật ký dòng tiền."}), 403
+
+    from pwd301.services.wallet_service import list_transactions
+    limit = int(request.args.get("limit", 50))
+    offset = int(request.args.get("offset", 0))
+    tx_type = request.args.get("tx_type")
+    user_id = request.args.get("user_id", type=int)
+
+    txs = list_transactions(limit=limit, offset=offset, user_id=user_id, tx_type=tx_type, session=db.session)
+    return jsonify({"success": True, "data": txs, "transactions": txs}), 200
+
+
+@admin_bp.route("/cashflow/verify/<tx_id>", methods=["POST"])
+@admin_required
+def admin_cashflow_verify(tx_id: str) -> tuple[Response, int] | Response:
+    actor = require_authenticated_actor()
+    if not (actor.is_primary_admin or actor.admin_sub_role in ("ADMIN_FINANCIAL", "ADMIN_PRIMARY")):
+        return jsonify({"success": False, "error": "Bạn không có quyền xác thực giao dịch."}), 403
+
+    from pwd301.services.wallet_service import verify_deposit_manually
+    try:
+        res = verify_deposit_manually(admin_user=actor, tx_id=tx_id, session=db.session)
+        return jsonify({"success": True, "data": res, **res}), 200
+    except Exception as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+
+
+@admin_bp.route("/cashflow/revoke/<tx_id>", methods=["POST"])
+@admin_required
+def admin_cashflow_revoke(tx_id: str) -> tuple[Response, int] | Response:
+    actor = require_authenticated_actor()
+    if not (actor.is_primary_admin or actor.admin_sub_role in ("ADMIN_FINANCIAL", "ADMIN_PRIMARY")):
+        return jsonify({"success": False, "error": "Bạn không có quyền thu hồi giao dịch."}), 403
+
+    payload = request.get_json(silent=True) or {}
+    reason = payload.get("reason", "Phát hiện dấu hiệu bất thường từ tài khoản người dùng").strip()
+
+    from pwd301.services.wallet_service import revoke_transaction
+    try:
+        res = revoke_transaction(admin_user=actor, tx_id=tx_id, reason=reason, session=db.session)
+        return jsonify({"success": True, "data": res, **res}), 200
+    except Exception as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+
+
+@admin_bp.route("/courses/<course_id>/price", methods=["PUT", "POST"])
+@admin_required
+def admin_update_course_price(course_id: str) -> tuple[Response, int] | Response:
+    actor = require_authenticated_actor()
+    if not actor.is_admin:
+        return jsonify({"success": False, "error": "Chỉ Quản trị viên mới có quyền điều chỉnh giá khóa học."}), 403
+
+    payload = request.get_json(silent=True) or {}
+    try:
+        new_price = int(payload.get("price", 0))
+        if new_price < 0:
+            raise ValueError
+    except (ValueError, TypeError):
+        return jsonify({"success": False, "error": "Giá khóa học (price) phải là số nguyên không âm (>= 0)."}), 400
+
+    from pwd301.services.authorization_service import _resolve_course
+    course = _resolve_course(course_id, session=db.session)
+    if not course:
+        return jsonify({"success": False, "error": "Khóa học không tồn tại"}), 404
+
+    old_price = int(course.price or 0)
+    old_price_fmt = f"{old_price:,} đ".replace(",", ".") if old_price > 0 else "Miễn phí"
+    new_price_fmt = f"{new_price:,} đ".replace(",", ".") if new_price > 0 else "Miễn phí"
+
+    reason_raw = (payload.get("reason") or "").strip()
+    reason = reason_raw if reason_raw else "Quản trị viên cập nhật học phí trực tiếp."
+
+    course.price = new_price
+    db.session.flush()
+
+    from pwd301.services.course_service import _record_audit_event, _course_notification_event_key
+    from pwd301.services.notification_service import dispatch_notification
+
+    audit_entry = _record_audit_event(
+        sess=db.session,
+        actor=actor,
+        action="COURSE_PRICE_UPDATED",
+        target_id=course.id,
+        reason=reason,
+        before_json=json.dumps({"price": old_price, "price_formatted": old_price_fmt}),
+        after_json=json.dumps({"price": new_price, "price_formatted": new_price_fmt}),
+    )
+    db.session.flush()
+
+    if course.owner_instructor_id:
+        dispatch_notification(
+            recipient_user=course.owner_instructor_id,
+            event_type="SYSTEM_ADMIN_INTERVENTION",
+            title=f"Quản trị viên đã cập nhật học phí khóa học {course.course_code}",
+            body=(
+                f"Quản trị viên đã điều chỉnh học phí khóa học '{course.title}' từ {old_price_fmt} thành {new_price_fmt}. Lý do: {reason}"
+            ),
+            action_url=f"#/instructor/courses/manage?id={course.public_id}",
+            category="SYSTEM",
+            target_role="INSTRUCTOR",
+            payload={
+                "course_id": str(course.public_id),
+                "action": "COURSE_PRICE_UPDATED",
+                "old_price": old_price,
+                "new_price": new_price,
+                "reason": reason,
+            },
+            event_key=_course_notification_event_key(audit_entry, course.owner_instructor_id),
+            session=db.session,
+        )
+
+    db.session.commit()
+    price_val = course.price
+    price_fmt = new_price_fmt
+    data = {
+        "course_id": str(course.public_id),
+        "price": price_val,
+        "price_formatted": price_fmt,
+    }
+    return jsonify({
+        "success": True,
+        "data": data,
+        "course_id": str(course.public_id),
+        "price": price_val,
+        "price_formatted": price_fmt,
+    }), 200
+

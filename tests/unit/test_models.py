@@ -128,14 +128,15 @@ EXPECTED_73_TABLES = {
 
 
 def test_exactly_77_tables_registered():
-    """Verify original domains plus durable playback and lesson progress receipts."""
+    """Verify original domains plus durable playback, lesson progress receipts, and assessment appeals."""
     registered = set(db.metadata.tables.keys())
-    assert len(registered) == 77
+    assert len(registered) == 78
     assert registered == EXPECTED_73_TABLES | {
         "playback_sessions",
         "lesson_media_progress",
         "playback_receipts",
         "lesson_progress_receipts",
+        "assessment_appeals",
     }
 
 

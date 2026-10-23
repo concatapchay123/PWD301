@@ -1,0 +1,266 @@
+[
+  {
+    "url": "http://127.0.0.1:5000/",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:36.684516+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/img/pptq_icon.png",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:36.700109+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/img/octopus_ai_icon.png?v=2",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:36.700634+00:00"
+  },
+  {
+    "url": "https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:37.081367+00:00"
+  },
+  {
+    "url": "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:37.081367+00:00"
+  },
+  {
+    "url": "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:37.174608+00:00"
+  },
+  {
+    "url": "https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:37.185372+00:00"
+  },
+  {
+    "url": "https://cdn.tailwindcss.com/?plugins=forms,container-queries",
+    "status": 302,
+    "method": "GET",
+    "time": "2026-10-23T03:41:37.192497+00:00"
+  },
+  {
+    "url": "https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:37.231932+00:00"
+  },
+  {
+    "url": "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:37.275023+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/js/components/video-armor.js?v=3.2.6",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:37.286199+00:00"
+  },
+  {
+    "url": "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:37.289995+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/js/ui.js?v=3.2.6",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:37.300245+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/js/api.js?v=3.2.6",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:37.301562+00:00"
+  },
+  {
+    "url": "https://cdn.tailwindcss.com/3.4.17?plugins=forms@0.5.10,container-queries@0.1.1",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:37.310597+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/js/exam-store.js?v=3.2.6",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:37.342414+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/js/realtime.js?v=3.2.6",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:37.342981+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/js/views/auth.js?v=3.2.6",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:37.436453+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/js/router.js?v=3.2.6",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:37.437453+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/js/views/instructor-exams.js?v=3.2.6",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:37.437453+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/js/views/instructor.js?v=3.2.6",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:37.437453+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/js/views/admin.js?v=3.2.6",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:37.437453+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/js/views/student.js?v=3.2.6",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:37.437453+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/auth/session",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:37.455478+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/img/pptq_logo_dark.png",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:37.484130+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/frontend/assets/img/pptq_logo.png",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:37.484130+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/auth/runtime-config",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:37.484130+00:00"
+  },
+  {
+    "url": "https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko20yw.woff2",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:37.844326+00:00"
+  },
+  {
+    "url": "https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko40yyygA.woff2",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:37.852326+00:00"
+  },
+  {
+    "url": "https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko50yyygA.woff2",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:37.865624+00:00"
+  },
+  {
+    "url": "https://fonts.gstatic.com/s/materialsymbolsoutlined/v380/kJEPBvYX7BgnkSrUwT8OhrdQw4oELdPIeeII9v6oDMzBwG-RpA6RzaxHMPdY40KH8nGzv3fzfVJO1Q.woff2",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:37.981538+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/auth/login",
+    "status": 200,
+    "method": "POST",
+    "time": "2026-10-23T03:41:38.117678+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/admin/change-requests?status=PENDING",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:38.167699+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/admin/courses/pending",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:38.167699+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/admin/instructor-applications?status=PENDING",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:38.168760+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/auth/notifications?role=ADMIN",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:38.168760+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/api/events/stream",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:38.169276+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/admin/users",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:38.195288+00:00"
+  },
+  {
+    "url": "https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbv2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKwBNntkaToggR7BYRbKPxDcwg.woff2",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:38.218911+00:00"
+  },
+  {
+    "url": "https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbv2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKwBNntkaToggR7BYRbKPx_cwhsk.woff2",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:38.237530+00:00"
+  },
+  {
+    "url": "https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbv2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKwBNntkaToggR7BYRbKPx7cwhsk.woff2",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:38.238534+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/admin/change-requests?status=PENDING",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:38.238534+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/admin/instructor-applications?status=PENDING",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:38.238534+00:00"
+  },
+  {
+    "url": "http://127.0.0.1:5000/admin/courses/pending",
+    "status": 200,
+    "method": "GET",
+    "time": "2026-10-23T03:41:38.238534+00:00"
+  }
+]

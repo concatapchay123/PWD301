@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import timedelta, timezone
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -264,7 +264,26 @@ def login() -> Any:
             403,
         )
 
-    # Check concurrent active sessions (Single Active Concurrent Session Invariant)
+    # Email verification gate (Required for active login)
+    if not user.email_verified_at:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "data": {"email": user.email, "requires_verification": True},
+                    "error": {
+                        "code": "EMAIL_NOT_VERIFIED",
+                        "message": "Tài khoản của bạn chưa được xác thực email. Vui lòng kiểm tra hộp thư hoặc bấm 'Gửi lại email xác thực'.",
+                    },
+                }
+            ),
+            403,
+        )
+
+    # Single Active Device Takeover (Eviction Invariant)
+    # New valid login ALWAYS succeeds (HTTP 200). If older sessions exist:
+    # - If active within 5 minutes: emit SSE event to politely notify and evict older device.
+    # - If idle (> 5 minutes, tab closed): silently revoke in database.
     now = utc_now()
     existing_active_sessions = (
         db.session.query(AuthSession)
@@ -285,54 +304,49 @@ def login() -> Any:
     ]
 
     if other_active:
+        active_threshold = timedelta(minutes=5)
+        truly_active = []
+        for s in other_active:
+            if s.last_seen_at:
+                s_seen = s.last_seen_at.replace(tzinfo=timezone.utc) if s.last_seen_at.tzinfo is None else s.last_seen_at
+                if (now - s_seen) <= active_threshold:
+                    truly_active.append(s)
+
+        # Revoke all existing sessions in DB to enforce single active session
         for s in existing_active_sessions:
             s.revoked_at = now
         user.auth_version = (user.auth_version or 1) + 1
         db.session.commit()
 
-        # Emit Realtime SSE security event to immediately terminate active client A
-        try:
-            from pwd301.services.realtime_service import emit_domain_event
+        # If an existing session was actively in use (<= 5 min), notify that client via SSE
+        if truly_active:
+            try:
+                from pwd301.services.realtime_service import emit_domain_event
 
-            target_ids = [user.id]
-            if hasattr(user, "public_id") and user.public_id:
-                target_ids.append(str(user.public_id))
-            emit_domain_event(
-                event_type="auth:concurrent_session_revoked",
-                payload={
-                    "user_id": user.id,
-                    "public_id": str(getattr(user, "public_id", user.id)),
-                    "message": "Tài khoản của bạn đã được đăng nhập từ một thiết bị khác. Hệ thống đã tự động đăng xuất trên toàn bộ thiết bị để bảo vệ an toàn.",
-                },
-                target_user_ids=target_ids,
-            )
-        except Exception as sse_err:
-            current_app.logger.warning("Could not emit concurrent session SSE: %s", sse_err)
-
-        session.clear()
-        logout_user()
-        return (
-            jsonify(
-                {
-                    "success": False,
-                    "data": None,
-                    "error": {
-                        "code": "CONCURRENT_LOGIN_DETECTED",
-                        "message": "Tài khoản đã bị đăng xuất trên toàn bộ thiết bị do phát hiện đăng nhập đồng thời từ thiết bị khác để bảo vệ an toàn.",
+                target_ids = [user.id]
+                if hasattr(user, "public_id") and user.public_id:
+                    target_ids.append(str(user.public_id))
+                emit_domain_event(
+                    event_type="auth:concurrent_session_revoked",
+                    payload={
+                        "user_id": user.id,
+                        "public_id": str(getattr(user, "public_id", user.id)),
+                        "message": "Tài khoản của bạn vừa được đăng nhập trên một thiết bị khác. Phiên làm việc trên thiết bị này đã kết thúc để đảm bảo an toàn.",
                     },
-                }
-            ),
-            409,
-        )
-
-    # Cleanly rotate: revoke previous session of this same client before issuing new session
-    for s in existing_active_sessions:
-        if current_key_hash and hmac.compare_digest(s.session_key_hash, current_key_hash):
-            s.revoked_at = now
+                    target_user_ids=target_ids,
+                )
+            except Exception as sse_err:
+                current_app.logger.warning("Could not emit concurrent session SSE: %s", sse_err)
+    else:
+        # Same client re-authenticating or clean session: revoke current matching session
+        for s in existing_active_sessions:
+            if current_key_hash and hmac.compare_digest(s.session_key_hash, current_key_hash):
+                s.revoked_at = now
+        db.session.commit()
 
     # Create server-side AuthSession in database
     user_agent_str = request.user_agent.string if request.user_agent else None
-    session_duration = timedelta(days=30) if remember else None
+    session_duration = timedelta(days=30) if remember else timedelta(days=7)
     auth_session, raw_session_key = create_auth_session(
         user=user,
         ip_address=request.remote_addr,
@@ -344,8 +358,9 @@ def login() -> Any:
     # (clear existing unauthenticated session to prevent session fixation)
     session.clear()
     login_user(user, remember=remember)
-    if remember:
-        session.permanent = True
+    # Enable persistent session cookie so closing/reopening tabs preserves login
+    current_app.permanent_session_lifetime = session_duration
+    session.permanent = True
 
     # Store session-integrity values in Flask session cookie
     session["auth_session_key"] = raw_session_key
@@ -605,11 +620,31 @@ def register() -> Any:
             400,
         )
 
+    # Generate single-use verification token and dispatch branded confirmation email
+    try:
+        from pwd301.services.user_service import generate_email_verification_token
+        from pwd301.services.email_service import send_verification_email
+
+        token = generate_email_verification_token(user.id)
+        frontend_url = request.host_url
+        if request.headers.get("Origin"):
+            frontend_url = request.headers.get("Origin")
+        elif request.headers.get("Referer"):
+            from urllib.parse import urlsplit
+            parts = urlsplit(request.headers.get("Referer"))
+            frontend_url = f"{parts.scheme}://{parts.netloc}"
+
+        send_verification_email(user=user, token=token, frontend_url=frontend_url)
+    except Exception as mail_err:
+        current_app.logger.warning("Could not dispatch registration verification email: %s", mail_err)
+
     return (
         jsonify(
             {
                 "status": "ok",
-                "message": "Đăng ký tài khoản thành công!",
+                "message": "Đăng ký tài khoản thành công! Vui lòng kiểm tra email để kích hoạt tài khoản trước khi đăng nhập.",
+                "requires_email_verification": True,
+                "email": user.email,
                 "public_id": str(user.public_id),
             }
         ),
@@ -791,10 +826,11 @@ def verify_email(token: str) -> Any:
     user_id = verify_email_verification_token(token)
     if not user_id:
         msg = "Liên kết xác thực email không hợp lệ hoặc đã hết hạn."
-        if _is_json_request():
+        if _is_json_request() and not (
+            request.accept_mimetypes.accept_html and "text/html" in request.headers.get("Accept", "")
+        ):
             return jsonify({"error": {"code": "INVALID_TOKEN", "message": msg}}), 400
-        flash(msg, "danger")
-        return redirect(url_for("auth.login"))
+        return redirect("/#/auth/login?verification_failed=1")
 
     try:
         from pwd301.services.auth_token_service import (
@@ -806,17 +842,67 @@ def verify_email(token: str) -> Any:
         verify_security_token(token, SecurityTokenPurpose.EMAIL_VERIFY)
         verify_email_with_token(token)
     except ServiceError as exc:
-        if _is_json_request():
+        if _is_json_request() and not (
+            request.accept_mimetypes.accept_html and "text/html" in request.headers.get("Accept", "")
+        ):
             return jsonify({"error": {"code": "VERIFICATION_ERROR", "message": str(exc)}}), 400
-        flash(str(exc), "danger")
-        return redirect(url_for("auth.login"))
+        return redirect("/#/auth/login?verification_failed=1")
 
     msg = "Email đã được xác thực thành công!"
-    if _is_json_request():
+    if _is_json_request() and not (
+        request.accept_mimetypes.accept_html and "text/html" in request.headers.get("Accept", "")
+    ):
         return jsonify({"status": "ok", "message": msg}), 200
 
-    flash(msg, "success")
-    return redirect(url_for("auth.login"))
+    return redirect("/#/auth/login?verified=1")
+
+
+@auth_bp.route("/resend-verification", methods=["POST"])
+def resend_verification() -> Any:
+    """Resend email verification link to unverified users."""
+    data: dict[str, Any] = request.get_json() or {} if request.is_json else {}
+    email = str(data.get("email", "")).strip()
+    if not email:
+        email = request.form.get("email", "").strip()
+
+    if not email:
+        return (
+            jsonify({"error": {"code": "VALIDATION_ERROR", "message": "Vui lòng nhập địa chỉ email."}}),
+            400,
+        )
+
+    from pwd301.services.email_service import send_verification_email
+    from pwd301.services.user_service import (
+        generate_email_verification_token,
+        get_user_by_email,
+    )
+
+    user = get_user_by_email(email)
+    if user is not None and user.is_active and not user.email_verified_at:
+        try:
+            token = generate_email_verification_token(user.id)
+            frontend_url = request.host_url
+            if request.headers.get("Origin"):
+                frontend_url = request.headers.get("Origin")
+            elif request.headers.get("Referer"):
+                from urllib.parse import urlsplit
+
+                parts = urlsplit(request.headers.get("Referer"))
+                frontend_url = f"{parts.scheme}://{parts.netloc}"
+
+            send_verification_email(user=user, token=token, frontend_url=frontend_url)
+        except Exception as exc:
+            current_app.logger.warning("Failed to resend verification email for %s: %s", email, exc)
+
+    return (
+        jsonify(
+            {
+                "status": "ok",
+                "message": "Nếu email tồn tại trong hệ thống và chưa được kích hoạt, liên kết xác thực mới đã được gửi vào hộp thư của bạn.",
+            }
+        ),
+        200,
+    )
 
 
 @auth_bp.route("/set-language", methods=["POST"])

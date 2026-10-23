@@ -2150,6 +2150,12 @@ class StudentView {
       ]);
 
       const course = courseData?.course || courseData;
+      if (courseData?.enrollment && !course.enrollment) {
+        course.enrollment = courseData.enrollment;
+      }
+      if (progressData && !course.progress) {
+        course.progress = progressData;
+      }
       if (!course || !course.id) {
         container.innerHTML = `
           <div class="h-full flex items-center justify-center p-6 text-center">
@@ -2468,20 +2474,7 @@ class StudentView {
         });
       });
 
-      // General course resources: files not attached to any specific lesson and not orphaned
-      const generalCourseResources = (allResources || []).filter(r => {
-        if (!r) return false;
-        if (isCoverAsset(r)) return false;
-        if (r.is_orphaned || r.is_deleted || r.status === 'TRASH' || r.deleted_at || r.is_trashed) return false;
-        if (r.lesson_id && !activeLessonIds.has(String(r.lesson_id))) return false;
-        const aid = r.asset_id || r.resource_id || r.id;
-        const fn = r.filename;
-        if (aid && attachedAssetIds.has(String(aid))) return false;
-        if (fn && attachedAssetIds.has(String(fn))) return false;
-        return true;
-      });
-
-      // Total valid study resource count
+      // Total valid study resource count (strictly learning attachments under chapters/lessons)
       let totalLessonResourcesCount = 0;
       modules.forEach(mod => {
         (mod.lessons || []).forEach(les => {
@@ -2489,7 +2482,7 @@ class StudentView {
           totalLessonResourcesCount += lRes.length;
         });
       });
-      const totalResourceCount = totalLessonResourcesCount + generalCourseResources.length;
+      const totalResourceCount = totalLessonResourcesCount;
 
       // Track active tabs & expanded accordion module IDs
       let currentTab = (initialTab === 'resources' || initialTab === 'ai') ? initialTab : 'outline';
@@ -2504,7 +2497,6 @@ class StudentView {
       // Resources Accordion Expanded Sets
       const expandedResModuleIds = new Set();
       const expandedResLessonIds = new Set();
-      let expandedResGeneral = true;
 
       // Default expand active lesson and its chapter in Resources tab
       if (activeItem && activeItem.type === 'lesson') {
@@ -2646,6 +2638,9 @@ class StudentView {
                 <div class="flex-1 overflow-y-auto p-3 space-y-2.5 custom-scrollbar" id="outline-accordion-list">
                   <!-- Rendered dynamically -->
                 </div>
+
+                <!-- Certificate Download Action (Rendered when course completed) -->
+                <div id="outline-certificate-container"></div>
               </div>
 
               <!-- Sidebar Panel 2: Resources Vault (Grouped by Chapter & Lesson) -->
@@ -3369,6 +3364,44 @@ class StudentView {
           </div>
         `;
 
+        // Render Certificate Download Action (Strictly PDF only - HTML preview purged)
+        const certBox = document.getElementById('outline-certificate-container');
+        if (certBox) {
+          const isCourseCompleted = Boolean(
+            (course.enrollment && (course.enrollment.status === 'COMPLETED' || course.enrollment.progress_percent >= 100 || course.enrollment.current_progress_percent >= 100)) ||
+            (courseData?.enrollment && (courseData.enrollment.status === 'COMPLETED' || courseData.enrollment.progress_percent >= 100 || courseData.enrollment.current_progress_percent >= 100)) ||
+            (progressData && (progressData.status === 'COMPLETED' || progressData.progress_percent >= 100 || progressData.current_progress_percent >= 100)) ||
+            (flatNavList.length > 0 && flatNavList.every(i => i.isCompleted))
+          );
+          if (isCourseCompleted) {
+            certBox.innerHTML = `
+              <div class="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+                <button type="button" id="btn-download-course-certificate" class="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer" title="Tải Chứng chỉ PDF chính thức">
+                  <span class="material-symbols-outlined text-[18px]">workspace_premium</span>
+                  <span>Tải Chứng chỉ PDF</span>
+                </button>
+              </div>
+            `;
+            const certBtn = document.getElementById('btn-download-course-certificate');
+            if (certBtn) {
+              certBtn.onclick = (e) => {
+                e?.stopPropagation?.();
+                e?.preventDefault?.();
+                UI.showToast('Đang tạo và tải chứng chỉ khóa học PDF...', 'info');
+                const link = document.createElement('a');
+                link.href = `/student/courses/${courseId}/certificate`;
+                link.download = `Chung_chi_${course.course_code || 'PPTQ'}.pdf`;
+                link.target = '_blank';
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+              };
+            }
+          } else {
+            certBox.innerHTML = '';
+          }
+        }
+
         // Auto-scroll to active lesson node
         setTimeout(() => {
           const activeEl = document.getElementById('outline-active-lesson');
@@ -3497,39 +3530,6 @@ class StudentView {
 
         let itemsHtml = '';
 
-        // 1. General Course Resources Section (if any)
-        if (generalCourseResources.length > 0) {
-          const isGenExpanded = expandedResGeneral;
-          itemsHtml += `
-            <div class="relative group/gen select-none">
-              <div
-                class="flex items-center justify-between gap-2.5 cursor-pointer py-1.5 select-none relative"
-                onclick="window._ciscoToggleResGeneral()"
-              >
-                <div class="absolute -left-[27px] top-0.5 w-7 h-7 rounded-full border-2 border-indigo-400 bg-slate-900 dark:bg-[#111827] text-indigo-400 flex items-center justify-center shrink-0 z-10 shadow-[0_0_10px_rgba(99,102,241,0.35)]">
-                  <span class="material-symbols-outlined text-[16px]">school</span>
-                </div>
-                <div class="min-w-0 pr-2">
-                  <h3 class="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate group-hover/gen:text-indigo-400 transition-colors">
-                    Tài liệu chung khóa học
-                  </h3>
-                </div>
-                <div class="flex items-center gap-2 shrink-0">
-                  <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300">
-                    ${generalCourseResources.length} tệp
-                  </span>
-                  <span class="material-symbols-outlined text-[18px] text-slate-400 transition-transform duration-200 ${isGenExpanded ? 'rotate-180 text-indigo-400' : ''}">
-                    expand_more
-                  </span>
-                </div>
-              </div>
-
-              <div class="${isGenExpanded ? '' : 'hidden'} mt-2 space-y-2 pl-3">
-                ${generalCourseResources.map(renderFileItem).join('')}
-              </div>
-            </div>
-          `;
-        }
 
         // 2. Chapters (Modules) Timeline Tree
         modules.forEach((mod, mIdx) => {
@@ -3661,11 +3661,6 @@ class StudentView {
         } else {
           expandedResLessonIds.add(idStr);
         }
-        renderSidebarResources();
-      };
-
-      window._ciscoToggleResGeneral = () => {
-        expandedResGeneral = !expandedResGeneral;
         renderSidebarResources();
       };
 

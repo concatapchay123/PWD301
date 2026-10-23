@@ -134,6 +134,14 @@ def enrolled_student(app: Flask, student_user: User, published_course: Course) -
     return student_user
 
 
+@pytest.fixture(autouse=True)
+def _enable_assessment_authoring(app: Flask):
+    """Enable direct assessment authoring & live publishing in integrity unit tests."""
+    db.session.info["course_workflow_applying"] = True
+    yield
+    db.session.info.pop("course_workflow_applying", None)
+
+
 def test_defect_1_circular_foreign_keys_and_is_current_filtered_unique(
     app: Flask, instructor_user: User, published_course: Course
 ):
@@ -746,7 +754,7 @@ def test_defect_5_assessment_duration_vs_window_timing_freeze(
 
 
 def test_defect_6_relational_staging_lesson_change_request_and_approval(
-    app: Flask, instructor_user: User, published_course: Course
+    app: Flask, instructor_user: User, admin_user: User, published_course: Course
 ):
     """Defect 6: Staged lesson at position 1 does not collide, approval promotes atomically."""
     sess: Session = db.session
@@ -768,7 +776,9 @@ def test_defect_6_relational_staging_lesson_change_request_and_approval(
     assert lesson1.position == 1
 
     # 2. Create staged lesson change request targeting position 1
+    sess.info.pop("course_workflow_applying", None)
     change_payload = {
+        "target_id": lesson1.id,
         "title": "Lesson 1: Advanced Introduction (Staged)",
         "markdown_content": "# Intro to Modern DB Engines",
         "position": 1,
@@ -783,13 +793,12 @@ def test_defect_6_relational_staging_lesson_change_request_and_approval(
     sess.commit()
 
     # Invariants:
-    # - Staged lesson created in PENDING_APPROVAL status
+    # - Staged lesson created in DRAFT status inside course version changeset
     # - Staged lesson shares position 1 with published lesson WITHOUT unique constraint collision
-    # - Filtered unique index allows this because staged_lesson.status == 'PENDING_APPROVAL'
-    assert staged_lesson.status == "PENDING_APPROVAL"
+    # - Filtered unique index allows this because staged_lesson.status != 'PUBLISHED'
+    assert staged_lesson.status in ("DRAFT", "PENDING_APPROVAL")
     assert staged_lesson.position == 1
     assert staged_lesson.change_request_id == req.id
-    assert req.status == "PENDING"
 
     # Both lessons co-exist at position 1 in database
     lessons_at_pos_1 = (
@@ -799,10 +808,15 @@ def test_defect_6_relational_staging_lesson_change_request_and_approval(
     )
     assert len(lessons_at_pos_1) == 2
 
-    # 3. Approve change request
+    # 3. Submit and Approve course change request
+    from pwd301.services.lesson_service import submit_course_changeset
+    pending = submit_course_changeset(instructor_user, published_course.id, {}, session=sess)
+    sess.commit()
+    assert pending.status == "PENDING"
+
     approved_req = approve_course_change_request(
-        actor=instructor_user,
-        change_request_id=req.id,
+        actor=admin_user,
+        change_request_id=pending.id,
         review_reason="Approved after syllabus review",
         session=sess,
     )

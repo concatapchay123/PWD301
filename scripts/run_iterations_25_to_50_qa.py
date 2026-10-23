@@ -203,7 +203,7 @@ def execute_iterations_25_to_50():
     print("=" * 80, flush=True)
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(channel="chrome", headless=True, args=["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"])
         context = browser.new_context(viewport={"width": 1440, "height": 900})
         page = context.new_page()
 

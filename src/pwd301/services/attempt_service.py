@@ -2450,16 +2450,26 @@ def submit_assessment_attempt(
 
     from pwd301.services.realtime_service import emit_domain_event
 
-    emit_domain_event(
-        "assessment:submitted",
-        {
-            "attempt_id": str(attempt.public_id),
-            "assessment_id": str(attempt.assessment.public_id) if getattr(attempt, "assessment", None) else None,
-            "user_id": attempt.user_id,
-            "status": attempt.status,
-            "raw_score": raw_sc,
-        },
-    )
+    try:
+        student_user_id = getattr(attempt, "student_user_id", None) or getattr(actor, "id", None)
+        emit_domain_event(
+            "assessment:submitted",
+            {
+                "attempt_id": str(attempt.public_id),
+                "assessment_id": str(attempt.assessment.public_id) if getattr(attempt, "assessment", None) else None,
+                "user_id": str(actor.public_id) if hasattr(actor, "public_id") else student_user_id,
+                "student_user_id": student_user_id,
+                "status": attempt.status,
+                "raw_score": raw_sc,
+            },
+        )
+    except Exception as event_err:
+        logger.warning(
+            "Failed to emit assessment:submitted domain event for attempt %s: %s",
+            attempt.public_id,
+            event_err,
+            exc_info=True,
+        )
 
     return {
         "attempt_id": str(attempt.public_id),

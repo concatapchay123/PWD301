@@ -1294,6 +1294,16 @@ def update_lesson(
                     sess.delete(er)
             sess.flush()
 
+            # Shift temporary positions to avoid unique constraint collision during reordering
+            remaining_resources = (
+                sess.query(LessonResource)
+                .filter(LessonResource.lesson_id == lesson.id)
+                .all()
+            )
+            for er_idx, er in enumerate(remaining_resources, start=10000):
+                er.position = er_idx
+            sess.flush()
+
             for idx, (asset, lbl, req) in enumerate(validated_resources, start=1):
                 lr = (
                     sess.query(LessonResource)

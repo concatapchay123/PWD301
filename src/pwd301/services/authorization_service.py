@@ -125,7 +125,8 @@ def get_authenticated_actor() -> User | None:
                 or request.path.startswith("/api/events/")
             )
         )
-        if not (is_safe_file_download or is_safe_sse):
+        is_payment = request.path.startswith('/api/payments/')
+        if not (is_safe_file_download or is_safe_sse or is_payment):
             return None
 
     if (

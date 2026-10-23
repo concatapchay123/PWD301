@@ -110,6 +110,16 @@ class BaseConfig:
     GEMINI_MODEL_NAME: str = os.environ.get("GEMINI_MODEL_NAME", "gemini-flash-latest")
     GEMINI_TIMEOUT_SECONDS: int = int(os.environ.get("GEMINI_TIMEOUT_SECONDS", "8"))
 
+    # Mail & Resend configuration
+    RESEND_API_KEY: str | None = os.environ.get("RESEND_API_KEY")
+    MAIL_HOST: str = os.environ.get("MAIL_HOST", "smtp.resend.com")
+    MAIL_PORT: int = int(os.environ.get("MAIL_PORT", "587"))
+    MAIL_USERNAME: str | None = os.environ.get("MAIL_USERNAME")
+    MAIL_PASSWORD: str | None = os.environ.get("MAIL_PASSWORD")
+    MAIL_FROM: str = os.environ.get("MAIL_FROM", "Hệ thống PPTQ <noreply@pptq.id.vn>")
+    MAIL_USE_TLS: bool = os.environ.get("MAIL_USE_TLS", "true").lower() in ("true", "1", "yes")
+    FRONTEND_URL: str = os.environ.get("FRONTEND_URL", "https://pptq.id.vn")
+
     # Attempt lease and autosave configuration
     ATTEMPT_LEASE_SECONDS: int = int(os.environ.get("ATTEMPT_LEASE_SECONDS", "60"))
     ATTEMPT_HEARTBEAT_SECONDS: int = int(os.environ.get("ATTEMPT_HEARTBEAT_SECONDS", "10"))
@@ -198,6 +208,22 @@ class BaseConfig:
             "yes",
         )
         self.CLAMAV_MAX_STREAM_BYTES = int(os.environ.get("CLAMAV_MAX_STREAM_BYTES", "100000000"))
+        if "RESEND_API_KEY" in os.environ:
+            self.RESEND_API_KEY = os.environ["RESEND_API_KEY"]
+        if "MAIL_HOST" in os.environ:
+            self.MAIL_HOST = os.environ["MAIL_HOST"]
+        if "MAIL_PORT" in os.environ:
+            self.MAIL_PORT = int(os.environ["MAIL_PORT"])
+        if "MAIL_USERNAME" in os.environ:
+            self.MAIL_USERNAME = os.environ["MAIL_USERNAME"]
+        if "MAIL_PASSWORD" in os.environ:
+            self.MAIL_PASSWORD = os.environ["MAIL_PASSWORD"]
+        if "MAIL_FROM" in os.environ:
+            self.MAIL_FROM = os.environ["MAIL_FROM"]
+        if "MAIL_USE_TLS" in os.environ:
+            self.MAIL_USE_TLS = os.environ["MAIL_USE_TLS"].lower() in ("true", "1", "yes")
+        if "FRONTEND_URL" in os.environ:
+            self.FRONTEND_URL = os.environ["FRONTEND_URL"]
         self.CLAMAV_TIMEOUT = float(os.environ.get("CLAMAV_TIMEOUT", "30"))
         for setting in (
             "STORAGE_CACHE_MAX_BYTES",

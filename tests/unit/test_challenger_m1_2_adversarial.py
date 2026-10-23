@@ -62,6 +62,14 @@ def _login_web_session(client: FlaskClient, user: User) -> None:
         sess["auth_source"] = "SESSION"
 
 
+@pytest.fixture(autouse=True)
+def _enable_assessment_authoring(app: Flask):
+    """Enable direct assessment authoring & live publishing in challenger unit tests."""
+    db.session.info["course_workflow_applying"] = True
+    yield
+    db.session.info.pop("course_workflow_applying", None)
+
+
 @pytest.fixture
 def base_env(app: Flask) -> dict[str, Any]:
     """Base setup with seeded baseline and core roles."""

@@ -34,6 +34,14 @@ from tests.unit.test_assessment_regrading_traceability import student_one as stu
 from tests.unit.test_assessment_regrading_traceability import student_two as student_two
 
 
+@pytest.fixture(autouse=True)
+def _enable_assessment_authoring(app):
+    """Enable direct assessment authoring & live publishing in regrade revision tests."""
+    db.session.info["course_workflow_applying"] = True
+    yield
+    db.session.info.pop("course_workflow_applying", None)
+
+
 @pytest.mark.parametrize("job_order", [(1, 0), (0, 1)])
 @pytest.mark.parametrize("first_correction_type", ["ANSWER_ONLY", "CONTENT_OR_CHOICES"])
 def test_older_answer_correction_cannot_revert_latest_approved_key(

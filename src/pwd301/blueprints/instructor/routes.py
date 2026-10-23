@@ -532,10 +532,15 @@ def _serialize_course(c: Course, summary: bool = False) -> dict[str, Any]:
         except Exception:
             cr_data = c.completion_requirements
 
+    price_val = int(getattr(c, "price", 0) or 0)
+    price_fmt = f"{price_val:,} đ".replace(",", ".") if price_val > 0 else "Miễn phí"
+
     return {
         "course_id": str(c.public_id),
         "course_code": c.course_code,
         "title": c.title,
+        "price": price_val,
+        "price_formatted": price_fmt,
         "description": clean_description,
         "learning_objectives": lo_data,
         "target_audience": c.target_audience,
@@ -849,6 +854,42 @@ def update_course_route(course_id: str) -> Any:
             _authoring_response(actor, course_obj, {"course": _serialize_course(course_obj)})
         ), 200
     return jsonify(_authoring_response(actor, course, _serialize_course(course))), 200
+
+
+@instructor_bp.route("/courses/<course_id>/price", methods=["PUT", "POST"])
+@instructor_required
+def instructor_update_course_price(course_id: str) -> tuple[Response, int] | Response:
+    """Update course price (Instructor manager only)."""
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    try:
+        new_price = int(payload.get("price", 0))
+        if new_price < 0:
+            raise ValueError
+    except (ValueError, TypeError):
+        return jsonify({"success": False, "error": "Giá khóa học (price) phải là số nguyên không âm (>= 0)."}), 400
+
+    course = require_course_manager(actor, course_id, session=db.session)
+    if not course:
+        raise ResourceNotFoundError("Course not found.")
+
+    course.price = new_price
+    db.session.commit()
+
+    price_val = course.price
+    price_fmt = f"{price_val:,} đ".replace(",", ".") if price_val > 0 else "Miễn phí"
+    data = {
+        "course_id": str(course.public_id),
+        "price": price_val,
+        "price_formatted": price_fmt,
+    }
+    return jsonify({
+        "success": True,
+        "data": data,
+        "course_id": str(course.public_id),
+        "price": price_val,
+        "price_formatted": price_fmt,
+    }), 200
 
 
 def validate_course_publish_readiness(
@@ -4244,6 +4285,23 @@ def review_instructor_attempt_appeal_route(attempt_id: str) -> tuple[Response, i
         )
         db.session.add(history)
 
+    from pwd301.models.attempt_regrade import AssessmentAppeal
+    pending_appeal = (
+        db.session.query(AssessmentAppeal)
+        .filter(
+            AssessmentAppeal.assessment_attempt_id == attempt.id,
+            AssessmentAppeal.status == "PENDING",
+        )
+        .first()
+    )
+    if pending_appeal:
+        pending_appeal.status = "RESOLVED" if decision == "APPROVED" else "REJECTED"
+        pending_appeal.instructor_feedback = reviewer_note
+        pending_appeal.final_score = float(result.raw_score) if (result and decision == "APPROVED") else float(pending_appeal.original_score or 0.0)
+        pending_appeal.reviewed_by_user_id = actor.id
+        pending_appeal.reviewed_at = now
+        pending_appeal.updated_at = now
+
     audit_entry = AuditEvent(
         actor_user_id=actor.id,
         actor_roles_snapshot="INSTRUCTOR",
@@ -4273,6 +4331,33 @@ def review_instructor_attempt_appeal_route(attempt_id: str) -> tuple[Response, i
             "status": decision,
         }
     ), 200
+
+
+@instructor_bp.route("/attempts/<attempt_id>/appeal", methods=["GET"])
+@instructor_required
+def get_instructor_attempt_appeal_route(attempt_id: str) -> tuple[Response, int] | Response:
+    """Retrieve appeal for an attempt from instructor view (avoids 403 on student route)."""
+    actor = require_authenticated_actor()
+    from pwd301.models.attempt_regrade import AssessmentAppeal
+    from pwd301.services.attempt_service import _resolve_attempt
+    from pwd301.services.authorization_service import require_course_manager
+
+    attempt = _resolve_attempt(attempt_id, session=db.session)
+    if attempt is None:
+        raise ResourceNotFoundError("Lượt thi không tồn tại.")
+    if attempt.assessment and attempt.assessment.course_id:
+        require_course_manager(actor, attempt.assessment.course_id, session=db.session)
+
+    appeal = (
+        db.session.query(AssessmentAppeal)
+        .filter(AssessmentAppeal.assessment_attempt_id == attempt.id)
+        .order_by(AssessmentAppeal.id.desc())
+        .first()
+    )
+    if appeal:
+        ser = appeal.serialize()
+        return jsonify({"success": True, "appeal": ser, "data": ser}), 200
+    return jsonify({"success": True, "appeal": None, "data": None}), 200
 
 
 @instructor_bp.route("/assessments/<assessment_id>/regrade", methods=["POST"])
@@ -4976,9 +5061,17 @@ def list_instructor_appeals_route() -> Any:
         AssessmentAppeal.status == "PENDING",
     ).scalar() or 0
 
+    serialized_appeals = [a.serialize() for a in appeals]
     return jsonify({
         "success": True,
-        "items": [a.serialize() for a in appeals],
+        "items": serialized_appeals,
+        "appeals": serialized_appeals,
+        "data": {
+            "appeals": serialized_appeals,
+            "items": serialized_appeals,
+            "total": len(appeals),
+            "pending_count": pending_count,
+        },
         "pending_count": pending_count,
         "total_count": len(appeals),
     }), 200
@@ -5013,10 +5106,15 @@ def get_instructor_appeal_detail_route(appeal_id: str) -> Any:
         from pwd301.services.attempt_service import _serialize_attempt
         attempt_data = _serialize_attempt(attempt)
 
+    serialized_appeal = appeal.serialize()
     return jsonify({
         "success": True,
-        "appeal": appeal.serialize(),
+        "appeal": serialized_appeal,
         "attempt": attempt_data,
+        "data": {
+            **serialized_appeal,
+            "attempt": attempt_data,
+        }
     }), 200
 
 
@@ -5085,28 +5183,35 @@ def resolve_instructor_appeal_route(appeal_id: str) -> Any:
         raise ForbiddenError("Bạn không có quyền xử lý đơn phúc khảo của khóa học này.")
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
-    raw_final_score = payload.get("final_score")
-    if raw_final_score is None:
-        raise ValidationError("Vui lòng nhập điểm số cuối cùng sau phúc khảo (final_score).")
-
-    try:
-        final_score = round(float(raw_final_score), 2)
-        if final_score < 0.0 or final_score > 10.0:
-            raise ValidationError("Điểm số phải nằm trong thang điểm từ 0.0 đến 10.0.")
-    except (ValueError, TypeError):
-        raise ValidationError("Điểm số cuối cùng phải là số hợp lệ.") from None
-
-    feedback = str(payload.get("instructor_feedback") or payload.get("feedback") or "").strip()
     action = str(payload.get("action") or "RESOLVE").upper()
     target_status = "REJECTED" if action == "REJECT" else "RESOLVED"
+    feedback = str(
+        payload.get("instructor_feedback")
+        or payload.get("feedback")
+        or payload.get("resolution_note")
+        or payload.get("reviewer_note")
+        or ""
+    ).strip()
 
     now = utc_now()
     attempt = appeal.attempt
     old_score = float(appeal.original_score or 0.0)
 
+    if target_status == "REJECTED":
+        final_score = old_score
+    else:
+        raw_final_score = payload.get("final_score")
+        if raw_final_score is None:
+            raise ValidationError("Vui lòng nhập điểm số cuối cùng sau phúc khảo (final_score).")
+        try:
+            final_score = round(float(raw_final_score), 2)
+            if final_score < 0.0:
+                raise ValidationError("Điểm số không được âm.")
+        except (ValueError, TypeError):
+            raise ValidationError("Điểm số cuối cùng phải là số hợp lệ.") from None
+
     # Invariant: Score entered by instructor is the final score of the student
     if target_status == "RESOLVED" and attempt:
-        # Determine max points of the assessment
         max_points = 10.0
         passing_pct = 50.0
         if attempt.assessment:
@@ -5118,19 +5223,22 @@ def resolve_instructor_appeal_route(appeal_id: str) -> Any:
             if assigned_points > 0:
                 max_points = assigned_points
 
+        if final_score > max_points:
+            raise ValidationError(f"Điểm số không được vượt quá thang điểm tối đa ({max_points} điểm).")
+
         percent_score = round((final_score / max_points) * 100.0, 2) if max_points > 0 else 0.0
         is_passed = percent_score >= passing_pct
 
         if attempt.result:
-            old_result_score = float(attempt.result.score or 0.0)
+            old_result_score = float(attempt.result.raw_score or attempt.result.score or 0.0)
             old_percent = float(attempt.result.percent_score or 0.0)
+            attempt.result.raw_score = final_score
             attempt.result.score = final_score
             attempt.result.percent_score = percent_score
             attempt.result.passed = is_passed
             attempt.result.status = "FINAL"
             attempt.result.updated_at = now
 
-            # Append to AssessmentResultHistory
             res_hist = AssessmentResultHistory(
                 attempt_id=attempt.id,
                 old_score=old_result_score,
@@ -5185,9 +5293,19 @@ def resolve_instructor_appeal_route(appeal_id: str) -> Any:
 
     sess.commit()
 
+    ser = appeal.serialize()
     return jsonify({
         "success": True,
         "message": "Đã hoàn tất xử lý đơn phúc khảo thành công.",
-        "appeal": appeal.serialize(),
+        "appeal": ser,
+        "data": ser,
     }), 200
+
+
+@instructor_bp.route("/courses/<course_id>/trailer/stream", methods=["GET"])
+def instructor_course_trailer_stream(course_id: str) -> Response:
+    """Public streaming endpoint for course intro trailer video."""
+    from pwd301.blueprints.api_courses.routes import get_course_trailer_stream_api
+    return get_course_trailer_stream_api(course_id)
+
 
