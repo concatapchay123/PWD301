@@ -88,6 +88,8 @@ graphify-out/
 
 # Frontend mockups / ephemeral prototypes
 frontend/pwd301_*/
+source_code/frontend/pwd301_*/
+tools/pdf-math/node_modules/
 
 # Scratch files
 scratch/

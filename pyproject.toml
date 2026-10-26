@@ -9,7 +9,7 @@ license = { text = "MIT" }
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
-pythonpath = ["."]
+pythonpath = [".", "source_code"]
 addopts = "-ra --strict-markers --strict-config"
 markers = [
   "integration: tests requiring integrated application/database components",
@@ -73,7 +73,7 @@ ignore_missing_imports = true
 
 [tool.coverage.run]
 branch = true
-source = ["backend"]
+source = ["source_code/backend"]
 
 [tool.coverage.report]
 show_missing = true

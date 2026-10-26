@@ -145,10 +145,10 @@ services:
       retries: 15
       start_period: 10s
     volumes:
-      - ./backend:/app/backend
+      - ./source_code/backend:/app/source_code/backend
       - ./scripts:/app/scripts
-      - ./migrations:/app/migrations
-      - ./frontend:/app/frontend
+      - ./source_code/database/migrations:/app/source_code/database/migrations
+      - ./source_code/frontend:/app/source_code/frontend
       - storage_data:/app/storage
       - quarantine_data:/app/quarantine
       - backup_data:/app/backups
@@ -218,8 +218,8 @@ services:
       web:
         condition: service_healthy
     volumes:
-      - ./backend:/app/backend
-      - ./migrations:/app/migrations
+      - ./source_code/backend:/app/source_code/backend
+      - ./source_code/database/migrations:/app/source_code/database/migrations
       - storage_data:/app/storage
       - quarantine_data:/app/quarantine
       - backup_data:/app/backups

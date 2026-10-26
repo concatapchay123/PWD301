@@ -81,6 +81,7 @@ def published_course(app: Flask, instructor_user: User, admin_user: User) -> tup
             "status": "PUBLISHED",
         },
     )
+    l1.status = 'PUBLISHED'
     db.session.commit()
     return c, l1
 

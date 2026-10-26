@@ -12,7 +12,7 @@ x-environment: &environment
   SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY}
   JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY}
   DATABASE_URL: ${DATABASE_URL:?Set runtime DATABASE_URL}
-  SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+  SESSION_COOKIE_SECURE: "true"
   REMEMBER_COOKIE_SECURE: ${REMEMBER_COOKIE_SECURE:-false}
   ALLOW_INSECURE_COOKIES: ${ALLOW_INSECURE_COOKIES:-false}
   USE_PROXY_FIX: "true"
@@ -71,7 +71,7 @@ x-app: &app
     - exports:/app/exports
     - ../scripts:/app/scripts:ro
     - ../backend:/app/backend:ro
-    - ../frontend:/app/frontend:ro
+    - ../source_code/frontend:/app/frontend:ro
     - ../migrations:/app/migrations:ro
   networks: [private]
   logging: *logging
@@ -174,7 +174,7 @@ services:
     ports: ["80:80", "443:443", "443:443/udp"]
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ../frontend:/var/www/frontend:ro
+      - ../source_code/frontend:/var/www/frontend:ro
       - tls:/data
       - caddy_config:/config
     networks: [private]

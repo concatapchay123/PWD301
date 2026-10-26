@@ -40,7 +40,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PORT=5000 \
     APP_ENV=production \
-    PYTHONPATH=/app \
+    PYTHONPATH=/app/source_code:/app \
     FLASK_APP=pwd301
 
 WORKDIR /app
@@ -82,15 +82,13 @@ RUN mkdir -p /app/storage /app/quarantine /app/backups /app/exports /app/instanc
     chown -R appuser:appgroup /app
 
 # Selective Copy: Copy ONLY necessary runtime files into container (Preventing Docker bloat)
-COPY --chown=appuser:appgroup backend/ /app/backend/
-COPY --chown=appuser:appgroup migrations/ /app/migrations/
-COPY --chown=appuser:appgroup frontend/ /app/frontend/
+COPY --chown=appuser:appgroup source_code/ /app/source_code/
 COPY --chown=appuser:appgroup wsgi.py pyproject.toml /app/
 COPY --chown=appuser:appgroup tools/pdf-math/render.cjs tools/pdf-math/package.json /app/tools/pdf-math/
-COPY --chown=appuser:appgroup scripts/docker-entrypoint.sh \
-     scripts/wait_for_db.py \
-     scripts/run_worker.py \
-     scripts/worker_healthcheck.py /app/scripts/
+COPY --chown=appuser:appgroup scripts/ops/docker-entrypoint.sh \
+     scripts/ops/wait_for_db.py \
+     scripts/ops/run_worker.py \
+     scripts/ops/worker_healthcheck.py /app/scripts/
 
 # Ensure entrypoint script is executable
 RUN chmod +x /app/scripts/docker-entrypoint.sh

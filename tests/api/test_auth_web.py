@@ -197,9 +197,8 @@ class TestWebAuth:
         data = post_resp.get_json()
         assert data["status"] == "ok"
 
-        created = (
-            db.session.query(User).filter(User.email_normalized == "new_student@domain.com").first()
-        )
+        from backend.services.user_service import get_user_by_email
+        created = get_user_by_email('new_student@domain.com')
         assert created is not None
         assert created.display_name == "New Student"
         assert any(r.code == "STUDENT" for r in created.roles)

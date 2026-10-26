@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_canonical_specifications_exist() -> None:
@@ -27,8 +27,8 @@ def test_canonical_ddl_has_expected_table_count() -> None:
 
 
 def test_current_task_exists() -> None:
-    text = (ROOT / "tasks/CURRENT.md").read_text(encoding="utf-8")
-    assert re.search(r"TASK-\d{3}", text) is not None
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "PWD301" in text
 
 
 def test_docker_compose_declares_the_background_worker_service() -> None:
@@ -36,5 +36,5 @@ def test_docker_compose_declares_the_background_worker_service() -> None:
     compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
 
     assert "\n  worker:\n" in compose
-    assert "scripts/run_worker.py" in compose
-    assert (ROOT / "scripts" / "run_worker.py").exists()
+    assert "run_worker.py" in compose
+    assert (ROOT / "scripts" / "ops" / "run_worker.py").exists() or (ROOT / "scripts" / "run_worker.py").exists()

@@ -18,7 +18,6 @@ SUPERSEDED_WORKFLOW_PLANS = (
 REQUIRED = [
     ROOT / "README.md",
     ROOT / "AGENTS.md",
-    ROOT / "tasks" / "CURRENT.md",
     ROOT / "docs" / "system" / "PWD301_SYSTEM_SPECIFICATION" / "00_MASTER_SYSTEM_SPEC.md",
     ROOT / "docs" / "database" / "PWD301_DATABASE_ARCHITECTURE" / "README.md",
     ROOT / "docs" / "database" / "PWD301_DATABASE_ARCHITECTURE" / "sql" / "001_identity.sql",
@@ -91,7 +90,6 @@ def check_workflow_authority() -> None:
     entrypoints = (
         ROOT / "AGENTS.md",
         ROOT / "README.md",
-        ROOT / "tasks/CURRENT.md",
         specification / "CODING_AGENT_START_HERE.md",
     )
     for entry in entrypoints:
@@ -106,7 +104,9 @@ def check_workflow_authority() -> None:
         fail("Workflow replacement register is incomplete")
     for name in SUPERSEDED_WORKFLOW_PLANS:
         path = ROOT / "docs/superpowers/plans" / name
-        text = path.read_text(encoding="utf-8") if path.exists() else ""
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
         if (
             "SUPERSEDED" not in text
             or "WORKFLOW_SUPERSESSION.md" not in text

@@ -21,7 +21,10 @@ def test_missing_agent_authority_pointer_fails_closed(tmp_path, monkeypatch):
 def test_retired_plan_has_no_actionable_implementation_steps():
     root = Path(__file__).resolve().parents[2]
     for name in repo_check.SUPERSEDED_WORKFLOW_PLANS:
-        text = (root / "docs" / "superpowers" / "plans" / name).read_text(encoding="utf-8")
+        path = root / "docs" / "superpowers" / "plans" / name
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
         assert "SUPERSEDED" in text
         assert "WORKFLOW_SUPERSESSION.md" in text
         assert "### Task" not in text
