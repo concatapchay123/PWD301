@@ -3,12 +3,12 @@
 import pytest
 import sqlalchemy as sa
 
-from pwd301.extensions import db
-from pwd301.models.assessment import Assessment
-from pwd301.models.types import utc_now
-from pwd301.services.assessment_service import create_section, update_assessment
-from pwd301.services.exceptions import AssessmentLockedError
-from pwd301.services.lesson_service import approve_course_change_request, submit_course_changeset
+from backend.extensions import db
+from backend.models.assessment import Assessment
+from backend.models.types import utc_now
+from backend.services.assessment_service import create_section, update_assessment
+from backend.services.exceptions import AssessmentLockedError
+from backend.services.lesson_service import approve_course_change_request, submit_course_changeset
 from tests.unit.test_unified_course_workflow import published_assessment
 
 pytest_plugins = ["tests.test_lesson_revision_lifecycle"]
@@ -44,7 +44,7 @@ def test_approval_refreshes_freeze_marker_before_replacing_reviewed_structure(
 def test_metadata_only_review_keeps_frozen_graph_and_locks_assessment(
     app, published_course, instructor_user, admin_user, monkeypatch
 ):
-    from pwd301.services import assessment_service
+    from backend.services import assessment_service
 
     course, _ = published_course
     original = published_assessment(course, admin_user)

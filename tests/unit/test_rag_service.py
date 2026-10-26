@@ -19,31 +19,31 @@ import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.ai_rag import (
+from backend.extensions import db
+from backend.models.ai_rag import (
     AISourceUsage,
     KnowledgeChunk,
     KnowledgeDocument,
 )
-from pwd301.models.course import Course, Enrollment, LearningUnit, Lesson
-from pwd301.models.file_import import (
+from backend.models.course import Course, Enrollment, LearningUnit, Lesson
+from backend.models.file_import import (
     FileAsset,
     FileBlob,
     FileRevision,
     FileScanResult,
 )
-from pwd301.models.identity import Role, User
-from pwd301.services.exceptions import (
+from backend.models.identity import Role, User
+from backend.services.exceptions import (
     FileSecurityQuarantineError,
 )
-from pwd301.services.file_service import get_file_storage_root
-from pwd301.services.rag_service import (
+from backend.services.file_service import get_file_storage_root
+from backend.services.rag_service import (
     ask_course_rag,
     ingest_course_file,
     ingest_lesson_content,
     split_text_into_chunks,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -502,8 +502,8 @@ def test_auto_ingest_lesson_on_publish(
     test_course: Course,
 ) -> None:
     """When a lesson is created as PUBLISHED, it is auto-ingested into RAG chunks."""
-    from pwd301.models.ai_rag import KnowledgeDocument
-    from pwd301.services.lesson_service import create_lesson
+    from backend.models.ai_rag import KnowledgeDocument
+    from backend.services.lesson_service import create_lesson
 
     sess: Session = db.session
     md_content = (

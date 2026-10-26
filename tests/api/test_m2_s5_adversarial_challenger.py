@@ -17,21 +17,21 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import Enrollment
-from pwd301.models.file_import import FileAsset, FileRevision, LessonResource
-from pwd301.models.identity import User
-from pwd301.seeds.baseline import seed_baseline
-from pwd301.services.course_service import change_course_status, create_course
-from pwd301.services.enrollment_service import (
+from backend.extensions import db
+from backend.models.course import Enrollment
+from backend.models.file_import import FileAsset, FileRevision, LessonResource
+from backend.models.identity import User
+from backend.seeds.baseline import seed_baseline
+from backend.services.course_service import change_course_status, create_course
+from backend.services.enrollment_service import (
     add_course_prerequisite,
     enroll_student,
 )
-from pwd301.services.lesson_service import (
+from backend.services.lesson_service import (
     change_lesson_status,
     create_lesson,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 from tests.conftest import login_web_user
 
 
@@ -43,24 +43,24 @@ def m2_challenger_env(app: Flask) -> dict[str, Any]:
     seed_baseline(db.session)
     sess: Session = db.session
 
-    admin = sess.query(User).filter(User.email == "admin@pwd301.local").first()
+    admin = sess.query(User).filter(User.email == "admin@backend.local").first()
     assert admin is not None
 
     instructor = register_user(
-        email="m2_inst@pwd301.local",
+        email="m2_inst@backend.local",
         password="Password@123",
         display_name="M2 Instructor",
     )
     assign_role_to_user(instructor.id, "INSTRUCTOR")
 
     student_unmet = register_user(
-        email="m2_student_unmet@pwd301.local",
+        email="m2_student_unmet@backend.local",
         password="Password@123",
         display_name="Student Unmet Prereqs",
     )
 
     student_met = register_user(
-        email="m2_student_met@pwd301.local",
+        email="m2_student_met@backend.local",
         password="Password@123",
         display_name="Student Met Prereqs",
     )
@@ -311,15 +311,15 @@ class TestM2AdversarialGatingAndLifecycle:
         course_b = m2_challenger_env["course_b"]
 
         # Fill capacity of course_b (capacity is 2)
-        u1 = register_user("filler1@pwd301.local", "Password@123", "Filler 1")
-        u2 = register_user("filler2@pwd301.local", "Password@123", "Filler 2")
+        u1 = register_user("filler1@backend.local", "Password@123", "Filler 1")
+        u2 = register_user("filler2@backend.local", "Password@123", "Filler 2")
         e1 = Enrollment(student_user_id=u1.id, course_id=course_b.id, status="ACTIVE")
         e2 = Enrollment(student_user_id=u2.id, course_id=course_b.id, status="ACTIVE")
         db.session.add_all([e1, e2])
         db.session.commit()
 
         # Another student with satisfied prerequisite attempts to view
-        u3 = register_user("filler3@pwd301.local", "Password@123", "Filler 3")
+        u3 = register_user("filler3@backend.local", "Password@123", "Filler 3")
         # Satisfy prereq
         e_prereq = Enrollment(
             student_user_id=u3.id,

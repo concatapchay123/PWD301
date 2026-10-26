@@ -12,17 +12,17 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.ai_rag import AIConversation, AIMessage
-from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import AuditEvent
-from pwd301.models.operations import BackgroundJob
-from pwd301.models.types import utc_now
-from pwd301.services import ai_service
-from pwd301.services import background_job_service as jobs
-from pwd301.services.exceptions import ConflictError
-from pwd301.services.operations_service import retry_background_job
-from pwd301.services.user_service import register_user
+from backend.extensions import db
+from backend.models.ai_rag import AIConversation, AIMessage
+from backend.models.identity import Role, User
+from backend.models.notification_audit import AuditEvent
+from backend.models.operations import BackgroundJob
+from backend.models.types import utc_now
+from backend.services import ai_service
+from backend.services import background_job_service as jobs
+from backend.services.exceptions import ConflictError
+from backend.services.operations_service import retry_background_job
+from backend.services.user_service import register_user
 
 
 @pytest.fixture(autouse=True)

@@ -1,4 +1,4 @@
-from pwd301.services import background_job_service as jobs
+from backend.services import background_job_service as jobs
 
 
 def test_worker_schedules_durable_maintenance_without_hot_loop(app, monkeypatch):

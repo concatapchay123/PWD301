@@ -1,0 +1,688 @@
+"""Asynchronous Background Job & Queue Worker Engine for PWD301.
+
+Implements:
+- Transactional Outbox / Job Queue pattern utilizing canonical 'background_jobs' table.
+- Non-blocking asynchronous dispatch via ThreadPoolExecutor so HTTP request threads never timeout.
+- Worker dispatch for heavy tasks:
+  - REGRADE: Asynchronous attempt regrading (regrade_worker.py)
+  - FILE_SCAN: Multi-engine malware scanning / quarantine inspection
+  - IMPORT: DOCX/PDF assessment import parsing & duplicate reconciliation
+  - EMAIL: Asynchronous email outbox delivery and retry
+- Concurrency-safe job claiming with leasing and retry limits.
+- Standalone worker loop runner for production worker daemon (systemd/Docker/Gunicorn worker).
+- ADR-002 Zero internal PK leakage: public UUIDv4/v5 job_key representation.
+"""
+
+from __future__ import annotations
+
+import concurrent.futures
+import contextlib
+import json
+import logging
+import os
+import threading
+import time
+import uuid
+from pathlib import Path
+from typing import Any
+
+import sqlalchemy as sa
+from flask import current_app
+from sqlalchemy.orm import Session, scoped_session
+
+from backend.extensions import db
+from backend.models.notification_audit import EmailDelivery
+from backend.models.operations import BackgroundJob
+from backend.models.types import utc_now
+from backend.services.exceptions import ServiceError
+
+logger = logging.getLogger(__name__)
+
+# Dedicated asynchronous worker thread pool
+_WORKER_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=4,
+    thread_name_prefix="pwd301-worker",
+)
+_WORKER_SHUTDOWN_LOCK = threading.Lock()
+_EMAIL_OUTBOX_DEDUPE_KEY = "email-outbox-drain"
+
+
+class BackgroundJobError(ServiceError):
+    """Base exception for background job errors."""
+
+
+class BackgroundJobNotFoundError(BackgroundJobError):
+    """Raised when a specified background job cannot be located."""
+
+
+def _resolve_session(
+    session: Session | scoped_session[Any] | None = None,
+) -> Session | scoped_session[Any]:
+    return session if session is not None else db.session
+
+
+def enqueue_background_job(
+    job_type: str,
+    payload: dict[str, Any] | None = None,
+    priority: int = 100,
+    dedupe_key: str | None = None,
+    max_attempts: int = 5,
+    run_async: bool = True,
+    session: Session | scoped_session[Any] | None = None,
+) -> BackgroundJob:
+    """Enqueue a new task into background_jobs queue and optionally dispatch async."""
+    sess = _resolve_session(session)
+
+    valid_types = {
+        "FILE_SCAN",
+        "IMPORT",
+        "REGRADE",
+        "KNOWLEDGE_INDEX",
+        "EMAIL",
+        "CLEANUP",
+        "ANALYTICS",
+        "BACKUP",
+        "EXPORT",
+        "VIDEO_TRANSCODE",
+    }
+    if job_type not in valid_types:
+        raise BackgroundJobError(f"Invalid job_type '{job_type}'. Must be one of {valid_types}.")
+
+    now = utc_now()
+    payload_str = json.dumps(payload or {})
+
+    # Check deduplication if dedupe_key provided
+    if dedupe_key:
+        existing = (
+            sess.query(BackgroundJob)
+            .filter(
+                BackgroundJob.job_type == job_type,
+                BackgroundJob.dedupe_key == dedupe_key,
+            )
+            .with_hint(BackgroundJob, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
+            .with_for_update()
+            .populate_existing()
+            .first()
+        )
+        if existing is not None and existing.status in {"QUEUED", "RUNNING"}:
+            logger.info(
+                "Reusing existing active job %s for dedupe_key %s",
+                existing.job_key,
+                dedupe_key,
+            )
+            return existing
+        if existing is not None:
+            # Dedupe is an active-dispatch lease. Keep the historical job/UUID,
+            # release its unique key before issuing the next independent run.
+            existing.dedupe_key = None
+            sess.flush()
+
+    job = BackgroundJob(
+        job_key=uuid.uuid4(),
+        job_type=job_type,
+        dedupe_key=dedupe_key,
+        status="QUEUED",
+        priority=max(0, priority),
+        attempt_count=0,
+        max_attempts=max(1, max_attempts),
+        available_at=now,
+        payload_json=payload_str,
+        created_at=now,
+    )
+    sess.add(job)
+    sess.flush()
+
+    # The external worker sees this row only after the producer commits.
+    # Immediate thread dispatch races the caller transaction and is never safe.
+    logger.info("Queued durable job %s (%s)", job.job_key, job_type)
+
+    return job
+
+
+def claim_next_background_job(
+    lease_seconds: int = 300,
+    session: Session | scoped_session[Any] | None = None,
+) -> BackgroundJob | None:
+    """Atomically claim the next eligible queued background job."""
+    import datetime
+
+    sess = _resolve_session(session)
+
+    MAX_CLAIM_ATTEMPTS = 3
+    for _ in range(MAX_CLAIM_ATTEMPTS):
+        now = utc_now()
+        # Query highest priority available job: either freshly QUEUED,
+        # or stalled RUNNING whose lease expired
+        q = (
+            sess.query(BackgroundJob)
+            .filter(
+                sa.or_(
+                    sa.and_(
+                        BackgroundJob.status == "QUEUED",
+                        BackgroundJob.available_at <= now,
+                    ),
+                    sa.and_(
+                        BackgroundJob.status == "RUNNING",
+                        BackgroundJob.lease_expires_at.is_not(None),
+                        BackgroundJob.lease_expires_at <= now,
+                    ),
+                )
+            )
+            .order_by(BackgroundJob.priority.asc(), BackgroundJob.available_at.asc())
+        )
+        bind = sess.bind
+        if (
+            bind is not None
+            and getattr(bind, "dialect", None) is not None
+            and getattr(bind.dialect, "name", "") != "sqlite"
+        ):
+            q = q.with_for_update()
+
+        candidate = q.first()
+        if candidate is None:
+            return None
+
+        candidate_id = candidate.id
+        candidate_status = candidate.status
+        candidate_lease = candidate.lease_expires_at
+
+        # Atomic conditional claim update to guarantee exclusive worker lease
+        # (prevents concurrent double-claiming across all database engines)
+        filter_cond = (BackgroundJob.id == candidate_id) & (
+            BackgroundJob.status == candidate_status
+        )
+        if candidate_status == "RUNNING":
+            filter_cond = filter_cond & (BackgroundJob.lease_expires_at == candidate_lease)
+
+        lease_exp = now + datetime.timedelta(seconds=lease_seconds)
+        try:
+            updated = (
+                sess.query(BackgroundJob)
+                .filter(filter_cond)
+                .update(
+                    {
+                        "status": "RUNNING",
+                        "claimed_at": now,
+                        "lease_expires_at": lease_exp,
+                        "attempt_count": BackgroundJob.attempt_count + 1,
+                    },
+                    synchronize_session=False,
+                )
+            )
+            if updated > 0:
+                sess.commit()
+                sess.expire_all()
+                return sess.get(BackgroundJob, candidate_id)
+            else:
+                sess.rollback()
+                # Lost race to another concurrent worker on this candidate;
+                # retry to claim next eligible job
+                continue
+        except Exception:
+            sess.rollback()
+            return None
+
+    return None
+
+
+def renew_background_job_lease(
+    job_id: int,
+    claimed_at: Any,
+    attempt_count: int,
+    lease_seconds: int = 300,
+    session: Session | scoped_session[Any] | None = None,
+) -> bool:
+    """Extend only the still live claim identified by its timestamp and attempt."""
+    import datetime
+
+    sess = _resolve_session(session)
+    now = utc_now()
+    updated = (
+        sess.query(BackgroundJob)
+        .filter(
+            BackgroundJob.id == job_id,
+            BackgroundJob.status == "RUNNING",
+            BackgroundJob.claimed_at == claimed_at,
+            BackgroundJob.attempt_count == attempt_count,
+            BackgroundJob.lease_expires_at > now,
+        )
+        .update(
+            {"lease_expires_at": now + datetime.timedelta(seconds=max(1, lease_seconds))},
+            synchronize_session=False,
+        )
+    )
+    if updated != 1:
+        sess.rollback()
+        return False
+    sess.commit()
+    return True
+
+
+@contextlib.contextmanager
+def _renew_claim_while_running(job: BackgroundJob, sess: Any):
+    """Renew from an independent connection while slow domain work runs."""
+    from sqlalchemy.orm import sessionmaker
+
+    bind = sess.get_bind()
+    # In-memory SQLite has no independent connection sharing the same database.
+    if bind.dialect.name == "sqlite":
+        yield
+        return
+    ownership = (job.id, job.claimed_at, job.attempt_count)
+    factory = sessionmaker(bind=bind)
+    stop = threading.Event()
+
+    def renew():
+        while not stop.wait(30):
+            try:
+                with factory() as renewal_session:
+                    if not renew_background_job_lease(*ownership, session=renewal_session):
+                        return
+            except Exception:
+                logger.exception("Background job lease renewal failed.")
+                return
+
+    thread = threading.Thread(target=renew, name="job-lease-renewal", daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join(timeout=2)
+
+
+def execute_background_job(
+    job_id: int | BackgroundJob,
+    session: Session | scoped_session[Any] | None = None,
+) -> bool:
+    """Execute a claimed background job, dispatching to the appropriate domain service."""
+    sess = _resolve_session(session)
+    job = job_id if isinstance(job_id, BackgroundJob) else sess.get(BackgroundJob, job_id)
+
+    if job is None:
+        raise BackgroundJobNotFoundError(f"BackgroundJob {job_id} not found.")
+
+    ownership = (job.id, job.claimed_at, job.attempt_count)
+    now = utc_now()
+    lease = job.lease_expires_at
+    if lease is not None and lease.tzinfo is None:
+        import datetime
+
+        lease = lease.replace(tzinfo=datetime.UTC)
+    if job.status != "RUNNING" or lease is None or lease <= now:
+        return False
+
+    # Verify the durable owner before dispatch; an ORM object may describe a replaced claim.
+    admitted = (
+        sess.query(BackgroundJob)
+        .filter(
+            BackgroundJob.id == ownership[0],
+            BackgroundJob.status == "RUNNING",
+            BackgroundJob.claimed_at == ownership[1],
+            BackgroundJob.attempt_count == ownership[2],
+            BackgroundJob.lease_expires_at > now,
+        )
+        .update({"status": BackgroundJob.status}, synchronize_session=False)
+    )
+    if admitted != 1:
+        sess.rollback()
+        return False
+    sess.commit()
+    sess.refresh(job)
+
+    payload: dict[str, Any] = {}
+    if job.payload_json:
+        try:
+            payload = json.loads(job.payload_json)
+        except Exception:
+            payload = {}
+
+    now = utc_now()
+    renewal = _renew_claim_while_running(job, sess)
+    renewal.__enter__()
+    actual_session = sess() if isinstance(sess, scoped_session) else sess
+
+    def fence_domain_commit(commit_session: Session) -> None:
+        # Domain helpers may commit internally. Their writes share this durable
+        # ownership check, so a replaced/expired executor cannot commit them.
+        updated = commit_session.connection().execute(
+            sa.update(BackgroundJob)
+            .where(
+                BackgroundJob.id == ownership[0],
+                BackgroundJob.status == "RUNNING",
+                BackgroundJob.claimed_at == ownership[1],
+                BackgroundJob.attempt_count == ownership[2],
+                BackgroundJob.lease_expires_at > utc_now(),
+            )
+            .values(status=BackgroundJob.status)
+        )
+        if updated.rowcount != 1:
+            raise ServiceError("Background job ownership was lost before domain commit.")
+
+    sa.event.listen(actual_session, "before_commit", fence_domain_commit)
+
+    def remove_commit_fence() -> None:
+        if sa.event.contains(actual_session, "before_commit", fence_domain_commit):
+            sa.event.remove(actual_session, "before_commit", fence_domain_commit)
+
+    try:
+        if job.job_type == "REGRADE":
+            from backend.services.regrade_worker import process_regrade_job
+
+            regrade_job_id = payload.get("regrade_job_id") or payload.get("job_id")
+            if regrade_job_id:
+                process_regrade_job(regrade_job_id, session=sess)
+
+        elif job.job_type == "EMAIL":
+            from backend.services.email_service import process_email_queue
+
+            batch_size = payload.get("batch_size", 50)
+            process_email_queue(batch_size=batch_size, session=sess)
+
+        elif job.job_type == "IMPORT":
+            from backend.models.file_import import DocumentImportJob
+
+            import_job_id = payload.get("import_job_id") or payload.get("job_id")
+            if import_job_id:
+                imp_job = sess.get(DocumentImportJob, import_job_id)
+                if imp_job and imp_job.status in ("PARSING", "UPLOADED"):
+                    imp_job.status = "REVIEW"
+                    sess.flush()
+
+        elif job.job_type == "FILE_SCAN":
+            from backend.services.file_service import rescan_file_asset
+
+            asset_id = payload.get("asset_id")
+            user_id = payload.get("user_id")
+            if asset_id and user_id:
+                from backend.models.identity import User
+
+                actor = sess.get(User, user_id)
+                if actor:
+                    rescan_file_asset(actor=actor, asset_id=asset_id, session=sess)
+
+        elif job.job_type == "CLEANUP":
+            if payload.get("scope") == "ai-message-retention":
+                from backend.services.retention_service import purge_expired_ai_messages
+
+                purge_expired_ai_messages(session=sess, batch_size=100)
+            elif payload.get("scope") == "youtube-lesson-validation":
+                from backend.services.youtube_validator_service import (
+                    scan_and_notify_broken_youtube_videos,
+                )
+
+                scan_and_notify_broken_youtube_videos(
+                    course_id=int(payload["course_id"]),
+                    lesson_id=int(payload["lesson_id"]),
+                    retry_network_errors=True,
+                )
+            else:
+                from backend.services.playback_service import cleanup_playback_receipts
+                from backend.services.storage_maintenance_service import reconcile_storage
+
+                reconcile_storage(delete_orphans=False)
+                cleanup_playback_receipts(session=sess)
+                from backend.services.retention_service import purge_expired_ai_messages
+
+                purge_expired_ai_messages(session=sess, batch_size=100)
+
+        elif job.job_type == "VIDEO_TRANSCODE":
+            from backend.services.video_drm_service import (
+                get_lesson_hls_directory,
+                transcode_to_encrypted_hls,
+            )
+
+            source_file = payload.get("source_file")
+            course_id = payload.get("course_id")
+            lesson_id = payload.get("lesson_id")
+            if source_file and course_id and lesson_id:
+                out_dir = get_lesson_hls_directory(int(course_id), int(lesson_id))
+                transcode_to_encrypted_hls(str(source_file), str(out_dir))
+
+        remove_commit_fence()
+        # A stale worker may never complete a newer claim.
+        updated = (
+            sess.query(BackgroundJob)
+            .filter(
+                BackgroundJob.id == ownership[0],
+                BackgroundJob.status == "RUNNING",
+                BackgroundJob.claimed_at == ownership[1],
+                BackgroundJob.attempt_count == ownership[2],
+                BackgroundJob.lease_expires_at > utc_now(),
+            )
+            .update(
+                {"status": "SUCCEEDED", "completed_at": utc_now(), "last_error": None},
+                synchronize_session=False,
+            )
+        )
+        if updated != 1:
+            sess.rollback()
+            return False
+        sess.commit()
+        sess.refresh(job)
+        logger.info("BackgroundJob %s (%s) succeeded", job.job_key, job.job_type)
+        return True
+
+    except Exception as exc:
+        remove_commit_fence()
+        sess.rollback()
+        logger.error(
+            "BackgroundJob %s (%s) failed: %s",
+            job.job_key,
+            job.job_type,
+            exc,
+            exc_info=True,
+        )
+        import datetime
+
+        failed = ownership[2] >= job.max_attempts
+        delay = 2 ** min(ownership[2], 6) * 10
+        updated = (
+            sess.query(BackgroundJob)
+            .filter(
+                BackgroundJob.id == ownership[0],
+                BackgroundJob.status == "RUNNING",
+                BackgroundJob.claimed_at == ownership[1],
+                BackgroundJob.attempt_count == ownership[2],
+                BackgroundJob.lease_expires_at > utc_now(),
+            )
+            .update(
+                {
+                    "last_error": str(exc)[:2000],
+                    "status": "FAILED" if failed else "QUEUED",
+                    "available_at": utc_now() + datetime.timedelta(seconds=delay),
+                },
+                synchronize_session=False,
+            )
+        )
+        if updated != 1:
+            sess.rollback()
+            return False
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+        return False
+    finally:
+        remove_commit_fence()
+        renewal.__exit__(None, None, None)
+
+
+def _run_job_safely(job_id: int) -> None:
+    """Safely invoke execute_background_job in a new database session."""
+    try:
+        execute_background_job(job_id, session=db.session)
+    except Exception as exc:
+        logger.error("Error running background job %s: %s", job_id, exc)
+
+
+def _ensure_email_outbox_job(
+    session: Session | scoped_session[Any] | None = None,
+) -> bool:
+    """Ensure a queued EMAIL job exists whenever a due outbox row exists."""
+    sess = _resolve_session(session)
+    now = utc_now()
+    due_delivery = (
+        sess.query(EmailDelivery.id)
+        .filter(
+            EmailDelivery.status == "PENDING",
+            sa.or_(
+                EmailDelivery.next_attempt_at.is_(None),
+                EmailDelivery.next_attempt_at <= now,
+            ),
+        )
+        .first()
+    )
+    if due_delivery is None:
+        return False
+
+    enqueue_background_job(
+        job_type="EMAIL",
+        payload={"batch_size": 50},
+        priority=50,
+        dedupe_key=_EMAIL_OUTBOX_DEDUPE_KEY,
+        run_async=False,
+        session=sess,
+    )
+    return True
+
+
+def run_worker_once(session: Session | scoped_session[Any] | None = None) -> bool:
+    """Claim and execute a single background job. Returns True if a job was processed."""
+    sess = _resolve_session(session)
+    _ensure_email_outbox_job(session=sess)
+    job = claim_next_background_job(session=sess)
+    if job is None:
+        return False
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+    return execute_background_job(job, session=sess)
+
+
+@contextlib.contextmanager
+def worker_heartbeat():
+    """Pulse independently of long scan/backup jobs, without claiming job progress."""
+    raw_path = os.environ.get("WORKER_HEARTBEAT_PATH")
+    if not raw_path:
+        yield
+        return
+    destination = Path(raw_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    stop = threading.Event()
+
+    def write():
+        temporary = destination.with_suffix(f".{os.getpid()}.tmp")
+        temporary.write_text(json.dumps({"timestamp": time.time()}), encoding="utf-8")
+        os.replace(temporary, destination)
+
+    def pulse():
+        while not stop.wait(5):
+            try:
+                write()
+            except OSError:
+                logger.error("Cannot update worker liveness signal.")
+                return
+
+    write()
+    thread = threading.Thread(target=pulse, name="worker-liveness", daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join(timeout=2)
+
+
+def run_worker_loop(
+    poll_interval_seconds: float = 2.0,
+    max_iterations: int | None = None,
+    max_idle_seconds: float = 10.0,
+) -> None:
+    """Run worker daemon polling loop with adaptive backoff until interrupted or max_iterations reached.
+
+    When work is active: polls quickly (0.5s - 1.0s) to drain queue without lag.
+    When queue is idle: gracefully backs off up to max_idle_seconds (10s) to eliminate
+    wasteful database polling and conserve CPU on resource-constrained VPS instances.
+    """
+    iterations = 0
+    current_delay = poll_interval_seconds
+    next_maintenance_at = time.monotonic()
+    next_video_scan_at = time.monotonic()
+    next_ai_retention_at = time.monotonic()
+    logger.info(
+        "Starting PWD301 Background Worker daemon loop (adaptive polling 1.0s - %.1fs)...",
+        max_idle_seconds,
+    )
+    with worker_heartbeat():
+        while max_iterations is None or iterations < max_iterations:
+            if time.monotonic() >= next_ai_retention_at:
+                enqueue_background_job(
+                    job_type="CLEANUP",
+                    payload={"scope": "ai-message-retention"},
+                    dedupe_key="ai-message-retention",
+                    priority=25,
+                    run_async=False,
+                )
+                db.session.commit()
+                next_ai_retention_at = time.monotonic() + 60
+            if time.monotonic() >= next_video_scan_at:
+                _schedule_youtube_checks()
+                next_video_scan_at = time.monotonic() + 21600
+            if time.monotonic() >= next_maintenance_at:
+                enqueue_background_job(
+                    job_type="CLEANUP",
+                    payload={"scope": "storage-and-playback-receipts"},
+                    dedupe_key="storage-and-playback-receipt-maintenance",
+                    priority=200,
+                    run_async=False,
+                )
+                db.session.commit()
+                next_maintenance_at = time.monotonic() + 1800
+            processed = run_worker_once()
+            iterations += 1
+            if processed:
+                current_delay = min(poll_interval_seconds, 1.0)
+            else:
+                time.sleep(current_delay)
+                current_delay = min(current_delay * 1.5, max_idle_seconds)
+
+
+def _schedule_youtube_checks() -> int:
+    """Reuse the durable cleanup queue, one small retryable job per lesson."""
+    if not current_app.config.get("YOUTUBE_API_KEY"):
+        return 0
+    from backend.models.course import Course, Lesson
+
+    lessons = (
+        db.session.query(Lesson.id, Lesson.course_id, Lesson.markdown_content)
+        .join(Course, Course.id == Lesson.course_id)
+        .filter(
+            Lesson.status == "PUBLISHED",
+            Lesson.deleted_at.is_(None),
+            Course.status != "ARCHIVED",
+            Course.deleted_at.is_(None),
+        )
+        .all()
+    )
+    count = 0
+    for lesson in lessons:
+        if "youtu" not in (lesson.markdown_content or "").lower():
+            continue
+        enqueue_background_job(
+            job_type="CLEANUP",
+            payload={
+                "scope": "youtube-lesson-validation",
+                "course_id": lesson.course_id,
+                "lesson_id": lesson.id,
+            },
+            dedupe_key=f"youtube-lesson-validation:{lesson.id}",
+            priority=300,
+            run_async=False,
+        )
+        count += 1
+    if count:
+        db.session.commit()
+    return count

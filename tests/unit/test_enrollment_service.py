@@ -7,18 +7,18 @@ from datetime import timedelta
 import pytest
 from flask import Flask
 
-from pwd301.extensions import db
-from pwd301.models.course import (
+from backend.extensions import db
+from backend.models.course import (
     Course,
     CourseCompletionSummary,
     EnrollmentEvent,
     EnrollmentPeriod,
 )
-from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import AuditEvent, Notification, NotificationEvent
-from pwd301.models.types import utc_now
-from pwd301.services.course_service import change_course_status, create_course
-from pwd301.services.enrollment_service import (
+from backend.models.identity import Role, User
+from backend.models.notification_audit import AuditEvent, Notification, NotificationEvent
+from backend.models.types import utc_now
+from backend.services.course_service import change_course_status, create_course
+from backend.services.enrollment_service import (
     ENROLLMENT_DETAIL_RETENTION_DAYS,
     add_course_prerequisite,
     check_prerequisites_met,
@@ -30,7 +30,7 @@ from pwd301.services.enrollment_service import (
     re_enroll_student,
     remove_course_prerequisite,
 )
-from pwd301.services.exceptions import (
+from backend.services.exceptions import (
     CourseNotAvailableError,
     CourseValidationError,
     EnrollmentCapacityExceededError,
@@ -38,7 +38,7 @@ from pwd301.services.exceptions import (
     EnrollmentStateViolationError,
     PrerequisiteCycleError,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -181,7 +181,7 @@ def test_enrollment_notifications_use_canonical_spa_course_routes(
         captured.append(kwargs)
 
     monkeypatch.setattr(
-        "pwd301.services.notification_service.dispatch_notification",
+        "backend.services.notification_service.dispatch_notification",
         capture_notification,
     )
 
@@ -440,7 +440,7 @@ def test_enroll_student_prerequisite_enforcement(
 
     # Rejected when prerequisite unmet
     with pytest.raises(
-        EnrollmentPrerequisiteError, match="Prerequisite courses not completed: Base Course"
+        EnrollmentPrerequisiteError, match="chưa hoàn thành môn học tiên quyết"
     ):
         enroll_student(actor=student_user, course_id=course_adv.id, session=sess)
 

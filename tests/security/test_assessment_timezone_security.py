@@ -8,22 +8,22 @@ import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import Course
-from pwd301.models.identity import Role, User
-from pwd301.services.assessment_service import (
+from backend.extensions import db
+from backend.models.course import Course
+from backend.models.identity import Role, User
+from backend.services.assessment_service import (
     _parse_iso_datetime,
     assign_question,
     create_assessment,
     create_section,
     publish_assessment,
 )
-from pwd301.services.attempt_service import start_assessment_attempt
-from pwd301.services.course_service import create_course
-from pwd301.services.enrollment_service import enroll_student
-from pwd301.services.exceptions import AssessmentNotOpenError
-from pwd301.services.question_bank_service import create_question
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.attempt_service import start_assessment_attempt
+from backend.services.course_service import create_course
+from backend.services.enrollment_service import enroll_student
+from backend.services.exceptions import AssessmentNotOpenError
+from backend.services.question_bank_service import create_question
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -90,7 +90,7 @@ def test_cross_timezone_simultaneous_access_control(
         "timezone_offset": "+01:00",
     }
     asm = create_assessment(test_instructor, test_course.id, payload, session=db.session)
-    from pwd301.services.assessment_service import _normalize_dt
+    from backend.services.assessment_service import _normalize_dt
 
     assert _normalize_dt(asm.open_at) == open_at_utc
 

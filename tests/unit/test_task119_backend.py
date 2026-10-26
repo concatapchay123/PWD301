@@ -29,27 +29,27 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import Course, Enrollment
-from pwd301.models.file_import import FileAsset, FileBlob, FileRevision
-from pwd301.models.identity import User
-from pwd301.models.notification_audit import Notification, NotificationEvent
-from pwd301.models.types import utc_now
-from pwd301.seeds.baseline import seed_baseline
-from pwd301.services.certificate_pdf_service import (
+from backend.extensions import db
+from backend.models.course import Course, Enrollment
+from backend.models.file_import import FileAsset, FileBlob, FileRevision
+from backend.models.identity import User
+from backend.models.notification_audit import Notification, NotificationEvent
+from backend.models.types import utc_now
+from backend.seeds.baseline import seed_baseline
+from backend.services.certificate_pdf_service import (
     generate_course_certificate_html,
     generate_course_certificate_pdf,
 )
-from pwd301.services.course_service import create_course
-from pwd301.services.enrollment_service import enroll_student
-from pwd301.services.exceptions import ForbiddenError, NotificationNotFoundError
-from pwd301.services.notification_service import (
+from backend.services.course_service import create_course
+from backend.services.enrollment_service import enroll_student
+from backend.services.exceptions import ForbiddenError, NotificationNotFoundError
+from backend.services.notification_service import (
     broadcast_system_notification,
     cleanup_expired_notifications,
     hard_delete_broadcast,
     list_admin_broadcasts,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 from tests.conftest import login_web_user
 
 
@@ -405,7 +405,7 @@ def test_public_trailer_stream_endpoint(
     instructor = task119_fixture["instructor"]
 
     # Create dummy video file on disk
-    from pwd301.services.file_service import get_file_storage_root
+    from backend.services.file_service import get_file_storage_root
 
     storage_root = get_file_storage_root()
     video_content = b"FAKE_MP4_VIDEO_HEADER_DATA_STREAM_TEST"

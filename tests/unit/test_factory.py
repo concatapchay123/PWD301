@@ -6,8 +6,8 @@ import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 
-from pwd301 import create_app
-from pwd301.extensions import login_manager
+from backend import create_app
+from backend.extensions import login_manager
 
 
 def test_create_app_testing() -> None:

@@ -3,13 +3,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from pwd301.blueprints.instructor.routes import (
+from backend.blueprints.instructor.routes import (
     _extract_video_urls_from_markdown,
     _validate_video_urls,
 )
-from pwd301.blueprints.student.routes import _serialize_student_lesson
-from pwd301.services.exceptions import ValidationError
-from pwd301.services.lesson_service import _lesson_requires_video_watch
+from backend.blueprints.student.routes import _serialize_student_lesson
+from backend.services.exceptions import ValidationError
+from backend.services.lesson_service import _lesson_requires_video_watch
 
 
 def test_video_urls_accepts_two_youtube_links_and_preserves_order():

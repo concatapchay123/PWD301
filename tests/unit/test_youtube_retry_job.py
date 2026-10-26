@@ -2,7 +2,7 @@ import urllib.error
 
 import pytest
 
-from pwd301.services import youtube_validator_service as youtube
+from backend.services import youtube_validator_service as youtube
 
 
 def test_provider_server_error_is_transient_not_broken_video(app, monkeypatch):
@@ -22,9 +22,9 @@ def test_background_scan_propagates_transient_error_for_retry(app, monkeypatch):
         lambda *args, **kwargs: {"valid": False, "network_error": True, "reason": "offline"},
     )
     with app.app_context():
-        from pwd301.extensions import db
-        from pwd301.models.course import Course, LearningUnit, Lesson
-        from pwd301.services.user_service import register_user
+        from backend.extensions import db
+        from backend.models.course import Course, LearningUnit, Lesson
+        from backend.services.user_service import register_user
 
         owner = register_user("youtube-probe@example.com", "Password@123", "YouTube Probe")
         course = Course(
@@ -49,8 +49,8 @@ def test_background_scan_propagates_transient_error_for_retry(app, monkeypatch):
         db.session.add(lesson)
         db.session.commit()
         app.config["YOUTUBE_API_KEY"] = "synthetic-server-key-for-scheduler-test"
-        from pwd301.models.operations import BackgroundJob
-        from pwd301.services import background_job_service as jobs
+        from backend.models.operations import BackgroundJob
+        from backend.services import background_job_service as jobs
 
         assert jobs._schedule_youtube_checks() == 1
         assert jobs._schedule_youtube_checks() == 1
@@ -67,8 +67,8 @@ def test_background_scan_propagates_transient_error_for_retry(app, monkeypatch):
 
 
 def test_durable_video_validation_job_uses_existing_retrying_scanner(app, monkeypatch):
-    from pwd301.extensions import db
-    from pwd301.services import background_job_service as jobs
+    from backend.extensions import db
+    from backend.services import background_job_service as jobs
 
     calls = []
     monkeypatch.setattr(
@@ -89,8 +89,8 @@ def test_durable_video_validation_job_uses_existing_retrying_scanner(app, monkey
 
 
 def test_transient_video_job_enters_existing_backoff_queue(app, monkeypatch):
-    from pwd301.extensions import db
-    from pwd301.services import background_job_service as jobs
+    from backend.extensions import db
+    from backend.services import background_job_service as jobs
 
     def unavailable(**kwargs):
         raise RuntimeError("Transient provider error; retry")

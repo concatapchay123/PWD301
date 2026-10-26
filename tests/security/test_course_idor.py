@@ -15,12 +15,12 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import Course
-from pwd301.models.identity import Role, User
-from pwd301.services.course_service import create_course
-from pwd301.services.jwt_auth_service import create_token_pair
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.extensions import db
+from backend.models.course import Course
+from backend.models.identity import Role, User
+from backend.services.course_service import create_course
+from backend.services.jwt_auth_service import create_token_pair
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -73,7 +73,7 @@ def admin_user(app: Flask, setup_roles: dict[str, Role]) -> User:
 @pytest.fixture
 def course_a(app: Flask, instructor_a: User) -> Course:
     """Course owned by Instructor A."""
-    from pwd301.services.lesson_service import create_learning_unit, create_lesson
+    from backend.services.lesson_service import create_learning_unit, create_lesson
 
     sess = db.session
     c = create_course(

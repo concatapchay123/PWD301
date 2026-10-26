@@ -41,23 +41,23 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import AuditEvent
-from pwd301.services.audit_service import (
+from backend.extensions import db
+from backend.models.identity import Role, User
+from backend.models.notification_audit import AuditEvent
+from backend.services.audit_service import (
     query_audit_logs,
     suspend_user_account,
     unsuspend_user_account,
 )
-from pwd301.services.course_service import change_course_status, create_course
-from pwd301.services.exceptions import (
+from backend.services.course_service import change_course_status, create_course
+from backend.services.exceptions import (
     AdminActionForbiddenError,
     ForbiddenError,
     InvalidRoleAssignmentError,
     RestoreForbiddenError,
 )
-from pwd301.services.jwt_auth_service import create_token_pair
-from pwd301.services.operations_service import (
+from backend.services.jwt_auth_service import create_token_pair
+from backend.services.operations_service import (
     create_database_backup,
     end_maintenance_window,
     execute_dry_run_restore,
@@ -66,7 +66,7 @@ from pwd301.services.operations_service import (
     start_maintenance_window,
     verify_backup_integrity,
 )
-from pwd301.services.user_service import (
+from backend.services.user_service import (
     assign_role_to_user,
     register_user,
     remove_role_from_user,

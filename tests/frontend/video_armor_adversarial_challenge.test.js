@@ -548,7 +548,7 @@ test('Challenge 3.10: Blackout Shield overlay UI validation and complete restore
 
   const card = container.querySelector('.video-armor-blackout-card');
   assert.ok(card, 'Warning card must exist');
-  assert.ok(card.textContent.includes('🛡️ CẢNH BÁO AN NINH BẢN QUYỀN'), 'Must display red security warning title');
+  assert.ok(card.textContent.includes('CẢNH BÁO AN NINH BẢN QUYỀN'), 'Must display red security warning title');
 
   const badge = container.querySelector('.video-armor-badge');
   assert.ok(badge, 'Forensic watermark badge must be rendered inside warning card');

@@ -1,0 +1,945 @@
+"""PWD301 application package.
+
+Provides the Flask application factory, extension registration, centralized
+error handling, and blueprint registration.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import sys
+import time
+import uuid
+from typing import Any
+
+from dotenv import load_dotenv
+from flask import (
+    Flask,
+    Response,
+    g,
+    jsonify,
+    request,
+    session,
+)
+from flask_login import current_user
+from flask_wtf.csrf import CSRFError
+from werkzeug.exceptions import HTTPException
+
+import backend.models  # noqa: F401
+from backend.blueprints.admin import admin_bp
+from backend.blueprints.api_admin import api_admin_bp
+from backend.blueprints.api_ai import api_ai_bp
+from backend.blueprints.api_assessments import api_assessment_bp
+from backend.blueprints.api_attempts import api_attempt_bp, api_regrade_bp
+from backend.blueprints.api_auth import api_auth_bp
+from backend.blueprints.api_courses import api_course_bp
+from backend.blueprints.api_files import api_file_bp
+from backend.blueprints.api_import import api_import_bp
+from backend.blueprints.api_lessons import api_lesson_bp
+from backend.blueprints.api_notifications import api_notification_bp
+from backend.blueprints.api_payments import api_payments_bp
+from backend.services.realtime_service import events_bp
+from backend.blueprints.api_student import api_student_bp
+from backend.blueprints.auth import auth_bp
+from backend.blueprints.core import core_bp
+from backend.blueprints.frontend import frontend_bp
+from backend.blueprints.instructor import instructor_bp
+from backend.blueprints.student import student_bp
+from backend.cli import register_cli_commands
+from backend.config import config_by_name
+from backend.extensions import csrf, db, login_manager, migrate
+from backend.middlewares.rate_limiter import init_rate_limiter
+from backend.models.identity import AnonymousUser
+from backend.services.exceptions import (
+    ActiveAttemptExistsError,
+    AdminActionForbiddenError,
+    AIConversationExpiredError,
+    AIConversationNotFoundError,
+    AIDraftNotFoundError,
+    AIError,
+    AIOutOfScopeError,
+    AIPromptInjectionError,
+    AIQuotaExceededError,
+    AISecurityViolationError,
+    AIServiceUnavailableError,
+    AIValidationError,
+    AssessmentClosedError,
+    AssessmentError,
+    AssessmentLockedError,
+    AssessmentNotFoundError,
+    AssessmentNotOpenError,
+    AssessmentSectionNotFoundError,
+    AssessmentStateViolationError,
+    AssessmentValidationError,
+    AttemptAlreadySubmittedError,
+    AttemptError,
+    AttemptExpiredError,
+    AttemptLeaseConflictError,
+    AttemptLeaseError,
+    AttemptLeaseExpiredError,
+    AttemptLimitExceededError,
+    AttemptNotFoundError,
+    AttemptNotSubmitedError,
+    AttemptNotSubmittedError,
+    AttemptValidationError,
+    AuditError,
+    AuditNotFoundError,
+    AuditPersistenceError,
+    BackupError,
+    BackupIntegrityError,
+    BackupNotFoundError,
+    BlueprintValidationError,
+    CompletionRuleError,
+    CompletionRuleNotFoundError,
+    CompletionRuleValidationError,
+    ConflictError,
+    CourseAlreadyExistsError,
+    CourseDependencyError,
+    CourseNotAvailableError,
+    CourseStateViolationError,
+    CourseValidationError,
+    CurriculumRateLimitExceededError,
+    DocumentImportError,
+    DocumentImportJobNotFoundError,
+    DocumentImportStateViolationError,
+    DocumentParsingError,
+    EmailDeliveryError,
+    EmailDeliveryNotFoundError,
+    EmailRateLimitExceededError,
+    EnrollmentCapacityExceededError,
+    EnrollmentError,
+    EnrollmentNotFoundError,
+    EnrollmentPrerequisiteError,
+    EnrollmentStateViolationError,
+    FileAccessDeniedError,
+    FileAssetNotFoundError,
+    FileError,
+    FileInfectedError,
+    FileSecurityQuarantineError,
+    FileSizeLimitExceededError,
+    FileStorageError,
+    FileValidationError,
+    ForbiddenError,
+    GradingError,
+    ImportQuestionNotFoundError,
+    InvalidCredentialsError,
+    LessonNotFoundError,
+    LessonPositionConflictError,
+    LessonProgressError,
+    LessonStateViolationError,
+    LessonValidationError,
+    MaintenanceModeActiveError,
+    MandatoryNotificationOptOutError,
+    MaxPointsExceededError,
+    NotificationError,
+    NotificationNotFoundError,
+    NotificationPreferenceError,
+    PrerequisiteCycleError,
+    QuestionBankError,
+    QuestionCorrectionError,
+    QuestionCorrectionNotFoundError,
+    QuestionImmutableError,
+    QuestionNotFoundError,
+    QuestionRevisionConflictError,
+    QuestionRevisionNotFoundError,
+    QuestionStateViolationError,
+    QuestionValidationError,
+    RegradeError,
+    RegradeJobNotFoundError,
+    ResourceNotFoundError,
+    RestoreForbiddenError,
+    RestoreVerificationFailedError,
+    ScoreReleasePolicyError,
+    StaleAnswerSequenceError,
+    StaleLeaseEpochError,
+    SubmissionIdempotencyConflictError,
+    UnauthorizedError,
+    ValidationError,
+)
+
+__version__ = "0.0.0"
+
+
+class UTCFormatter(logging.Formatter):
+    """Logging formatter converting timestamps to UTC."""
+
+    def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:
+        ct = time.gmtime(record.created)
+        if datefmt:
+            return time.strftime(datefmt, ct)
+        return time.strftime("%Y-%m-%dT%H:%M:%SZ", ct)
+
+
+def _configure_logging(app: Flask) -> None:
+    """Configure structured console logging with UTC timestamps."""
+    log_level = str(app.config.get("LOG_LEVEL", "INFO")).upper()
+    numeric_level = getattr(logging, log_level, logging.INFO)
+    app.logger.setLevel(numeric_level)
+
+    if not app.logger.handlers:
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setLevel(numeric_level)
+        formatter = UTCFormatter(
+            fmt="%(asctime)s [%(levelname)s] [%(name)s] %(message)s",
+            datefmt="%Y-%m-%dT%H:%M:%SZ",
+        )
+        handler.setFormatter(formatter)
+        app.logger.addHandler(handler)
+
+
+def _is_api_or_json_request() -> bool:
+    """Determine whether the incoming request expects a JSON/API response."""
+    if request.path.startswith("/api/"):
+        return True
+    if request.is_json:
+        return True
+    if not request.accept_mimetypes.accept_html:
+        return True
+    best = request.accept_mimetypes.best_match(["application/json", "text/html"])
+    return best == "application/json"
+
+
+def _format_error_response(
+    code: str,
+    message: str,
+    status_code: int,
+    field_errors: dict[str, Any] | None = None,
+    retry_after: int | None = None,
+) -> tuple[Response, int]:
+    """Format an error response adhering to the PWD301 error model."""
+    correlation_id = getattr(g, "correlation_id", uuid.uuid4().hex)
+
+    resp = jsonify(
+        {
+            "success": False,
+            "data": None,
+            "error": {
+                "code": code,
+                "message": message,
+                "field_errors": field_errors or {},
+                "correlation_id": correlation_id,
+            },
+        }
+    )
+    if status_code == 429 and retry_after is not None:
+        resp.headers["Retry-After"] = str(retry_after)
+    elif status_code == 429:
+        resp.headers["Retry-After"] = "60"
+    return resp, status_code
+
+
+DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
+    # 401 Unauthorized
+    UnauthorizedError: ("UNAUTHORIZED", 401),
+    InvalidCredentialsError: ("INVALID_CREDENTIALS", 401),
+    # 403 Forbidden
+    ForbiddenError: ("FORBIDDEN", 403),
+    AdminActionForbiddenError: ("FORBIDDEN", 403),
+    RestoreForbiddenError: ("FORBIDDEN", 403),
+    ScoreReleasePolicyError: ("FORBIDDEN", 403),
+    FileAccessDeniedError: ("FORBIDDEN", 403),
+    FileInfectedError: ("FILE_INFECTED", 403),
+    FileSecurityQuarantineError: ("FILE_QUARANTINED", 403),
+    # 404 Not Found
+    ResourceNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    BackupNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    LessonNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    EnrollmentNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    CompletionRuleNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    QuestionNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    QuestionRevisionNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    AssessmentNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    AssessmentSectionNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    AttemptNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    RegradeJobNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    QuestionCorrectionNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    FileAssetNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    DocumentImportJobNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    ImportQuestionNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    NotificationNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    EmailDeliveryNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    AuditNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    AIConversationNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    AIDraftNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    # 409 Conflict & State Violations
+    AIConversationExpiredError: ("CONVERSATION_EXPIRED", 409),
+    DocumentImportStateViolationError: ("STATE_VIOLATION", 409),
+    RegradeError: ("CONFLICT", 409),
+    CourseAlreadyExistsError: ("CONFLICT", 409),
+    CourseStateViolationError: ("STATE_VIOLATION", 409),
+    CourseDependencyError: ("PREREQUISITE_DEPENDENCY", 409),
+    LessonPositionConflictError: ("CONFLICT", 409),
+    LessonStateViolationError: ("STATE_VIOLATION", 409),
+    EnrollmentCapacityExceededError: ("CAPACITY_EXCEEDED", 409),
+    EnrollmentPrerequisiteError: ("PREREQUISITE_NOT_MET", 409),
+    EnrollmentStateViolationError: ("STATE_VIOLATION", 409),
+    PrerequisiteCycleError: ("CYCLE_DETECTED", 409),
+    QuestionStateViolationError: ("STATE_VIOLATION", 409),
+    QuestionRevisionConflictError: ("CONFLICT", 409),
+    QuestionImmutableError: ("STATE_VIOLATION", 409),
+    AssessmentStateViolationError: ("STATE_VIOLATION", 409),
+    AssessmentLockedError: ("CONFLICT", 409),
+    ConflictError: ("CONFLICT", 409),
+    AttemptLimitExceededError: ("ATTEMPT_LIMIT", 409),
+    ActiveAttemptExistsError: ("CONFLICT", 409),
+    AttemptLeaseError: ("LEASE_CONFLICT", 409),
+    AttemptLeaseConflictError: ("LEASE_CONFLICT", 409),
+    AttemptLeaseExpiredError: ("LEASE_CONFLICT", 409),
+    StaleLeaseEpochError: ("STALE_LEASE_EPOCH", 409),
+    StaleAnswerSequenceError: ("STALE_ANSWER", 409),
+    AttemptExpiredError: ("DEADLINE_EXPIRED", 409),
+    AttemptAlreadySubmittedError: ("STATE_VIOLATION", 409),
+    AttemptNotSubmittedError: ("STATE_VIOLATION", 409),
+    AttemptNotSubmitedError: ("STATE_VIOLATION", 409),
+    SubmissionIdempotencyConflictError: ("SUBMISSION_CONFLICT", 409),
+    # 400 Bad Request & Validation Errors
+    ValidationError: ("VALIDATION_ERROR", 400),
+    AIValidationError: ("VALIDATION_ERROR", 400),
+    AIOutOfScopeError: ("OUT_OF_SCOPE", 400),
+    AIPromptInjectionError: ("PROMPT_INJECTION_DETECTED", 400),
+    AISecurityViolationError: ("SECURITY_VIOLATION", 400),
+    MaxPointsExceededError: ("VALIDATION_ERROR", 400),
+    GradingError: ("VALIDATION_ERROR", 400),
+    CourseValidationError: ("VALIDATION_ERROR", 400),
+    LessonValidationError: ("VALIDATION_ERROR", 400),
+    LessonProgressError: ("VALIDATION_ERROR", 400),
+    CourseNotAvailableError: ("COURSE_NOT_AVAILABLE", 400),
+    EnrollmentError: ("ENROLLMENT_ERROR", 400),
+    CompletionRuleValidationError: ("VALIDATION_ERROR", 400),
+    CompletionRuleError: ("COMPLETION_RULE_ERROR", 400),
+    QuestionValidationError: ("VALIDATION_ERROR", 400),
+    QuestionCorrectionError: ("VALIDATION_ERROR", 400),
+    QuestionBankError: ("QUESTION_BANK_ERROR", 400),
+    AssessmentValidationError: ("VALIDATION_ERROR", 400),
+    BlueprintValidationError: ("VALIDATION_ERROR", 400),
+    AssessmentError: ("VALIDATION_ERROR", 400),
+    AttemptValidationError: ("VALIDATION_ERROR", 400),
+    AssessmentNotOpenError: ("NOT_OPEN", 400),
+    AssessmentClosedError: ("CLOSED", 400),
+    AttemptError: ("VALIDATION_ERROR", 400),
+    FileValidationError: ("VALIDATION_ERROR", 400),
+    DocumentParsingError: ("PARSING_ERROR", 400),
+    DocumentImportError: ("IMPORT_ERROR", 400),
+    NotificationPreferenceError: ("VALIDATION_ERROR", 400),
+    MandatoryNotificationOptOutError: ("VALIDATION_ERROR", 400),
+    NotificationError: ("NOTIFICATION_ERROR", 400),
+    AuditError: ("AUDIT_ERROR", 400),
+    BackupIntegrityError: ("INTEGRITY_ERROR", 400),
+    RestoreVerificationFailedError: ("VERIFICATION_FAILED", 400),
+    BackupError: ("BACKUP_ERROR", 400),
+    # 413 Payload Too Large
+    FileSizeLimitExceededError: ("PAYLOAD_TOO_LARGE", 413),
+    # 429 Rate Limit Exceeded
+    EmailRateLimitExceededError: ("RATE_LIMIT_EXCEEDED", 429),
+    AIQuotaExceededError: ("RATE_LIMIT_EXCEEDED", 429),
+    CurriculumRateLimitExceededError: ("RATE_LIMIT_EXCEEDED", 429),
+    # 500 Internal Error
+    FileStorageError: ("INTERNAL_ERROR", 500),
+    FileError: ("INTERNAL_ERROR", 500),
+    EmailDeliveryError: ("EMAIL_DELIVERY_ERROR", 500),
+    AuditPersistenceError: ("AUDIT_PERSISTENCE_FAILED", 500),
+    AIError: ("AI_ERROR", 500),
+    # 503 Service Unavailable
+    AIServiceUnavailableError: ("EXTERNAL_SERVICE_UNAVAILABLE", 503),
+    MaintenanceModeActiveError: ("MAINTENANCE_MODE_ACTIVE", 503),
+}
+
+
+def _register_error_handlers(app: Flask) -> None:
+    """Register centralized error handlers conforming to the API error model."""
+
+    @app.errorhandler(400)
+    def bad_request_error(error: HTTPException | Exception) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="VALIDATION_ERROR",
+            message=getattr(error, "description", "Bad request syntax or parameters."),
+            status_code=400,
+        )
+
+    @app.errorhandler(401)
+    def unauthorized_error(error: HTTPException | Exception) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="UNAUTHORIZED",
+            message=getattr(
+                error, "description", "Authentication required to access this resource."
+            ),
+            status_code=401,
+        )
+
+    @app.errorhandler(403)
+    def forbidden_error(error: HTTPException | Exception) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="FORBIDDEN",
+            message=getattr(error, "description", "Access denied: insufficient permissions."),
+            status_code=403,
+        )
+
+    @app.errorhandler(404)
+    def not_found_error(error: HTTPException | Exception) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="RESOURCE_NOT_FOUND",
+            message=getattr(error, "description", "The requested resource was not found."),
+            status_code=404,
+        )
+
+    @app.errorhandler(405)
+    def method_not_allowed_error(
+        error: HTTPException | Exception,
+    ) -> Response | tuple[Response, int]:
+        msg = getattr(error, "description", "The method is not allowed for the requested URL.")
+        return _format_error_response(
+            code="METHOD_NOT_ALLOWED",
+            message=msg,
+            status_code=405,
+        )
+
+    @app.errorhandler(413)
+    def request_entity_too_large_error(
+        error: HTTPException | Exception,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="PAYLOAD_TOO_LARGE",
+            message=getattr(error, "description", "Request payload exceeds maximum allowed size."),
+            status_code=413,
+        )
+
+    @app.errorhandler(CSRFError)
+    def csrf_error(error: CSRFError) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="CSRF_ERROR",
+            message=getattr(error, "description", "CSRF token missing or invalid."),
+            status_code=400,
+        )
+
+    for exc_cls, (code, status) in DOMAIN_EXCEPTION_HANDLERS.items():
+
+        def _make_handler(c: str, s: int):
+            def handler(error: Exception) -> Response | tuple[Response, int]:
+                ra = getattr(error, "retry_after", None) if s == 429 else None
+                msg = str(error)
+                if s >= 500:
+                    app.logger.error("Domain 500 error [%s]: %s", c, error, exc_info=True)
+                    if isinstance(error, AuditPersistenceError):
+                        msg = "Không thể ghi nhận nhật ký kiểm toán bắt buộc cho thao tác này. Vui lòng liên hệ quản trị viên."
+                    else:
+                        msg = "Đã xảy ra lỗi máy chủ nội bộ. Vui lòng liên hệ hỗ trợ kỹ thuật."
+                return _format_error_response(
+                    code=c,
+                    message=msg,
+                    status_code=s,
+                    retry_after=ra,
+                )
+
+            return handler
+
+        app.errorhandler(exc_cls)(_make_handler(code, status))
+
+    @app.errorhandler(500)
+    def internal_error(error: HTTPException | Exception) -> Response | tuple[Response, int]:
+        app.logger.error("Internal Server Error: %s", error, exc_info=True)
+        return _format_error_response(
+            code="INTERNAL_ERROR",
+            message="An internal server error occurred. Please contact support.",
+            status_code=500,
+        )
+
+    @app.errorhandler(Exception)
+    def unhandled_exception(error: Exception) -> Response | tuple[Response, int]:
+        if isinstance(error, HTTPException):
+            code_name = error.name.upper().replace(" ", "_")
+            return _format_error_response(
+                code=code_name,
+                message=error.description or "An error occurred.",
+                status_code=error.code or 500,
+            )
+        app.logger.error("Unhandled Exception: %s", error, exc_info=True)
+        return _format_error_response(
+            code="INTERNAL_ERROR",
+            message="An internal server error occurred. Please contact support.",
+            status_code=500,
+        )
+
+
+def create_app(
+    config_name: str | None = None,
+    config_override: dict[str, Any] | None = None,
+) -> Flask:
+    """Create and configure an instance of the Flask application.
+
+    Args:
+        config_name: The name of the configuration ('development', 'testing', 'production').
+                     If None, resolves from the APP_ENV environment variable.
+        config_override: Optional dictionary of configuration key-value pairs to override defaults.
+    """
+    load_dotenv()
+
+    if config_name is None:
+        config_name = os.environ.get("APP_ENV", "development").lower()
+
+    if config_name not in config_by_name:
+        raise ValueError(
+            f"Unknown configuration '{config_name}'. Available: {list(config_by_name.keys())}"
+        )
+
+    app = Flask(__name__, static_folder=None, template_folder=None)
+    app.json.ensure_ascii = False  # type: ignore[attr-defined]
+    config_cls = config_by_name[config_name]
+    config_obj = config_cls() if isinstance(config_cls, type) else config_cls
+    app.config.from_object(config_obj)
+    app.config["APP_ENV"] = config_name
+    if config_override:
+        app.config.update(config_override)
+
+    # Wrap WSGI app with ProxyFix if running behind reverse proxy
+    if app.config.get("USE_PROXY_FIX", False):
+        from werkzeug.middleware.proxy_fix import ProxyFix
+
+        num_proxies = int(app.config.get("NUM_PROXIES", 1))
+        if num_proxies > 0:
+            app.wsgi_app = ProxyFix(  # type: ignore[method-assign]
+                app.wsgi_app,
+                x_for=num_proxies,
+                x_proto=num_proxies,
+                x_host=num_proxies,
+                x_prefix=num_proxies,
+            )
+
+    # Initialize extensions
+    db.init_app(app)
+    migrate.init_app(app, db, directory="database/migrations")
+    init_rate_limiter(app)
+
+    # Pre-CSRF middleware: guarantee session['csrf_token'] exists before
+    # Flask-WTF _csrf_protect runs
+    @app.before_request
+    def _ensure_csrf_session_initialized() -> None:
+        if app.config.get("WTF_CSRF_ENABLED", True) and "csrf_token" not in session:
+            from flask_wtf.csrf import generate_csrf
+
+            generate_csrf()
+
+    csrf.init_app(app)
+    login_manager.init_app(app)
+    login_manager.anonymous_user = AnonymousUser
+
+    # Template context processor for auth & role helpers
+    @app.context_processor
+    def inject_auth_helpers() -> dict[str, Any]:
+        actor = None
+        if hasattr(g, "current_user") and g.current_user is not None:
+            actor = g.current_user
+        elif current_user and current_user.is_authenticated:
+            actor = current_user
+
+        def has_role(role_code: str) -> bool:
+            if actor is None:
+                return False
+            return actor.has_role(role_code)
+
+        def has_any_role(*role_codes: str) -> bool:
+            if actor is None:
+                return False
+            return actor.has_any_role(*role_codes)
+
+        def is_admin() -> bool:
+            return actor.is_admin if actor else False
+
+        def is_instructor() -> bool:
+            return actor.is_instructor if actor else False
+
+        def is_student() -> bool:
+            return actor.is_student if actor else False
+
+        def check_can_manage_course(course: Any) -> bool:
+            from backend.services.authorization_service import can_manage_course
+
+            return can_manage_course(actor, course)
+
+        from backend.services.i18n_service import (
+            STANDARD_TIMEZONES,
+            format_tz_datetime,
+            get_current_locale,
+            get_current_timezone,
+            t,
+        )
+
+        roles_list = sorted(actor.role_codes) if actor else []
+
+        def get_unread_count_safe() -> int:
+            if actor is not None and hasattr(actor, "id") and actor.id:
+                try:
+                    from backend.services.notification_service import get_unread_count
+
+                    return get_unread_count(actor=actor, session=db.session)
+                except Exception:
+                    return 0
+            return 0
+
+        return {
+            "has_role": has_role,
+            "has_any_role": has_any_role,
+            "is_admin": is_admin,
+            "is_instructor": is_instructor,
+            "is_student": is_student,
+            "can_manage_course": check_can_manage_course,
+            "user_roles": roles_list,
+            "unread_notifications_count": get_unread_count_safe(),
+            "_": t,
+            "t": t,
+            "current_lang": get_current_locale(),
+            "current_timezone": get_current_timezone(),
+            "supported_timezones": STANDARD_TIMEZONES,
+            "format_tz_datetime": format_tz_datetime,
+        }
+
+    from backend.services.i18n_service import format_tz_datetime, get_current_timezone
+
+    @app.template_filter("tz_datetime")
+    def tz_datetime_filter(val: Any, tz_str: str | None = None) -> str:
+        if tz_str is None:
+            tz_str = get_current_timezone()
+        return format_tz_datetime(val, tz_str)
+
+    @login_manager.user_loader
+    def load_user(user_id: str) -> Any:
+        try:
+            uid = int(user_id)
+        except (ValueError, TypeError):
+            return None
+        from backend.models.identity import User
+        from backend.services.session_auth_service import validate_auth_session
+
+        user = db.session.get(User, uid)
+        if user is None or not user.is_active:
+            return None
+
+        # Verify session auth_version against current user record
+        session_auth_version = session.get("auth_version")
+        if session_auth_version is None or session_auth_version != user.auth_version:
+            return None
+
+        # Validate auth_session_key against database record
+        raw_key = session.get("auth_session_key")
+        if not raw_key:
+            return None
+        auth_sess = validate_auth_session(raw_key, session=db.session)
+        if auth_sess is None:
+            return None
+
+        return user
+
+    @login_manager.unauthorized_handler
+    def unauthorized() -> Any:
+        return _format_error_response(
+            code="UNAUTHORIZED",
+            message="Authentication required to access this resource.",
+            status_code=401,
+        )
+
+    # Logging setup
+    _configure_logging(app)
+
+    # Correlation ID & Maintenance Mode middleware
+    @app.before_request
+    def before_request() -> Any:
+        g.correlation_id = request.headers.get("X-Correlation-ID") or uuid.uuid4().hex
+        g.pop("_login_user", None)
+        g.pop("current_user", None)
+        g.pop("jwt_claims", None)
+
+        path = request.path
+
+        # Static assets and health probes fast path
+        if (
+            path.startswith("/static/")
+            or path.startswith("/frontend/")
+            or path.startswith("/assets/")
+            or path == "/"
+            or path in ("/health", "/health/deep", "/favicon.ico")
+        ):
+            return None
+
+        # Auto-synchronize active_role for authenticated web sessions on portal navigation
+        if current_user and current_user.is_authenticated:
+            if path.startswith("/admin") and not path.startswith("/api/admin"):
+                if current_user.has_role("ADMIN"):
+                    session["active_role"] = "ADMIN"
+            elif path.startswith("/instructor") and not path.startswith("/api/instructor"):
+                if current_user.has_role("INSTRUCTOR") and session.get("active_role") != "ADMIN":
+                    session["active_role"] = "INSTRUCTOR"
+            elif path.startswith("/student") and not path.startswith("/api/student"):
+                if not session.get("active_role"):
+                    session["active_role"] = "STUDENT"
+            elif not session.get("active_role"):
+                session["active_role"] = current_user.primary_role
+
+        # Fast path 1: Allow admin routes and auth login/logout without touching DB
+        bypass_prefixes = (
+            "/admin",
+            "/api/admin",
+            "/auth/login",
+            "/api/auth/login",
+        )
+        bypass_exact = (
+            "/auth/logout",
+            "/api/auth/logout",
+        )
+
+        if path in bypass_exact or any(path.startswith(p) for p in bypass_prefixes):
+            return None
+
+        # Maintenance mode enforcement
+        from backend.services.operations_service import (
+            is_database_restore_in_progress,
+            is_maintenance_active_cached,
+        )
+
+        # Fast path 2: Check if database restore is in progress (in-memory fast path, no DB call)
+        if is_database_restore_in_progress():
+            from backend.services.authorization_service import get_authenticated_actor
+
+            try:
+                actor = get_authenticated_actor()
+            except Exception:
+                actor = None
+
+            if not (actor and getattr(actor, "is_admin", False)):
+                resp = jsonify(
+                    {
+                        "success": False,
+                        "data": None,
+                        "error": {
+                            "code": "MAINTENANCE_MODE_ACTIVE",
+                            "message": (
+                                "Database restore is currently in progress. "
+                                "System is temporarily unavailable."
+                            ),
+                            "estimated_end_at": None,
+                            "estimated_duration_minutes": 5,
+                        },
+                    }
+                )
+                resp.status_code = 503
+                resp.headers["Retry-After"] = "300"
+                return resp
+
+        # Read durable maintenance authority on every admitted request.
+        try:
+            is_active, window = is_maintenance_active_cached(session=db.session)
+        except Exception as exc:
+            app.logger.warning(
+                "Failed to check maintenance status (possible DB disruption): %s",
+                exc,
+            )
+            is_active, window = True, None
+
+        if is_active and window is None:
+            resp = jsonify(
+                {
+                    "success": False,
+                    "data": None,
+                    "error": {
+                        "code": "MAINTENANCE_STATUS_UNAVAILABLE",
+                        "message": "Cannot verify maintenance status. Please retry shortly.",
+                    },
+                }
+            )
+            resp.status_code = 503
+            resp.headers["Retry-After"] = "60"
+            return resp
+
+        if is_active and window is not None:
+            from backend.services.authorization_service import get_authenticated_actor
+
+            try:
+                actor = get_authenticated_actor()
+            except Exception:
+                actor = None
+
+            if not (actor and getattr(actor, "is_admin", False)):
+                retry_after = str(window.estimated_duration_minutes * 60)
+                resp = jsonify(
+                    {
+                        "success": False,
+                        "data": None,
+                        "error": {
+                            "code": "MAINTENANCE_MODE_ACTIVE",
+                            "message": (
+                                f"System is currently undergoing scheduled maintenance: "
+                                f"{window.reason}"
+                            ),
+                            "estimated_end_at": (
+                                window.estimated_end_at.isoformat()
+                                if window.estimated_end_at
+                                else None
+                            ),
+                            "estimated_duration_minutes": window.estimated_duration_minutes,
+                        },
+                    }
+                )
+                resp.status_code = 503
+                resp.headers["Retry-After"] = retry_after
+                return resp
+
+        return None
+
+    @app.after_request
+    def after_request(response: Response) -> Response:
+        response.headers["X-Correlation-ID"] = getattr(g, "correlation_id", "")
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        is_frontend = (
+            request.path.startswith("/frontend/")
+            or request.path.startswith("/api/ui/")
+            or request.path == "/"
+        )
+        is_application_evidence_preview = (
+            request.endpoint == "admin.admin_download_application_evidence"
+            and request.args.get("preview", "0").lower() in ("1", "true", "yes")
+        )
+        is_file_inline_preview = (
+            request.args.get("disposition", "").lower() == "inline"
+            or request.args.get("preview", "0").lower() in ("1", "true", "yes")
+        ) and (
+            request.path.startswith(
+                (
+                    "/student/files/",
+                    "/student/courses/",
+                    "/instructor/courses/",
+                    "/api/files/",
+                    "/api/v1/files/",
+                    "/api/courses/",
+                    "/admin/files/",
+                    "/admin/courses/",
+                )
+            )
+            or request.endpoint
+            in (
+                "student.download_student_course_file_route",
+                "student.download_lesson_file",
+                "instructor.download_instructor_course_file_route",
+                "api_file.download_file_generic_api",
+                "admin.admin_download_application_evidence",
+            )
+        )
+        allows_same_origin_frame = (
+            is_frontend or is_application_evidence_preview or is_file_inline_preview
+        )
+        response.headers["X-Frame-Options"] = "SAMEORIGIN" if allows_same_origin_frame else "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        if is_frontend and app.config.get("WTF_CSRF_ENABLED", True) and "csrf_token" in session:
+            from flask_wtf.csrf import generate_csrf
+
+            response.set_cookie("csrf_token", generate_csrf(), samesite="Lax")
+        if "Content-Security-Policy" not in response.headers:
+            frame_ancestors = "'self'" if allows_same_origin_frame else "'none'"
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; "
+                "script-src 'self' 'unsafe-inline' "
+                "https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net "
+                "https://www.youtube.com https://s.ytimg.com; "
+                "worker-src 'self' blob:; "
+                "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
+                "img-src 'self' data: https:; "
+                "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; "
+                "connect-src 'self' https://cdn.tailwindcss.com; "
+                "frame-src 'self' blob: https://www.youtube.com https://youtube.com "
+                "https://www.youtube-nocookie.com https://*.youtube.com "
+                "https://*.youtube-nocookie.com https://player.vimeo.com https://*.vimeo.com; "
+                "media-src 'self' data: blob: https:; "
+                f"frame-ancestors {frame_ancestors};"
+            )
+
+        # Standardize pure headless JSON envelopes: {"success": bool, "data": ..., "error": ...}
+        if response.is_json and not getattr(response, "direct_passthrough", False):
+            try:
+                json_data = response.get_json(silent=True)
+                if isinstance(json_data, dict):
+                    modified = False
+                    if response.status_code >= 400:
+                        if "success" not in json_data:
+                            json_data["success"] = False
+                            modified = True
+                        if "data" not in json_data:
+                            json_data["data"] = None
+                            modified = True
+                    elif response.status_code in (200, 201, 202):
+                        if "success" not in json_data:
+                            json_data["success"] = True
+                            modified = True
+                        if "error" not in json_data:
+                            json_data["error"] = None
+                            modified = True
+                        if "data" not in json_data:
+                            # Preserve legacy root access while providing canonical data envelope
+                            json_data["data"] = {
+                                k: v
+                                for k, v in json_data.items()
+                                if k not in ("success", "error")
+                            }
+                            modified = True
+                    if modified:
+                        response.set_data(json.dumps(json_data, ensure_ascii=False))
+                elif isinstance(json_data, list) and response.status_code in (200, 201, 202):
+                    response.set_data(
+                        json.dumps(
+                            {"success": True, "data": json_data, "error": None},
+                            ensure_ascii=False,
+                        )
+                    )
+            except Exception:
+                pass
+
+        return response
+
+    # Centralized error handlers
+    _register_error_handlers(app)
+
+    # Register blueprints
+    app.register_blueprint(frontend_bp)
+    app.register_blueprint(core_bp)
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(api_auth_bp)
+    app.register_blueprint(api_auth_bp, url_prefix="/api/auth", name="api_auth_unversioned")
+    app.register_blueprint(student_bp)
+    app.register_blueprint(instructor_bp)
+    app.register_blueprint(admin_bp)
+    app.register_blueprint(api_admin_bp)
+    app.register_blueprint(api_course_bp)
+    app.register_blueprint(api_lesson_bp)
+    app.register_blueprint(api_student_bp)
+    app.register_blueprint(api_assessment_bp)
+    app.register_blueprint(api_attempt_bp)
+    app.register_blueprint(api_regrade_bp)
+    app.register_blueprint(api_file_bp)
+    app.register_blueprint(api_import_bp)
+    app.register_blueprint(api_notification_bp)
+    app.register_blueprint(api_payments_bp)
+    app.register_blueprint(api_ai_bp)
+    app.register_blueprint(events_bp)
+
+    # Exempt REST API and frontend blueprints from CSRF validation (API clients use Bearer JWT)
+    csrf.exempt(frontend_bp)
+    csrf.exempt(api_auth_bp)
+    unversioned_auth = app.blueprints.get("api_auth_unversioned")
+    if unversioned_auth:
+        csrf.exempt(unversioned_auth)
+    csrf.exempt(api_admin_bp)
+    csrf.exempt(api_course_bp)
+    csrf.exempt(api_payments_bp)
+    csrf.exempt(api_lesson_bp)
+    csrf.exempt(api_student_bp)
+    csrf.exempt(api_assessment_bp)
+    csrf.exempt(api_attempt_bp)
+    csrf.exempt(api_regrade_bp)
+    csrf.exempt(api_file_bp)
+    csrf.exempt(api_import_bp)
+    csrf.exempt(api_notification_bp)
+    csrf.exempt(api_ai_bp)
+    csrf.exempt(events_bp)
+
+    # Register CLI commands
+    register_cli_commands(app)
+
+    return app

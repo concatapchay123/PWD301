@@ -1,4 +1,4 @@
-from pwd301.services.scanner_service import ClamAVScanner
+from backend.services.scanner_service import ClamAVScanner
 
 
 def test_unscannable_size_never_becomes_clean(tmp_path):

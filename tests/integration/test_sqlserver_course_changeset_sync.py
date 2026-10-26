@@ -6,12 +6,12 @@ import json
 import pytest
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import CourseChangeRequest, Lesson
-from pwd301.models.file_import import LessonResource
-from pwd301.services import lesson_service
-from pwd301.services.exceptions import ValidationError
-from pwd301.services.file_service import store_file_stream
+from backend.extensions import db
+from backend.models.course import CourseChangeRequest, Lesson
+from backend.models.file_import import LessonResource
+from backend.services import lesson_service
+from backend.services.exceptions import ValidationError
+from backend.services.file_service import store_file_stream
 from tests.conftest import login_web_user
 from tests.integration.test_sqlserver_import_atomic_retry import http_request
 from tests.integration.test_sqlserver_import_atomic_retry import http_server as http_server

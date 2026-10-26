@@ -9,12 +9,12 @@ import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 
-from pwd301.extensions import db
-from pwd301.models.identity import JwtTokenGrant, User
-from pwd301.models.types import utc_now
-from pwd301.seeds.baseline import seed_baseline
-from pwd301.services.jwt_auth_service import JWT_ALGORITHM, JWT_ISSUER
-from pwd301.services.user_service import change_password, register_user, suspend_user
+from backend.extensions import db
+from backend.models.identity import JwtTokenGrant, User
+from backend.models.types import utc_now
+from backend.seeds.baseline import seed_baseline
+from backend.services.jwt_auth_service import JWT_ALGORITHM, JWT_ISSUER
+from backend.services.user_service import change_password, register_user, suspend_user
 
 
 @pytest.fixture

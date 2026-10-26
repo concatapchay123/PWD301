@@ -20,25 +20,25 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.file_import import FileAsset, LessonResource
-from pwd301.seeds.baseline import seed_baseline
-from pwd301.services.assessment_service import create_assessment
-from pwd301.services.attempt_service import (
+from backend.extensions import db
+from backend.models.file_import import FileAsset, LessonResource
+from backend.seeds.baseline import seed_baseline
+from backend.services.assessment_service import create_assessment
+from backend.services.attempt_service import (
     start_assessment_attempt,
     submit_assessment_attempt,
 )
-from pwd301.services.course_service import create_course
-from pwd301.services.file_service import attach_resource_to_lesson, store_file_stream
-from pwd301.services.lesson_service import create_lesson
-from pwd301.services.question_bank_service import create_question
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.course_service import create_course
+from backend.services.file_service import attach_resource_to_lesson, store_file_stream
+from backend.services.lesson_service import create_lesson
+from backend.services.question_bank_service import create_question
+from backend.services.user_service import assign_role_to_user, register_user
 
 UUID_REGEX = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
 
 
 def test_sync016_academic_save_rolls_back_all_parts(client, remediation_env):
-    from pwd301.models.course import Course, CourseChangeRequest, CourseCompletionRule
+    from backend.models.course import Course, CourseChangeRequest, CourseCompletionRule
 
     course = remediation_env["course"]
     actor = remediation_env["instructor"]
@@ -68,7 +68,7 @@ def test_sync016_academic_save_rolls_back_all_parts(client, remediation_env):
 
 
 def test_sync016_published_objectives_remain_queued(client, remediation_env):
-    from pwd301.models.course import CourseChangeRequest, CourseCompletionRule
+    from backend.models.course import CourseChangeRequest, CourseCompletionRule
 
     course = remediation_env["course"]
     actor = remediation_env["instructor"]
@@ -99,12 +99,12 @@ def test_sync016_published_objectives_remain_queued(client, remediation_env):
 
 
 def test_sync016_cross_instructor_prerequisite_stays_pending(client, remediation_env):
-    from pwd301.models.course import CourseChangeRequest, CoursePrerequisite
+    from backend.models.course import CourseChangeRequest, CoursePrerequisite
 
     actor = remediation_env["instructor"]
     course = remediation_env["course"]
     other = register_user(
-        email="academic_peer@pwd301.local",
+        email="academic_peer@backend.local",
         password="Password@123",
         display_name="Academic peer",
         session=db.session,
@@ -146,7 +146,7 @@ def test_sync016_cross_instructor_prerequisite_stays_pending(client, remediation
 
 
 def test_sync016_published_removal_retry_queues_one_review(client, remediation_env):
-    from pwd301.models.course import CourseChangeRequest
+    from backend.models.course import CourseChangeRequest
 
     actor = remediation_env["instructor"]
     course = remediation_env["course"]
@@ -156,7 +156,7 @@ def test_sync016_published_removal_retry_queues_one_review(client, remediation_e
         session=db.session,
     )
     prereq.status = "PUBLISHED"
-    from pwd301.services.enrollment_service import add_course_prerequisite
+    from backend.services.enrollment_service import add_course_prerequisite
 
     add_course_prerequisite(actor, course.id, prereq.id, session=db.session)
     db.session.commit()
@@ -187,7 +187,7 @@ def test_sync016_published_removal_retry_queues_one_review(client, remediation_e
 
 
 def test_sync016_legacy_prerequisite_acknowledgements_are_committed(client, remediation_env):
-    from pwd301.models.course import CoursePrerequisite
+    from backend.models.course import CoursePrerequisite
 
     actor = remediation_env["instructor"]
     course = remediation_env["course"]
@@ -236,12 +236,12 @@ def test_sync016_legacy_prerequisite_acknowledgements_are_committed(client, reme
 
 
 def test_sync016_peer_notification_failure_rolls_back_request(client, remediation_env, monkeypatch):
-    from pwd301.models.course import CourseChangeRequest
+    from backend.models.course import CourseChangeRequest
 
     actor = remediation_env["instructor"]
     course = remediation_env["course"]
     peer = register_user(
-        email="academic_outbox@pwd301.local",
+        email="academic_outbox@backend.local",
         password="Password@123",
         display_name="Academic notification peer",
         session=db.session,
@@ -262,7 +262,7 @@ def test_sync016_peer_notification_failure_rolls_back_request(client, remediatio
         raise RuntimeError("peer notification persistence failed")
 
     monkeypatch.setattr(
-        "pwd301.services.notification_service.dispatch_notification", fail_notification
+        "backend.services.notification_service.dispatch_notification", fail_notification
     )
     response = client.put(
         f"/instructor/courses/{course_id}/academic-settings",
@@ -303,7 +303,7 @@ def remediation_env(app: Flask) -> dict[str, Any]:
 
     # 1. Register and assign roles
     inst_user = register_user(
-        email="instructor_remed@pwd301.local",
+        email="instructor_remed@backend.local",
         password="Password@123",
         display_name="ThS. Remediation Instructor",
         session=sess,
@@ -311,7 +311,7 @@ def remediation_env(app: Flask) -> dict[str, Any]:
     assign_role_to_user(inst_user.id, "INSTRUCTOR", session=sess)
 
     student_user = register_user(
-        email="student_remed@pwd301.local",
+        email="student_remed@backend.local",
         password="Password@123",
         display_name="Nguyen Van Sinh Vien",
         session=sess,
@@ -669,7 +669,7 @@ def test_essay_elimination_and_direct_auto_grading(
     sess = db.session
 
     # 1. Enroll student
-    from pwd301.services.enrollment_service import enroll_student
+    from backend.services.enrollment_service import enroll_student
 
     enroll_student(actor=student, course_id=course.id, session=sess)
     sess.commit()
@@ -712,7 +712,7 @@ def test_essay_elimination_and_direct_auto_grading(
         },
         session=sess,
     )
-    from pwd301.services.assessment_service import assign_question, publish_assessment
+    from backend.services.assessment_service import assign_question, publish_assessment
 
     assign_question(
         actor=inst,
@@ -766,7 +766,7 @@ def test_student_ai_chat_with_course_context(
     course = remediation_env["course"]
     sess = db.session
 
-    from pwd301.models.course import Enrollment
+    from backend.models.course import Enrollment
 
     enr = Enrollment(student_user_id=student.id, course_id=course.id, status="ACTIVE")
     sess.add(enr)
@@ -791,9 +791,9 @@ def test_student_ai_chat_with_course_context(
 def test_sync004_quick_add_assignment_failure_leaves_no_question(
     client, remediation_env, monkeypatch
 ):
-    from pwd301.blueprints.instructor import routes
-    from pwd301.models.question_bank import Question
-    from pwd301.services.exceptions import AssessmentValidationError
+    from backend.blueprints.instructor import routes
+    from backend.models.question_bank import Question
+    from backend.services.exceptions import AssessmentValidationError
 
     inst = remediation_env["instructor"]
     asm = create_assessment(
@@ -838,7 +838,7 @@ def test_sync004_quick_add_assignment_failure_leaves_no_question(
     ],
 )
 def test_sync004_quick_add_ack_loss_retry_reuses_question(client, remediation_env, question_fields):
-    from pwd301.models.question_bank import Question
+    from backend.models.question_bank import Question
 
     inst = remediation_env["instructor"]
     asm = create_assessment(
@@ -867,7 +867,7 @@ def test_sync004_quick_add_ack_loss_retry_reuses_question(client, remediation_en
     assert changed.status_code == 409
     db.session.expire_all()
     assert db.session.query(Question).filter_by(course_id=asm.course_id).count() == 1
-    from pwd301.models.types import utc_now
+    from backend.models.types import utc_now
 
     asm.first_attempt_started_at = utc_now()
     db.session.commit()
@@ -884,7 +884,7 @@ def test_sync004_quick_add_ack_loss_retry_reuses_question(client, remediation_en
 
 @pytest.mark.parametrize("points", [0, -1, float("nan"), float("inf")])
 def test_sync004_quick_add_invalid_points_leave_no_question(client, remediation_env, points):
-    from pwd301.models.question_bank import Question
+    from backend.models.question_bank import Question
 
     inst = remediation_env["instructor"]
     asm = create_assessment(
@@ -939,7 +939,7 @@ def test_sync004_quick_add_retry_key_cannot_cross_assessment(client, remediation
 
 
 def test_sync079_authoring_is_atomic_and_retry_preserves_question_identity(client, remediation_env):
-    from pwd301.models.question_bank import Question
+    from backend.models.question_bank import Question
 
     inst = remediation_env["instructor"]
     asm = create_assessment(
@@ -986,7 +986,7 @@ def test_sync079_authoring_is_atomic_and_retry_preserves_question_identity(clien
 
 @pytest.mark.parametrize("difficulty", ["ANALYZE", "EVALUATE", "CREATE"])
 def test_sync024_authoring_rejects_noncanonical_bloom(client, remediation_env, difficulty):
-    from pwd301.models.question_bank import Question
+    from backend.models.question_bank import Question
 
     inst = remediation_env["instructor"]
     asm = create_assessment(
@@ -1022,7 +1022,7 @@ def test_sync024_authoring_rejects_noncanonical_bloom(client, remediation_env, d
 
 
 def test_sync079_assessment_creation_retry_retains_identity(client, remediation_env):
-    from pwd301.models.assessment import Assessment
+    from backend.models.assessment import Assessment
 
     inst = remediation_env["instructor"]
     course = remediation_env["course"]
@@ -1041,8 +1041,8 @@ def test_sync079_assessment_creation_retry_retains_identity(client, remediation_
 
 @pytest.mark.parametrize("change", ["title", "content", "points"])
 def test_sync079_publish_rejects_changed_authoring_snapshot(client, remediation_env, change):
-    from pwd301.models.assessment import AssessmentQuestionAssignment
-    from pwd301.services.question_bank_service import update_question
+    from backend.models.assessment import AssessmentQuestionAssignment
+    from backend.services.question_bank_service import update_question
 
     actor = remediation_env["instructor"]
     asm = create_assessment(
@@ -1125,7 +1125,7 @@ def test_sync079_matching_authoring_token_publishes_and_remains_idempotent(clien
     detail = client.get(f"/instructor/assessments/{asm.public_id}").get_json()
     assert detail["authoring_token"] == token
     assert detail["status"] == "PUBLISHED"
-    from pwd301.services.assessment_service import get_assessment_detail
+    from backend.services.assessment_service import get_assessment_detail
 
     student_detail = get_assessment_detail(remediation_env["student"], asm.id)
     assert "authoring_token" not in student_detail
@@ -1133,7 +1133,7 @@ def test_sync079_matching_authoring_token_publishes_and_remains_idempotent(clien
 
 @pytest.mark.parametrize("operation", ["academic", "authoring"])
 def test_composite_mutations_use_standard_json_envelopes(client, remediation_env, operation):
-    from pwd301.services.assessment_service import create_assessment
+    from backend.services.assessment_service import create_assessment
 
     actor = remediation_env["instructor"]
     csrf = login_session(client, actor.email)

@@ -4,17 +4,17 @@ import json
 
 import pytest
 
-from pwd301.extensions import db
-from pwd301.models.course import CourseChangeRequest, CoursePrerequisite, LearningUnit, Lesson
-from pwd301.models.types import utc_now
-from pwd301.services.completion_service import (
+from backend.extensions import db
+from backend.models.course import CourseChangeRequest, CoursePrerequisite, LearningUnit, Lesson
+from backend.models.types import utc_now
+from backend.services.completion_service import (
     get_or_create_default_completion_rule,
     set_course_completion_rule,
 )
-from pwd301.services.course_service import create_course, update_course
-from pwd301.services.enrollment_service import add_course_prerequisite
-from pwd301.services.exceptions import ConflictError, CourseValidationError
-from pwd301.services.lesson_service import (
+from backend.services.course_service import create_course, update_course
+from backend.services.enrollment_service import add_course_prerequisite
+from backend.services.exceptions import ConflictError, CourseValidationError
+from backend.services.lesson_service import (
     approve_course_change_request,
     create_learning_unit,
     create_lesson,
@@ -52,7 +52,7 @@ def test_prerequisite_session_route_handles_composite_key(
 def test_jwt_lesson_edit_uses_saved_aggregate_without_fragment(
     app, client, published_course, instructor_user
 ):
-    from pwd301.services.jwt_auth_service import create_token_pair
+    from backend.services.jwt_auth_service import create_token_pair
 
     course, lesson = published_course
     token = create_token_pair(instructor_user)["access_token"]
@@ -74,8 +74,8 @@ def test_jwt_lesson_edit_uses_saved_aggregate_without_fragment(
 def test_jwt_discard_persists_the_working_lesson_change(
     app, client, published_course, instructor_user
 ):
-    from pwd301.services.jwt_auth_service import create_token_pair
-    from pwd301.services.lesson_service import create_lesson_change_request
+    from backend.services.jwt_auth_service import create_token_pair
+    from backend.services.lesson_service import create_lesson_change_request
 
     course, original = published_course
     _, draft = create_lesson_change_request(
@@ -101,7 +101,7 @@ def test_jwt_discard_persists_the_working_lesson_change(
 def test_jwt_course_mutations_persist_one_draft_after_success(
     app, client, published_course, instructor_user, operation
 ):
-    from pwd301.services.jwt_auth_service import create_token_pair
+    from backend.services.jwt_auth_service import create_token_pair
 
     course, original = published_course
     base = f"/api/courses/{course.public_id}"
@@ -367,7 +367,7 @@ def test_initial_unapproved_authoring_stays_direct(app, instructor_user):
 
 
 def published_assessment(course, actor):
-    from pwd301.services.assessment_service import create_assessment
+    from backend.services.assessment_service import create_assessment
 
     item = create_assessment(
         actor,
@@ -384,7 +384,7 @@ def published_assessment(course, actor):
 def test_assessment_metadata_edit_preserves_approved_identity(
     app, published_course, instructor_user, admin_user
 ):
-    from pwd301.services.assessment_service import update_assessment
+    from backend.services.assessment_service import update_assessment
 
     course, _ = published_course
     original = published_assessment(course, admin_user)
@@ -401,8 +401,8 @@ def test_assessment_metadata_edit_preserves_approved_identity(
 def test_assessment_sections_author_in_isolated_revision(
     app, published_course, instructor_user, admin_user
 ):
-    from pwd301.models.assessment import AssessmentSection
-    from pwd301.services.assessment_service import create_section
+    from backend.models.assessment import AssessmentSection
+    from backend.services.assessment_service import create_section
 
     course, _ = published_course
     original = published_assessment(course, admin_user)
@@ -416,7 +416,7 @@ def test_assessment_sections_author_in_isolated_revision(
 def test_pending_course_review_blocks_assessment_mutation(
     app, published_course, instructor_user, admin_user
 ):
-    from pwd301.services.assessment_service import update_assessment
+    from backend.services.assessment_service import update_assessment
 
     course, _ = published_course
     item = published_assessment(course, admin_user)
@@ -552,7 +552,7 @@ def test_recorded_approval_history_cannot_be_downgraded_to_free_authoring(
 def test_legacy_fragment_cannot_bypass_sealed_aggregate_approval(
     app, client, published_course, instructor_user, admin_user
 ):
-    from pwd301.services.course_workflow_service import review_version
+    from backend.services.course_workflow_service import review_version
     from tests.conftest import login_web_user
 
     course, _ = published_course
@@ -585,8 +585,8 @@ def test_legacy_fragment_cannot_bypass_sealed_aggregate_approval(
 def test_approved_initial_lessons_are_immutable_before_first_publish(
     app, instructor_user, admin_user
 ):
-    from pwd301.services.course_service import change_course_status
-    from pwd301.services.lesson_service import update_lesson
+    from backend.services.course_service import change_course_status
+    from backend.services.lesson_service import update_lesson
 
     course = create_course(
         instructor_user,
@@ -624,7 +624,7 @@ def test_approved_initial_lessons_are_immutable_before_first_publish(
 def test_legacy_prerequisite_review_cannot_create_unsealed_live_edge(
     app, instructor_user, published_course
 ):
-    from pwd301.services.enrollment_service import review_prerequisite_request
+    from backend.services.enrollment_service import review_prerequisite_request
 
     course, _ = published_course
     other = create_course(
@@ -644,8 +644,8 @@ def test_legacy_prerequisite_review_cannot_create_unsealed_live_edge(
 def test_two_cycle_approval_clears_live_markers_and_updates_fingerprint(
     app, instructor_user, admin_user, published_course
 ):
-    from pwd301.services.course_workflow_service import course_review_version
-    from pwd301.services.lesson_service import (
+    from backend.services.course_workflow_service import course_review_version
+    from backend.services.lesson_service import (
         approve_course_change_request,
         submit_course_changeset,
         update_lesson,

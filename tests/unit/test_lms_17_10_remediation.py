@@ -13,20 +13,20 @@ import uuid
 import pytest
 from flask import Flask
 
-from pwd301.blueprints.instructor.routes import validate_course_publish_readiness
-from pwd301.extensions import db
-from pwd301.models.course import LearningUnit, Lesson
-from pwd301.models.identity import Role, User
-from pwd301.services.course_service import create_course
-from pwd301.services.exceptions import (
+from backend.blueprints.instructor.routes import validate_course_publish_readiness
+from backend.extensions import db
+from backend.models.course import LearningUnit, Lesson
+from backend.models.identity import Role, User
+from backend.services.course_service import create_course
+from backend.services.exceptions import (
     AuditPersistenceError,
     LessonStateViolationError,
 )
-from pwd301.services.lesson_service import (
+from backend.services.lesson_service import (
     TRASH_POSITION_BASE,
     delete_learning_unit,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -151,7 +151,7 @@ def test_audit_persistence_error_sanitization_in_api_response(app: Flask) -> Non
     client = app.test_client()
 
     with app.app_context():
-        from pwd301 import DOMAIN_EXCEPTION_HANDLERS
+        from backend import DOMAIN_EXCEPTION_HANDLERS
         code, status = DOMAIN_EXCEPTION_HANDLERS[AuditPersistenceError]
         assert code == "AUDIT_PERSISTENCE_FAILED"
         assert status == 500
@@ -173,7 +173,7 @@ def test_audit_persistence_error_sanitization_in_api_response(app: Flask) -> Non
 def test_staged_chapter_deletion_and_diff(app: Flask, instructor_user: User) -> None:
     """Verify that deleting a chapter in a published course stages DELETE_LEARNING_UNIT,
     cascades child lessons, blocks adding new lessons in that deleted unit, and displays in get_course_changeset_diff."""
-    from pwd301.services.lesson_service import (
+    from backend.services.lesson_service import (
         LessonValidationError,
         create_learning_unit,
         create_lesson,

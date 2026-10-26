@@ -8,12 +8,12 @@ from typing import Any
 import pytest
 from flask.testing import FlaskClient
 
-from pwd301.extensions import db
-from pwd301.models.course import Course, LearningUnit, Lesson
-from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import AuditEvent, Notification, NotificationEvent
-from pwd301.services.jwt_auth_service import create_token_pair
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.extensions import db
+from backend.models.course import Course, LearningUnit, Lesson
+from backend.models.identity import Role, User
+from backend.models.notification_audit import AuditEvent, Notification, NotificationEvent
+from backend.services.jwt_auth_service import create_token_pair
+from backend.services.user_service import assign_role_to_user, register_user
 from tests.conftest import login_web_user
 
 
@@ -338,7 +338,7 @@ def test_lesson_flag_rolls_back_when_owner_notification_fails(
     def fail_dispatch(*args: object, **kwargs: object) -> tuple[None, None]:
         raise RuntimeError("notification sink unavailable")
 
-    monkeypatch.setattr("pwd301.services.notification_service.dispatch_notification", fail_dispatch)
+    monkeypatch.setattr("backend.services.notification_service.dispatch_notification", fail_dispatch)
     response = client.post(
         f"/api/admin/courses/{course.public_id}/lessons/{lesson.public_id}/flag",
         json={"reason": "abcde"},

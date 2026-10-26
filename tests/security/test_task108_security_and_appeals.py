@@ -23,18 +23,18 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.attempt_regrade import AssessmentAppeal
-from pwd301.models.course import Course
-from pwd301.models.identity import Role, User
-from pwd301.services.course_service import (
+from backend.extensions import db
+from backend.models.attempt_regrade import AssessmentAppeal
+from backend.models.course import Course
+from backend.models.identity import Role, User
+from backend.services.course_service import (
     create_course,
     hard_delete_draft_course,
     trash_course,
 )
-from pwd301.services.exceptions import ForbiddenError, ValidationError
-from pwd301.services.jwt_auth_service import create_token_pair
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.exceptions import ForbiddenError, ValidationError
+from backend.services.jwt_auth_service import create_token_pair
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -141,9 +141,9 @@ def test_instructor_appeals_route_bola_defense(
     )
 
     # Create dummy attempt or mock appeal
-    from pwd301.models.assessment import Assessment, AssessmentSection
-    from pwd301.models.attempt_regrade import AssessmentAttempt
-    from pwd301.models.course import Enrollment, EnrollmentPeriod
+    from backend.models.assessment import Assessment, AssessmentSection
+    from backend.models.attempt_regrade import AssessmentAttempt
+    from backend.models.course import Enrollment, EnrollmentPeriod
 
     enrollment = Enrollment(
         student_user_id=student_charlie.id,
@@ -237,9 +237,9 @@ def test_appeal_score_bounds_and_validation(
         instructor_alice,
         {"course_code": f"BND-{uuid.uuid4().hex[:4].upper()}", "title": "Bounds Test Course"},
     )
-    from pwd301.models.assessment import Assessment
-    from pwd301.models.attempt_regrade import AssessmentAttempt
-    from pwd301.models.course import Enrollment, EnrollmentPeriod
+    from backend.models.assessment import Assessment
+    from backend.models.attempt_regrade import AssessmentAttempt
+    from backend.models.course import Enrollment, EnrollmentPeriod
 
     enrollment = Enrollment(
         student_user_id=student_charlie.id,

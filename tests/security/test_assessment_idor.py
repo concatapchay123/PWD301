@@ -6,11 +6,11 @@ import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.assessment import Assessment
-from pwd301.models.course import Course
-from pwd301.models.identity import Role, User
-from pwd301.services.assessment_service import (
+from backend.extensions import db
+from backend.models.assessment import Assessment
+from backend.models.course import Course
+from backend.models.identity import Role, User
+from backend.services.assessment_service import (
     assign_question,
     create_assessment,
     create_section,
@@ -20,14 +20,14 @@ from pwd301.services.assessment_service import (
     trash_assessment,
     update_assessment,
 )
-from pwd301.services.course_service import create_course
-from pwd301.services.exceptions import (
+from backend.services.course_service import create_course
+from backend.services.exceptions import (
     AssessmentNotFoundError,
     AssessmentValidationError,
     ForbiddenError,
 )
-from pwd301.services.question_bank_service import create_question
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.question_bank_service import create_question
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture

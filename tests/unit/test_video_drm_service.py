@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from pwd301.services.video_drm_service import (
+from backend.services.video_drm_service import (
     generate_key_token,
     transcode_to_encrypted_hls,
     verify_key_token,
@@ -115,7 +115,7 @@ def test_drm_key_token_12_hour_validity() -> None:
     """Task R3: DRM key token default validity is 12 hours (43,200 seconds)."""
     from unittest.mock import patch
 
-    from pwd301.services.video_drm_service import DEFAULT_DRM_KEY_TOKEN_EXPIRATION_SECONDS
+    from backend.services.video_drm_service import DEFAULT_DRM_KEY_TOKEN_EXPIRATION_SECONDS
 
     assert DEFAULT_DRM_KEY_TOKEN_EXPIRATION_SECONDS == 43_200
 

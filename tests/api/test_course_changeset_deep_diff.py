@@ -17,15 +17,15 @@ import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.seeds.baseline import seed_baseline
-from pwd301.services.course_service import create_course
-from pwd301.services.lesson_service import (
+from backend.extensions import db
+from backend.seeds.baseline import seed_baseline
+from backend.services.course_service import create_course
+from backend.services.lesson_service import (
     create_learning_unit,
     create_lesson,
     get_course_changeset_diff,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -35,7 +35,7 @@ def deep_diff_env(app: Flask) -> dict[str, Any]:
     seed_baseline(sess)
 
     inst_user = register_user(
-        email="inst_diff@pwd301.local",
+        email="inst_diff@backend.local",
         password="Password@123",
         display_name="TS. Giảng Viên Diff Test",
         session=sess,
@@ -43,7 +43,7 @@ def deep_diff_env(app: Flask) -> dict[str, Any]:
     assign_role_to_user(inst_user.id, "INSTRUCTOR", session=sess)
 
     admin_user = register_user(
-        email="admin_diff@pwd301.local",
+        email="admin_diff@backend.local",
         password="Password@123",
         display_name="Quản Trị Viên Kiểm Thử",
         session=sess,
@@ -171,7 +171,7 @@ def test_deep_diff_detects_question_bank_revisions(deep_diff_env: dict[str, Any]
     inst = deep_diff_env["instructor"]
     course = deep_diff_env["course"]
 
-    from pwd301.services.question_bank_service import create_question
+    from backend.services.question_bank_service import create_question
 
     q = create_question(
         actor=inst,
@@ -225,7 +225,7 @@ def test_deep_diff_detects_prerequisite_changes_with_human_readable_titles(
     prereq_course.status = "PUBLISHED"
     sess.commit()
 
-    from pwd301.services.course_workflow_service import stage_prerequisite
+    from backend.services.course_workflow_service import stage_prerequisite
 
     stage_prerequisite(
         actor=inst, course=course, prerequisite=prereq_course, remove=False, session=sess
@@ -250,8 +250,8 @@ def test_deep_diff_detects_standalone_file_assets(deep_diff_env: dict[str, Any])
     import io
     from unittest.mock import patch
 
-    from pwd301.services.file_service import store_file_stream
-    from pwd301.services.scanner_service import ScanVerdict
+    from backend.services.file_service import store_file_stream
+    from backend.services.scanner_service import ScanVerdict
 
     sess: Session = db.session
     inst = deep_diff_env["instructor"]
@@ -259,8 +259,8 @@ def test_deep_diff_detects_standalone_file_assets(deep_diff_env: dict[str, Any])
 
     scan = ScanVerdict(status="PASS", engine_name="fixture")
     with (
-        patch("pwd301.services.file_service.scan_file_all_engines", return_value=[scan]),
-        patch("pwd301.services.file_service.scan_blob_file", return_value=scan),
+        patch("backend.services.file_service.scan_file_all_engines", return_value=[scan]),
+        patch("backend.services.file_service.scan_blob_file", return_value=scan),
     ):
         fa = store_file_stream(
             inst,
@@ -291,7 +291,7 @@ def test_deep_diff_zero_false_positive_when_rules_and_cover_untouched(
     inst = deep_diff_env["instructor"]
     course = deep_diff_env["course"]
 
-    from pwd301.services.course_workflow_service import stage_course_fields, working_changeset
+    from backend.services.course_workflow_service import stage_course_fields, working_changeset
 
     # Stage metadata with exact same title and completion rules
     stage_course_fields(
@@ -356,7 +356,7 @@ def test_deep_diff_detects_academic_divisions_and_trailer_contact(
     inst = deep_diff_env["instructor"]
     course = deep_diff_env["course"]
 
-    from pwd301.services.course_workflow_service import stage_course_fields
+    from backend.services.course_workflow_service import stage_course_fields
 
     # Stage new trailer_url and changed GPA threshold
     stage_course_fields(

@@ -252,13 +252,16 @@ test('VideoArmor Global Security Shield: install, detect shortcuts, trigger lock
   assert.equal(VideoArmor.checkShortcutViolation({ key: 's', ctrlKey: true, shiftKey: true }), 'SCREEN_CAPTURE_ATTEMPT');
   assert.equal(VideoArmor.checkShortcutViolation({ key: 'a', ctrlKey: false }), null);
 
-  // 4. Trigger Global Lockdown
+  // 4. Trigger Global Lockdown (in active exam context)
+  const qViewport = env.mockDocument.createElement('div');
+  qViewport.id = 'questions-viewport';
+  env.mockBody.appendChild(qViewport);
   await VideoArmor.triggerGlobalLockdown('DEVTOOLS_DETECTED');
 
   // Verify Blackout Shield mounted in DOM
   const shield = env.mockDocument.getElementById('global-security-blackout-shield');
   assert.ok(shield, 'Global blackout shield must be created in document.body');
-  assert.ok(shield.innerHTML.includes('🛡️ CẢNH BÁO AN NINH HỆ THỐNG'), 'Shield must display official security warning title');
+  assert.ok(shield.innerHTML.includes('CẢNH BÁO AN NINH HỆ THỐNG'), 'Shield must display official security warning title');
   assert.ok(shield.innerHTML.includes('PHÁT HIỆN CÔNG CỤ DEVTOOLS / MÃ NGUỒN'), 'Shield must specify detection reason');
   assert.ok(shield.innerHTML.includes('SV20261018'), 'Shield must display forensic watermark identifier');
 
@@ -292,7 +295,7 @@ test('AuthView renders security alert banner when pwd301_security_alert is prese
   env.mockSessionStorage.setItem('pwd301_security_alert', 'Cảnh báo an ninh: Phiên làm việc đã bị thu hồi do phát hiện hành vi vi phạm chính sách bảo mật hệ thống.');
   const alertHtml = AuthView.render();
   assert.ok(alertHtml.includes('id="auth-security-alert-banner"'), 'Security banner must render when pwd301_security_alert is set');
-  assert.ok(alertHtml.includes('🛡️ CẢNH BÁO AN NINH HỆ THỐNG'), 'Banner must display security alert title');
+  assert.ok(alertHtml.includes('CẢNH BÁO AN NINH HỆ THỐNG'), 'Banner must display security alert title');
   assert.ok(alertHtml.includes('Phiên làm việc đã bị thu hồi'), 'Banner must display revocation notice');
 });
 
@@ -326,6 +329,7 @@ test('InstructorView.openCourseDocumentTreeModal renders hierarchical document t
               {
                 type: 'document',
                 files: [
+                  { filename: 'syllabus.pdf', file_size_bytes: 250000, asset_id: 'ast-gen-1' },
                   { filename: 'dom_guide.docx', file_size_bytes: 520000, asset_id: 'ast-les-1' }
                 ]
               }

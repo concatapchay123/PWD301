@@ -9,12 +9,12 @@ import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import Course, Lesson
-from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import AuditEvent
-from pwd301.models.question_bank import Question
-from pwd301.services.assessment_service import (
+from backend.extensions import db
+from backend.models.course import Course, Lesson
+from backend.models.identity import Role, User
+from backend.models.notification_audit import AuditEvent
+from backend.models.question_bank import Question
+from backend.services.assessment_service import (
     _serialize_assessment,
     assign_question,
     cancel_assessment,
@@ -30,15 +30,15 @@ from pwd301.services.assessment_service import (
     trash_assessment,
     update_assessment,
 )
-from pwd301.services.course_service import create_course
-from pwd301.services.exceptions import (
+from backend.services.course_service import create_course
+from backend.services.exceptions import (
     AssessmentLockedError,
     AssessmentValidationError,
     BlueprintValidationError,
 )
-from pwd301.services.lesson_service import create_lesson
-from pwd301.services.question_bank_service import create_question
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.lesson_service import create_lesson
+from backend.services.question_bank_service import create_question
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -704,7 +704,7 @@ def test_trash_and_30_day_restore_policy(app: Flask, course: Course, instructor_
 
 
 def test_sync080_learning_unit_must_belong_to_course(app, instructor_user, course):
-    from pwd301.models.course import LearningUnit
+    from backend.models.course import LearningUnit
 
     other = create_course(instructor_user, {"course_code": "OTHER-UNIT", "title": "Other"})
     unit = LearningUnit(course_id=other.id, title="Foreign chapter", position=1)
@@ -723,7 +723,7 @@ def test_sync080_learning_unit_must_belong_to_course(app, instructor_user, cours
 
 
 def test_sync080_deleted_same_course_learning_unit_rejected(app, instructor_user, course):
-    from pwd301.models.course import LearningUnit
+    from backend.models.course import LearningUnit
 
     unit = LearningUnit(
         course_id=course.id, title="Deleted chapter", position=1, deleted_at=datetime.now(UTC)

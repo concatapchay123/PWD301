@@ -26,6 +26,10 @@ class ApiClient {
     return '';
   }
 
+  static getToken() {
+    return '';
+  }
+
   static async ensureCsrfToken(forceRefresh = false) {
     let token = forceRefresh ? '' : ApiClient.getCsrfToken();
     if (!token || forceRefresh) {
@@ -49,8 +53,15 @@ class ApiClient {
   }
 
   static formatApiErrorMessage(data, status) {
-    const rawMsg = (data && data.error && data.error.message) || data?.message || '';
-    const code = (data && data.error && data.error.code) || '';
+    let rawMsg = '';
+    if (typeof data?.error === 'string') {
+      rawMsg = data.error;
+    } else if (data && data.error && typeof data.error.message === 'string') {
+      rawMsg = data.error.message;
+    } else if (typeof data?.message === 'string') {
+      rawMsg = data.message;
+    }
+    const code = (data && data.error && typeof data.error === 'object' && data.error.code) || data?.code || '';
 
     // If message already contains Vietnamese characters, respect it directly
     const hasVietnamese = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(rawMsg);
@@ -251,9 +262,32 @@ class ApiClient {
   }
 
   static async login(email, password, remember = false) {
+    let body = { email, password, remember };
+
+    // Hybrid WebCrypto in-transit encryption
+    const cryptoHelper = (typeof window !== 'undefined' && window.CryptoHelper)
+      ? window.CryptoHelper
+      : (typeof CryptoHelper !== 'undefined' ? CryptoHelper : null);
+
+    if (cryptoHelper && typeof cryptoHelper.encryptLoginPayload === 'function') {
+      try {
+        const envelope = await cryptoHelper.encryptLoginPayload(email, password);
+        if (envelope && envelope.prefix === 'PPTQ LMS') {
+          console.info('🛡️ [PPTQ LMS In-Transit Encryption] Gói tin đăng nhập đã được mã hóa lai (RSA-OAEP 2048 + AES-GCM 256):', envelope);
+          body = {
+            encrypted_envelope: envelope,
+            remember: Boolean(remember),
+          };
+        }
+      } catch (cryptoErr) {
+        console.warn('[ApiClient] Hybrid login encryption unavailable or failed, falling back:', cryptoErr.message || cryptoErr);
+        body = { email, password, remember };
+      }
+    }
+
     const res = await ApiClient.request('/auth/login', {
       method: 'POST',
-      body: { email, password, remember },
+      body,
     });
     if (res && res.csrf_token) {
       ApiClient._cachedCsrf = res.csrf_token;
@@ -262,9 +296,31 @@ class ApiClient {
   }
 
   static async register(name, email, password) {
+    let body = { name, email, password };
+
+    // Hybrid WebCrypto in-transit encryption
+    const cryptoHelper = (typeof window !== 'undefined' && window.CryptoHelper)
+      ? window.CryptoHelper
+      : (typeof CryptoHelper !== 'undefined' ? CryptoHelper : null);
+
+    if (cryptoHelper && typeof cryptoHelper.encryptRegisterPayload === 'function') {
+      try {
+        const envelope = await cryptoHelper.encryptRegisterPayload(name, email, password);
+        if (envelope && envelope.prefix === 'PPTQ LMS') {
+          console.info('🛡️ [PPTQ LMS In-Transit Encryption] Gói tin đăng ký đã được mã hóa lai (RSA-OAEP 2048 + AES-GCM 256):', envelope);
+          body = {
+            encrypted_envelope: envelope,
+          };
+        }
+      } catch (cryptoErr) {
+        console.warn('[ApiClient] Hybrid registration encryption unavailable or failed, falling back:', cryptoErr.message || cryptoErr);
+        body = { name, email, password };
+      }
+    }
+
     return await ApiClient.request('/auth/register', {
       method: 'POST',
-      body: { name, email, password },
+      body,
     });
   }
 
@@ -281,10 +337,17 @@ class ApiClient {
     });
   }
 
-  static async forgotPassword(email) {
+  static async forgotPassword(email, displayName = '') {
     return await ApiClient.request('/auth/forgot-password', {
       method: 'POST',
-      body: { email },
+      body: { email, display_name: displayName },
+    });
+  }
+
+
+  static async verifyResetPasswordToken(token) {
+    return await ApiClient.request(`/auth/reset-password/${encodeURIComponent(token)}`, {
+      method: 'GET',
     });
   }
 
@@ -452,6 +515,52 @@ class ApiClient {
 
   static async getStudentEnrollments() {
     return await ApiClient.request('/student/my-learning');
+  }
+
+  static async getStudentCourseCompletion(courseId) {
+    return await ApiClient.request(`/student/courses/${encodeURIComponent(courseId)}/completion`);
+  }
+
+  static async downloadCertificate(courseId, courseCode = 'PPTQ') {
+    if (!courseId) {
+      if (typeof UI !== 'undefined') UI.showToast('Mã khóa học không hợp lệ.', 'warning');
+      return;
+    }
+
+    try {
+      // Lightweight preflight completion verification
+      try {
+        const comp = await ApiClient.request(`/student/courses/${encodeURIComponent(courseId)}/completion`).catch(() => null);
+        if (comp && comp.data) {
+          const cData = comp.data;
+          if (cData.is_completed === false && cData.ever_completed === false) {
+            if (typeof UI !== 'undefined') UI.showToast('Học viên chưa hoàn thành đủ bài học và bài thi để được cấp chứng chỉ.', 'warning');
+            return;
+          }
+        }
+      } catch (_) {}
+
+      // Native Download Stream: Trigger direct browser download stream via virtual anchor click
+      // Eliminates JS heap allocation, memory spikes, and silent iframe HTML trapping
+      const cleanCode = String(courseCode || 'PPTQ').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const streamUrl = `/student/courses/${encodeURIComponent(courseId)}/certificate`;
+
+      const link = document.createElement('a');
+      link.href = streamUrl;
+      link.setAttribute('download', `Chung_chi_${cleanCode}.pdf`);
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => {
+        if (link.parentNode) {
+          link.parentNode.removeChild(link);
+        }
+      }, 1000);
+    } catch (err) {
+      console.error('[ApiClient] downloadCertificate error:', err);
+      // Fallback: direct window trigger
+      window.location.assign(`/student/courses/${encodeURIComponent(courseId)}/certificate`);
+    }
   }
 
   static async getStudentCourseProgress(courseId) {
@@ -1088,12 +1197,17 @@ class ApiClient {
   static async uploadCourseFile(courseId, file, title = file.name, assetType = 'RESOURCE') {
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('title', title);
+    formData.append('title', title || (file && file.name) || 'course_file');
     formData.append('asset_type', assetType);
-    return await ApiClient.request(`/instructor/courses/${courseId}/files`, {
+    const csrf = ApiClient.getCsrfToken();
+    if (csrf) {
+      formData.append('csrf_token', csrf);
+    }
+    const res = await ApiClient.request(`/instructor/courses/${courseId}/files`, {
       method: 'POST',
       body: formData
     });
+    return res;
   }
 
   static async batchCreateAssessmentQuestions(assessmentId, questions) {
@@ -1694,9 +1808,10 @@ class ApiClient {
     return await ApiClient.request('/admin/cashflow/transactions' + qs);
   }
 
-  static async verifyAdminCashflowTransaction(txId) {
+  static async verifyAdminCashflowTransaction(txId, formDataOrBody) {
     return await ApiClient.request('/admin/cashflow/verify/' + txId, {
-      method: 'POST'
+      method: 'POST',
+      body: formDataOrBody
     });
   }
 
@@ -1717,8 +1832,8 @@ class ApiClient {
     return await ApiClient.getAdminCashflowTransactions(options);
   }
 
-  static async verifyCashflowTransaction(txId) {
-    return await ApiClient.verifyAdminCashflowTransaction(txId);
+  static async verifyCashflowTransaction(txId, formDataOrBody) {
+    return await ApiClient.verifyAdminCashflowTransaction(txId, formDataOrBody);
   }
 
   static async revokeCashflowTransaction(txId, reason = '') {

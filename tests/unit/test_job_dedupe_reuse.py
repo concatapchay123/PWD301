@@ -1,5 +1,5 @@
-from pwd301.extensions import db
-from pwd301.services.background_job_service import enqueue_background_job
+from backend.extensions import db
+from backend.services.background_job_service import enqueue_background_job
 
 
 def test_terminal_job_does_not_block_future_deduplicated_job(app):

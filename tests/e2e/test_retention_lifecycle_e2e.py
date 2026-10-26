@@ -33,66 +33,66 @@ import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.ai_rag import AIConversation, AIMessage
-from pwd301.models.assessment import (
+from backend.extensions import db
+from backend.models.ai_rag import AIConversation, AIMessage
+from backend.models.assessment import (
     Assessment,
 )
-from pwd301.models.attempt_regrade import (
+from backend.models.attempt_regrade import (
     AttemptAnswer,
     AttemptAnswerEvent,
     AttemptQuestion,
 )
-from pwd301.models.course import (
+from backend.models.course import (
     Course,
     CourseCompletionSummary,
     EnrollmentEvent,
     LessonProgress,
 )
-from pwd301.models.file_import import FileAsset
-from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import AuditEvent
-from pwd301.models.question_bank import Question
-from pwd301.models.types import utc_now
-from pwd301.services.assessment_service import (
+from backend.models.file_import import FileAsset
+from backend.models.identity import Role, User
+from backend.models.notification_audit import AuditEvent
+from backend.models.question_bank import Question
+from backend.models.types import utc_now
+from backend.services.assessment_service import (
     assign_question,
     create_assessment,
     create_section,
     publish_assessment,
 )
-from pwd301.services.attempt_service import (
+from backend.services.attempt_service import (
     save_attempt_answer,
     start_assessment_attempt,
     submit_assessment_attempt,
 )
-from pwd301.services.completion_service import (
+from backend.services.completion_service import (
     set_course_completion_rule,
 )
-from pwd301.services.course_service import change_course_status, create_course
-from pwd301.services.enrollment_service import (
+from backend.services.course_service import change_course_status, create_course
+from backend.services.enrollment_service import (
     add_course_prerequisite,
     enroll_student,
     leave_course,
 )
-from pwd301.services.file_service import (
+from backend.services.file_service import (
     get_file_storage_root,
     restore_file_asset,
     store_file_stream,
     trash_file_asset,
 )
-from pwd301.services.lesson_service import (
+from backend.services.lesson_service import (
     change_lesson_status,
     create_lesson,
     record_lesson_progress,
 )
-from pwd301.services.question_bank_service import create_question
-from pwd301.services.retention_service import (
+from backend.services.question_bank_service import create_question
+from backend.services.retention_service import (
     prune_trash_entities,
     purge_expired_ai_messages,
     purge_expired_enrollment_details,
     run_full_retention_cycle,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture

@@ -15,7 +15,7 @@ import unittest.mock
 from pathlib import Path
 from typing import Any
 
-from pwd301.services.gemini_service import (
+from backend.services.gemini_service import (
     GeminiKeyPool,
     GeminiKeyStatus,
     RealGeminiClient,

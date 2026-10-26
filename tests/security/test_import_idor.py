@@ -20,17 +20,17 @@ import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import Course
-from pwd301.models.file_import import FileAsset, FileScanResult
-from pwd301.models.identity import Role, User
-from pwd301.services.course_service import create_course
-from pwd301.services.exceptions import (
+from backend.extensions import db
+from backend.models.course import Course
+from backend.models.file_import import FileAsset, FileScanResult
+from backend.models.identity import Role, User
+from backend.services.course_service import create_course
+from backend.services.exceptions import (
     FileSecurityQuarantineError,
     ForbiddenError,
 )
-from pwd301.services.file_service import store_file_stream
-from pwd301.services.import_service import (
+from backend.services.file_service import store_file_stream
+from backend.services.import_service import (
     cancel_import_job,
     commit_import_job,
     create_import_job,
@@ -39,7 +39,7 @@ from pwd301.services.import_service import (
     set_import_question_decision,
     update_import_question,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 def create_sample_docx(paragraphs: list[str]) -> bytes:

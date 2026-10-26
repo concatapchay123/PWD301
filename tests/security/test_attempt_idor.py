@@ -10,25 +10,25 @@ import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.assessment import Assessment
-from pwd301.models.course import Course
-from pwd301.models.identity import Role, User
-from pwd301.services.assessment_service import (
+from backend.extensions import db
+from backend.models.assessment import Assessment
+from backend.models.course import Course
+from backend.models.identity import Role, User
+from backend.services.assessment_service import (
     assign_question,
     create_assessment,
     create_section,
     publish_assessment,
 )
-from pwd301.services.attempt_service import (
+from backend.services.attempt_service import (
     get_attempt_delivery,
     start_assessment_attempt,
 )
-from pwd301.services.course_service import change_course_status, create_course
-from pwd301.services.enrollment_service import enroll_student
-from pwd301.services.exceptions import ForbiddenError
-from pwd301.services.question_bank_service import create_question
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.course_service import change_course_status, create_course
+from backend.services.enrollment_service import enroll_student
+from backend.services.exceptions import ForbiddenError
+from backend.services.question_bank_service import create_question
+from backend.services.user_service import assign_role_to_user, register_user
 
 UUID_REGEX = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",

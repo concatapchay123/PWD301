@@ -9,8 +9,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from flask import Flask
 
-from pwd301.services.exceptions import FileStorageError
-from pwd301.services.storage_adapter import (
+from backend.services.exceptions import FileStorageError
+from backend.services.storage_adapter import (
     delete_blob_from_cloud,
     download_blob_from_cloud,
     get_s3_client,
@@ -57,7 +57,7 @@ def test_storage_adapter_mock_boto3_operations(app: Flask, tmp_path: Path) -> No
 
         mock_s3 = MagicMock()
         with patch(
-            "pwd301.services.storage_adapter.get_s3_client", return_value=(mock_s3, "test-bucket")
+            "backend.services.storage_adapter.get_s3_client", return_value=(mock_s3, "test-bucket")
         ):
             # 1. Test upload
             local_file = tmp_path / "sample.bin"

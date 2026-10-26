@@ -69,18 +69,21 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: pwd301_web
+    command: ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--threads", "36", "--worker-class", "gthread", "--timeout", "120", "--max-requests", "50000", "--max-requests-jitter", "200", "--access-logfile", "/dev/null", "--error-logfile", "-", "wsgi:app"]
     ports:
       - "${PORT:-5000}:5000"
     environment:
       - APP_ENV=${APP_ENV:-development}
-      - FLASK_DEBUG=${FLASK_DEBUG:-1}
+      - FLASK_DEBUG=${FLASK_DEBUG:-0}
+      - DB_POOL_SIZE=${DB_POOL_SIZE:-50}
+      - DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-25}
       - PORT=${PORT:-5000}
       - USE_PROXY_FIX=${USE_PROXY_FIX:-true}
       - SECRET_KEY=${SECRET_KEY:-c84f88b4886f48f681aefd59d9c24097e3a985cfb8417c88}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-f71d530184ebc96328399581fa79e9515647000b217a9426f04ceb18dae172a3}
       - SESSION_COOKIE_SECURE=${SESSION_COOKIE_SECURE:-false}
       - REMEMBER_COOKIE_SECURE=${REMEMBER_COOKIE_SECURE:-false}
-      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@pwd301.local}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@backend.local}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-Admin@123456}
       - ADMIN_DISPLAY_NAME=${ADMIN_DISPLAY_NAME:-Administrator}
       - DATABASE_URL=mssql+pyodbc://${DB_USER:-sa}:${DB_PASSWORD:-AdminStrongPassw0rd!}@db:1433/${DB_NAME:-PWD301}?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes
@@ -93,6 +96,22 @@ services:
       - CLAMAV_PORT=3310
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - GEMINI_MODEL_NAME=${GEMINI_MODEL_NAME:-gemini-flash-latest}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - MAIL_HOST=${MAIL_HOST:-smtp.resend.com}
+      - MAIL_PORT=${MAIL_PORT:-587}
+      - MAIL_USERNAME=${MAIL_USERNAME:-resend}
+      - MAIL_PASSWORD=${MAIL_PASSWORD:-}
+      - MAIL_FROM=${MAIL_FROM:-Hệ thống PPTQ <noreply@pptq.id.vn>}
+      - MAIL_USE_TLS=${MAIL_USE_TLS:-1}
+      - FRONTEND_URL=${FRONTEND_URL:-https://pptq.id.vn}
+      - PPTQ_PASSWORD_PEPPER=${PPTQ_PASSWORD_PEPPER:-PPTQ_LMS_PEPPER_2026_SECURE}
+      - PAYOS_CLIENT_ID=${PAYOS_CLIENT_ID:-4499c036-1c34-4f9f-8801-e5c436c89305}
+      - PAYOS_API_KEY=${PAYOS_API_KEY:-c41ff8e9-676f-4383-858e-3dfc660a0cf0}
+      - PAYOS_CHECKSUM_KEY=${PAYOS_CHECKSUM_KEY:-70416e4bea731fa6887e4d175e4503aae1e49b938d0d9a9f6463b0e568ed6d4d}
+      - PPTQ_BANK_NAME=${PPTQ_BANK_NAME:-MBBank (MBB - Ngân hàng TMCP Quân đội)}
+      - PPTQ_BANK_BIN=${PPTQ_BANK_BIN:-970422}
+      - PPTQ_ACCOUNT_NUMBER=${PPTQ_ACCOUNT_NUMBER:-0908667141}
+      - PPTQ_ACCOUNT_NAME=${PPTQ_ACCOUNT_NAME:-PHAM NGUYEN HOANG PHUC}
       - HOST_TOTAL_RAM_GB=${HOST_TOTAL_RAM_GB:-31.7}
       - HOST_OS=${HOST_OS:-Windows 11}
       - HOST_NAME=${HOST_NAME:-DESKTOP-71A4210}
@@ -108,8 +127,9 @@ services:
       - SQLSERVER_BACKUP_ROOT=/var/opt/mssql/backups
       - EXPORT_ROOT=/app/exports
       - SEED_DEMO_DATA=${SEED_DEMO_DATA:-true}
-      - GUNICORN_WORKERS=${GUNICORN_WORKERS:-1}
-      - GUNICORN_THREADS=${GUNICORN_THREADS:-8}
+      - GUNICORN_WORKERS=${GUNICORN_WORKERS:-8}
+      - GUNICORN_THREADS=${GUNICORN_THREADS:-20}
+      - GUNICORN_WORKER_CLASS=${GUNICORN_WORKER_CLASS:-gthread}
       - GUNICORN_TIMEOUT=${GUNICORN_TIMEOUT:-120}
       - GUNICORN_MAX_REQUESTS=${GUNICORN_MAX_REQUESTS:-1000}
       - GUNICORN_MAX_REQUESTS_JITTER=${GUNICORN_MAX_REQUESTS_JITTER:-100}
@@ -125,7 +145,8 @@ services:
       retries: 15
       start_period: 10s
     volumes:
-      - ./src:/app/src
+      - ./backend:/app/backend
+      - ./scripts:/app/scripts
       - ./migrations:/app/migrations
       - ./frontend:/app/frontend
       - storage_data:/app/storage
@@ -160,7 +181,7 @@ services:
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-f71d530184ebc96328399581fa79e9515647000b217a9426f04ceb18dae172a3}
       - SESSION_COOKIE_SECURE=${SESSION_COOKIE_SECURE:-false}
       - REMEMBER_COOKIE_SECURE=${REMEMBER_COOKIE_SECURE:-false}
-      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@pwd301.local}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@backend.local}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-Admin@123456}
       - ADMIN_DISPLAY_NAME=${ADMIN_DISPLAY_NAME:-Administrator}
       - DATABASE_URL=mssql+pyodbc://${DB_USER:-sa}:${DB_PASSWORD:-AdminStrongPassw0rd!}@db:1433/${DB_NAME:-PWD301}?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes
@@ -197,7 +218,7 @@ services:
       web:
         condition: service_healthy
     volumes:
-      - ./src:/app/src
+      - ./backend:/app/backend
       - ./migrations:/app/migrations
       - storage_data:/app/storage
       - quarantine_data:/app/quarantine

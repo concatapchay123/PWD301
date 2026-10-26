@@ -19,39 +19,39 @@ import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.assessment import Assessment
-from pwd301.models.attempt_regrade import (
+from backend.extensions import db
+from backend.models.assessment import Assessment
+from backend.models.attempt_regrade import (
     AttemptAnswer,
     AttemptAnswerChoice,
     AttemptAnswerEvent,
 )
-from pwd301.models.course import Course
-from pwd301.models.identity import Role, User
-from pwd301.services.assessment_service import (
+from backend.models.course import Course
+from backend.models.identity import Role, User
+from backend.services.assessment_service import (
     assign_question,
     create_assessment,
     create_section,
     publish_assessment,
 )
-from pwd301.services.attempt_service import (
+from backend.services.attempt_service import (
     save_attempt_answer,
     start_assessment_attempt,
     submit_assessment_attempt,
     sync_offline_answers,
 )
-from pwd301.services.course_service import change_course_status, create_course
-from pwd301.services.course_workflow_service import applying_review
-from pwd301.services.enrollment_service import enroll_student
-from pwd301.services.exceptions import (
+from backend.services.course_service import change_course_status, create_course
+from backend.services.course_workflow_service import applying_review
+from backend.services.enrollment_service import enroll_student
+from backend.services.exceptions import (
     AttemptAlreadySubmittedError,
     AttemptExpiredError,
     AttemptLeaseConflictError,
     StaleAnswerSequenceError,
     StaleLeaseEpochError,
 )
-from pwd301.services.question_bank_service import create_question
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.question_bank_service import create_question
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -635,7 +635,7 @@ def test_sync059_future_epoch_rejected(app, instructor_user, published_course, e
 def test_sync028_takeover_rejects_active_owner(
     app, instructor_user, published_course, enrolled_student
 ):
-    from pwd301.services.attempt_service import takeover_attempt_lease
+    from backend.services.attempt_service import takeover_attempt_lease
 
     assessment = _make_assessment_with_questions(instructor_user, published_course)
     attempt, token = start_assessment_attempt(enrolled_student, assessment.id, session=db.session)
@@ -648,7 +648,7 @@ def test_sync059_cached_attempt_cannot_save_after_terminal_transition(
 ):
     import sqlalchemy as sa
 
-    from pwd301.models.attempt_regrade import AssessmentAttempt
+    from backend.models.attempt_regrade import AssessmentAttempt
 
     assessment = _make_assessment_with_questions(instructor_user, published_course)
     attempt, token = start_assessment_attempt(enrolled_student, assessment.id, session=db.session)
@@ -679,8 +679,8 @@ def test_sync059_cached_lease_cannot_mutate_new_owner(
 
     import sqlalchemy as sa
 
-    from pwd301.models.attempt_regrade import AssessmentAttempt
-    from pwd301.services.attempt_service import release_attempt_lease, renew_attempt_lease
+    from backend.models.attempt_regrade import AssessmentAttempt
+    from backend.services.attempt_service import release_attempt_lease, renew_attempt_lease
 
     assessment = _make_assessment_with_questions(instructor_user, published_course)
     attempt, token = start_assessment_attempt(enrolled_student, assessment.id, session=db.session)

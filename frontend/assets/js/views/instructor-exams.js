@@ -2005,7 +2005,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
               <!-- Tab Switcher -->
               <div>
                 <label class="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-2">Dạng câu hỏi</label>
-                <div class="grid grid-cols-3 gap-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs font-bold">
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs font-bold">
                   <button type="button" id="tab-btn-drag" class="py-2 rounded-lg transition-all bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-xs">
                     Kéo thả từ
                   </button>
@@ -2014,6 +2014,9 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                   </button>
                   <button type="button" id="tab-btn-match" class="py-2 rounded-lg transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900">
                     Ghép đôi
+                  </button>
+                  <button type="button" id="tab-btn-tf" class="py-2 rounded-lg transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900">
+                    Đúng / Sai
                   </button>
                 </div>
               </div>
@@ -2150,6 +2153,36 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                       <span class="text-slate-400">➔</span>
                       <input type="text" placeholder="Ví dụ: Mô phỏng khai thác lỗ hổng bảo mật" aria-label="Ý nghĩa cột B số 3" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-right" value="Mô phỏng khai thác lỗ hổng bảo mật" />
                     </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- FORM 4: Đúng / Sai (True / False) -->
+              <div id="form-container-tf" class="space-y-4 hidden">
+                <div>
+                  <label for="tf-stem-input" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Nội dung câu phát biểu (Đúng / Sai)</label>
+                  <textarea
+                    id="tf-stem-input"
+                    rows="2"
+                    aria-label="Nội dung câu phát biểu Đúng / Sai"
+                    class="w-full px-3 py-2 text-xs border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-teal-500 bg-slate-50 dark:bg-slate-800 resize-y"
+                    placeholder="Ví dụ: Phương thức mã hóa Argon2id kết hợp cả chống tấn công thời gian và bộ nhớ."
+                  ></textarea>
+                </div>
+
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Chỉ định đáp án chính xác</label>
+                  <div class="grid grid-cols-2 gap-3">
+                    <label class="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 cursor-pointer transition-all hover:border-emerald-500 has-[:checked]:border-emerald-500 has-[:checked]:bg-emerald-50/60 dark:has-[:checked]:bg-emerald-950/40">
+                      <input type="radio" name="interactive-tf-correct" value="true" checked class="text-emerald-600 focus:ring-emerald-500" />
+                      <span class="material-symbols-outlined text-emerald-600 text-[18px]">check_circle</span>
+                      <span class="text-xs font-bold text-slate-800 dark:text-slate-200">ĐÚNG (True)</span>
+                    </label>
+                    <label class="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 cursor-pointer transition-all hover:border-rose-500 has-[:checked]:border-rose-500 has-[:checked]:bg-rose-50/60 dark:has-[:checked]:bg-rose-950/40">
+                      <input type="radio" name="interactive-tf-correct" value="false" class="text-rose-600 focus:ring-rose-500" />
+                      <span class="material-symbols-outlined text-rose-600 text-[18px]">cancel</span>
+                      <span class="text-xs font-bold text-slate-800 dark:text-slate-200">SAI (False)</span>
+                    </label>
                   </div>
                 </div>
               </div>
@@ -2318,13 +2351,15 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
     const formDrag = document.getElementById('form-container-drag');
     const formFill = document.getElementById('form-container-fill');
     const formMatch = document.getElementById('form-container-match');
+    const tabBtnTf = document.getElementById('tab-btn-tf');
+    const formTf = document.getElementById('form-container-tf');
 
     const switchTab = (tab) => {
       activeTab = tab;
-      [tabBtnDrag, tabBtnFill, tabBtnMatch].forEach(b => {
+      [tabBtnDrag, tabBtnFill, tabBtnMatch, tabBtnTf].filter(Boolean).forEach(b => {
         b.className = "py-2 rounded-lg transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900";
       });
-      [formDrag, formFill, formMatch].forEach(f => f.classList.add('hidden'));
+      [formDrag, formFill, formMatch, formTf].filter(Boolean).forEach(f => f.classList.add('hidden'));
 
       if (tab === 'drag') {
         tabBtnDrag.className = "py-2 rounded-lg transition-all bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-xs";
@@ -2333,9 +2368,12 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         tabBtnFill.className = "py-2 rounded-lg transition-all bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-xs";
         formFill.classList.remove('hidden');
         if (typeof syncFillBlankColumns === 'function') syncFillBlankColumns();
-      } else {
+      } else if (tab === 'match') {
         tabBtnMatch.className = "py-2 rounded-lg transition-all bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-xs";
         formMatch.classList.remove('hidden');
+      } else if (tab === 'tf') {
+        if (tabBtnTf) tabBtnTf.className = "py-2 rounded-lg transition-all bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-xs";
+        if (formTf) formTf.classList.remove('hidden');
       }
       renderLivePreview();
     };
@@ -2343,6 +2381,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
     tabBtnDrag?.addEventListener('click', () => switchTab('drag'));
     tabBtnFill?.addEventListener('click', () => switchTab('fill'));
     tabBtnMatch?.addEventListener('click', () => switchTab('match'));
+    tabBtnTf?.addEventListener('click', () => switchTab('tf'));
 
     // Dynamic Matching Pair Adder
     document.getElementById('btn-add-match-pair')?.addEventListener('click', () => {
@@ -2557,6 +2596,29 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         previewBox.innerHTML = `
           <div class="text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-loose sm:leading-loose">
             ${stemRendered}
+          </div>
+        `;
+        UI.renderMath(previewBox);
+      } else if (activeTab === 'tf') {
+        const stem = document.getElementById('tf-stem-input')?.value.trim() || 'Nhập câu phát biểu để xem trước...';
+        const isTrueCorrect = document.querySelector('input[name="interactive-tf-correct"]:checked')?.value === 'true';
+        previewBox.innerHTML = `
+          <div class="space-y-3">
+            <div class="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 leading-relaxed">
+              ${UI.escapeHtml(stem)}
+            </div>
+            <div class="grid grid-cols-2 gap-3 max-w-md">
+              <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 flex items-center gap-2">
+                <span class="material-symbols-outlined text-emerald-500 text-[18px]">check_circle</span>
+                <span class="text-xs font-bold text-slate-700 dark:text-slate-200">Đúng (True)</span>
+                ${isTrueCorrect ? '<span class="ml-auto text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded">Đáp án đúng</span>' : ''}
+              </div>
+              <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 flex items-center gap-2">
+                <span class="material-symbols-outlined text-rose-500 text-[18px]">cancel</span>
+                <span class="text-xs font-bold text-slate-700 dark:text-slate-200">Sai (False)</span>
+                ${!isTrueCorrect ? '<span class="ml-auto text-[10px] font-bold text-rose-600 bg-rose-50 dark:bg-rose-950/60 px-1.5 py-0.5 rounded">Đáp án đúng</span>' : ''}
+              </div>
+            </div>
           </div>
         `;
         UI.renderMath(previewBox);
@@ -2823,6 +2885,29 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           interactive_type: 'MATCHING',
           pairs
         };
+      } else if (activeTab === 'tf') {
+        const stem = document.getElementById('tf-stem-input')?.value.trim() || '';
+        if (!stem) {
+          showInteractiveError('tf-stem-input', 'Vui lòng nhập nội dung câu phát biểu Đúng/Sai.');
+          return;
+        }
+        const isTrueCorrect = document.querySelector('input[name="interactive-tf-correct"]:checked')?.value === 'true';
+        newQuestion = {
+          stem,
+          question_text: stem,
+          question_type: 'TRUE_FALSE',
+          type: 'TRUE_FALSE',
+          points: pts,
+          bloom_level: bloom,
+          explanation: exp,
+          is_interactive: true,
+          interactive_type: 'TRUE_FALSE',
+          correct_value: isTrueCorrect,
+          choices: [
+            { choice_key: 'A', text: 'Đúng', answerText: 'Đúng', content: 'Đúng', is_correct: isTrueCorrect, label: 'A', position: 1 },
+            { choice_key: 'B', text: 'Sai', answerText: 'Sai', content: 'Sai', is_correct: !isTrueCorrect, label: 'B', position: 2 }
+          ]
+        };
       }
 
       if (newQuestion) {
@@ -2839,7 +2924,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         const imageStatus = document.getElementById('interactive-image-status');
         if (imageStatus) imageStatus.textContent = 'PNG, JPEG, WebP hoặc GIF dưới 5 MB. Có thể bấm Ctrl+V khi đang nhập để dán ảnh trực tiếp.';
         interactiveQuestions.push(newQuestion);
-        for (const id of ['drag-stem-input', 'fill-stem-input', 'fill-answers-input', 'match-stem-input', 'interactive-exp-input']) {
+        for (const id of ['drag-stem-input', 'fill-stem-input', 'fill-answers-input', 'match-stem-input', 'tf-stem-input', 'interactive-exp-input']) {
           const field = document.getElementById(id);
           if (field) field.value = '';
         }
@@ -2867,7 +2952,8 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         'Matching pairs': 'Ghép đôi',
         DRAG_AND_DROP: 'Kéo thả từ',
         FILL_IN_THE_BLANK: 'Điền khuyết',
-        MATCHING: 'Ghép đôi'
+        MATCHING: 'Ghép đôi',
+        TRUE_FALSE: 'Đúng / Sai'
       };
       const currentDraft = window.ExamStore.getDraft();
       const listEl = document.getElementById('interactive-questions-list');
@@ -3552,7 +3638,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
   InstructorView.renderExamMatrix = function (container) {
     const draft = window.ExamStore.getDraft();
     const questions = draft.questions || [];
-    let currentAcademicMode = draft.academicMode || 'independent';
+    let currentAcademicMode = draft.academicMode || (draft.isFinal ? 'course_final' : (draft.learningUnitId ? 'chapter_linked' : 'chapter_linked'));
     let currentCourseId = draft.courseId || '';
     let currentUnitId = draft.learningUnitId || '';
     let currentLessonId = draft.lessonId || '';
@@ -3654,19 +3740,27 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
 
             <!-- Select the assessment scope explicitly. -->
             <div class="grid grid-cols-1 gap-4" id="matrix-mode-selector-group">
+              <label class="relative flex p-4 cursor-pointer rounded-xl border-2 transition-all ${currentAcademicMode === 'chapter_linked' ? 'border-indigo-600 bg-indigo-50/20 dark:bg-indigo-950/20 shadow-xs' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-slate-300'}">
+                <input type="radio" name="matrix_academic_mode" value="chapter_linked" ${currentAcademicMode === 'chapter_linked' ? 'checked' : ''} class="h-4 w-4 mt-0.5 text-indigo-600 focus:ring-indigo-500" />
+                <div class="ml-3">
+                  <span class="block text-sm font-bold text-slate-900 dark:text-slate-100">Kiểm tra theo Chương (QUIZ)</span>
+                  <span class="block text-xs text-slate-500 mt-0.5">Bài kiểm tra tổng hợp nội dung của chương đã chọn (Bắt buộc chọn Chương).</span>
+                </div>
+              </label>
+
+              <label class="relative flex p-4 cursor-pointer rounded-xl border-2 transition-all ${currentAcademicMode === 'course_final' ? 'border-indigo-600 bg-indigo-50/20 dark:bg-indigo-950/20 shadow-xs' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-slate-300'}">
+                <input type="radio" name="matrix_academic_mode" value="course_final" ${currentAcademicMode === 'course_final' ? 'checked' : ''} class="h-4 w-4 mt-0.5 text-indigo-600 focus:ring-indigo-500" />
+                <div class="ml-3">
+                  <span class="block text-sm font-bold text-slate-900 dark:text-white">Thi cuối khóa (FINAL)</span>
+                  <span class="block text-xs text-slate-500 mt-0.5">Khảo thí Đánh giá Cuối kỳ toàn khóa học (Final Test độc lập cấp môn học).</span>
+                </div>
+              </label>
+
               <label class="relative flex p-4 cursor-pointer rounded-xl border-2 transition-all ${currentAcademicMode === 'independent' ? 'border-indigo-600 bg-indigo-50/20 dark:bg-indigo-950/20 shadow-xs' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-slate-300'}">
                 <input type="radio" name="matrix_academic_mode" value="independent" ${currentAcademicMode === 'independent' ? 'checked' : ''} class="h-4 w-4 mt-0.5 text-indigo-600 focus:ring-indigo-500" />
                 <div class="ml-3">
                   <span class="block text-sm font-bold text-slate-900 dark:text-white">Khảo thí Độc lập / Tổng hợp</span>
-                  <span class="block text-xs text-slate-500 mt-0.5">Kỳ thi đánh giá năng lực, thi giữa kỳ hoặc kết thúc học phần.</span>
-                </div>
-              </label>
-
-              <label class="relative flex p-4 cursor-pointer rounded-xl border-2 transition-all ${currentAcademicMode === 'chapter_linked' ? 'border-indigo-600 bg-indigo-50/20 dark:bg-indigo-950/20 shadow-xs' : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 hover:border-slate-300'}">
-                <input type="radio" name="matrix_academic_mode" value="chapter_linked" ${currentAcademicMode === 'chapter_linked' ? 'checked' : ''} class="h-4 w-4 mt-0.5 text-indigo-600 focus:ring-indigo-500" />
-                <div class="ml-3">
-                  <span class="block text-sm font-bold text-slate-900 dark:text-slate-100">Kiểm tra theo Chương</span>
-                  <span class="block text-xs text-slate-500 mt-0.5">Bài kiểm tra tổng hợp nội dung của chương đã chọn.</span>
+                  <span class="block text-xs text-slate-500 mt-0.5">Kỳ thi đánh giá năng lực hoặc khảo thí giữa kỳ không gắn với chương riêng lẻ.</span>
                 </div>
               </label>
 
@@ -3989,11 +4083,14 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         return;
       }
 
-      const mode = document.querySelector('input[name="matrix_academic_mode"]:checked')?.value || currentAcademicMode || 'independent';
+      const mode = document.querySelector('input[name="matrix_academic_mode"]:checked')?.value || currentAcademicMode || 'chapter_linked';
       let selectedLessonId = '';
       let selectedUnitId = '';
 
-      if (mode === 'lesson_linked' || mode === 'chapter_linked') {
+      if (mode === 'course_final') {
+        selectedUnitId = '';
+        selectedLessonId = '';
+      } else if (mode === 'lesson_linked' || mode === 'chapter_linked') {
         selectedUnitId = chapterSelect?.value || '';
         if (!selectedUnitId) {
           UI.showToast('Vui lòng chọn Chương học cho bài kiểm tra!', 'warning');
@@ -4008,11 +4105,14 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         }
       }
 
+      const assignedType = mode === 'course_final' ? 'FINAL' : (mode === 'chapter_linked' ? 'QUIZ' : (draft.assessment_type || 'QUIZ'));
       window.ExamStore.saveDraft({
         courseId: courseId,
         academicMode: mode,
-        learningUnitId: selectedUnitId,
-        lessonId: selectedLessonId,
+        learningUnitId: selectedUnitId || null,
+        lessonId: selectedLessonId || null,
+        assessment_type: assignedType,
+        isFinal: mode === 'course_final',
         questions: questions,
         matrixConfirmed: true
       });
@@ -4031,6 +4131,8 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
     const draft = window.ExamStore.getDraft();
     const questions = draft.questions || [];
     const config = draft.config || {};
+    const currentAssessmentType = (draft.assessment_type || config.assessmentType || (draft.academicMode === 'course_final' ? 'FINAL' : 'QUIZ')).toUpperCase();
+    const initialUnitId = draft.learningUnitId || draft.unitId || '';
 
     container.innerHTML = `
       <div class="h-full flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950 font-sans text-slate-800 dark:text-slate-100">
@@ -4056,11 +4158,20 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                       Thể loại đề thi <span class="text-rose-500">*</span>
                     </label>
                     <select id="cfg-assessment-type" class="w-full px-3.5 py-2 text-xs sm:text-sm font-semibold border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 bg-slate-50 dark:bg-slate-800">
-                      <option value="QUIZ" ${(!config.assessmentType || config.assessmentType === 'QUIZ') ? 'selected' : ''}>Bài kiểm tra ngắn</option>
-                      <option value="PRACTICE" ${config.assessmentType === 'PRACTICE' ? 'selected' : ''}>Luyện tập tự do</option>
-                      <option value="MIDTERM" ${config.assessmentType === 'MIDTERM' ? 'selected' : ''}>Thi giữa kỳ</option>
-                      <option value="FINAL" ${config.assessmentType === 'FINAL' ? 'selected' : ''}>Thi cuối kỳ</option>
-                      <option value="PLACEMENT" ${config.assessmentType === 'PLACEMENT' ? 'selected' : ''}>Khảo sát năng lực</option>
+                      <option value="QUIZ" ${currentAssessmentType === 'QUIZ' ? 'selected' : ''}>Kiểm tra theo Chương (QUIZ)</option>
+                      <option value="FINAL" ${currentAssessmentType === 'FINAL' || currentAssessmentType === 'FINAL_EXAM' ? 'selected' : ''}>Thi cuối khóa (FINAL)</option>
+                      <option value="MIDTERM" ${currentAssessmentType === 'MIDTERM' ? 'selected' : ''}>Thi giữa kỳ (MIDTERM)</option>
+                      <option value="PRACTICE" ${currentAssessmentType === 'PRACTICE' ? 'selected' : ''}>Luyện tập tự do (PRACTICE)</option>
+                      <option value="PLACEMENT" ${currentAssessmentType === 'PLACEMENT' ? 'selected' : ''}>Khảo sát năng lực (PLACEMENT)</option>
+                    </select>
+                  </div>
+
+                  <div id="cfg-chapter-selector-container" class="${currentAssessmentType === 'QUIZ' || initialUnitId ? '' : 'hidden'} sm:col-span-2">
+                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1" for="cfg-chapter-select">
+                      Chương học liên kết
+                    </label>
+                    <select id="cfg-chapter-select" class="w-full px-3.5 py-2 text-xs sm:text-sm font-semibold border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 bg-slate-50 dark:bg-slate-800">
+                      <option value="">-- Đang nạp danh sách chương... --</option>
                     </select>
                   </div>
                   <div class="sm:col-span-2">
@@ -4467,6 +4578,44 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
 
     chkAgreement?.addEventListener('change', updatePublishButtonState);
 
+    // Chapter dropdown for settings
+    const cfgTypeSelect = document.getElementById('cfg-assessment-type');
+    const cfgChapterBox = document.getElementById('cfg-chapter-selector-container');
+    const cfgChapterSelect = document.getElementById('cfg-chapter-select');
+
+    cfgTypeSelect?.addEventListener('change', () => {
+      const selectedType = cfgTypeSelect.value;
+      if (selectedType === 'QUIZ') {
+        cfgChapterBox?.classList.remove('hidden');
+      } else if (selectedType === 'FINAL') {
+        cfgChapterBox?.classList.add('hidden');
+        if (cfgChapterSelect) cfgChapterSelect.value = '';
+      } else {
+        if (!cfgChapterSelect?.value) cfgChapterBox?.classList.add('hidden');
+      }
+    });
+
+    if (draft.courseId && cfgChapterSelect) {
+      ApiClient.getLearningUnits(draft.courseId).then(res => {
+        const units = res.items || res.learning_units || [];
+        if (units.length > 0) {
+          cfgChapterSelect.innerHTML = `
+            <option value="">-- Chọn chương học --</option>
+            ${units.map((u, idx) => {
+              const uId = String(u.learning_unit_id || u.id);
+              const isSelected = initialUnitId && String(initialUnitId).toLowerCase() === uId.toLowerCase();
+              return `<option value="${uId}" ${isSelected ? 'selected' : ''}>${UI.escapeHtml(u.title || `Chương ${idx + 1}`)}</option>`;
+            }).join('')}
+          `;
+        } else {
+          cfgChapterSelect.innerHTML = `<option value="">Khóa học chưa tạo chương</option>`;
+        }
+      }).catch(err => {
+        console.warn('Lỗi tải chương học trong settings:', err);
+        cfgChapterSelect.innerHTML = `<option value="">Lỗi nạp chương học</option>`;
+      });
+    }
+
     // Auto-fix button
     btnAutoFix?.addEventListener('click', () => {
       const currentDraft = window.ExamStore.getDraft();
@@ -4536,25 +4685,38 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         const answerVisibilityPolicy = document.getElementById('cfg-answer-visibility-policy')?.value || 'IMMEDIATE';
         const allowStudentViewResults = document.getElementById('cfg-allow-student-view-results') ? document.getElementById('cfg-allow-student-view-results').checked : (currentDraft.config?.allow_student_view_results !== false);
         const policy = InstructorView.readExamPolicy(document);
-        window.ExamStore.saveDraft({ config: {
-          duration,
-          open_at: openAtIso,
-          close_at: closeAtIso,
-          maxAttempts: maxAtt,
-          passing_percent: passingPercent,
-          shuffleQuestions: shuffle,
-          allow_student_view_results: allowStudentViewResults,
-          scoringPolicy,
-          answerVisibilityPolicy,
-          examLayout: policy.exam_layout,
-          monitoringEnabled: policy.monitoring_enabled,
-          requestFullscreen: policy.request_fullscreen
-        } });
+        const selectedType = document.getElementById('cfg-assessment-type')?.value || currentDraft.assessment_type || 'QUIZ';
+        const isFinalExam = selectedType === 'FINAL' || selectedType === 'FINAL_EXAM';
+        let targetUnitId = null;
+        if (!isFinalExam) {
+          targetUnitId = document.getElementById('cfg-chapter-select')?.value || currentDraft.learningUnitId || null;
+        }
+
+        window.ExamStore.saveDraft({
+          assessment_type: selectedType,
+          academicMode: isFinalExam ? 'course_final' : (targetUnitId ? 'chapter_linked' : (currentDraft.academicMode || 'chapter_linked')),
+          learningUnitId: isFinalExam ? null : targetUnitId,
+          isFinal: isFinalExam,
+          config: {
+            duration,
+            open_at: openAtIso,
+            close_at: closeAtIso,
+            maxAttempts: maxAtt,
+            passing_percent: passingPercent,
+            shuffleQuestions: shuffle,
+            allow_student_view_results: allowStudentViewResults,
+            scoringPolicy,
+            answerVisibilityPolicy,
+            examLayout: policy.exam_layout,
+            monitoringEnabled: policy.monitoring_enabled,
+            requestFullscreen: policy.request_fullscreen
+          }
+        });
 
         // 1. Create or Update Assessment
         const asmPayload = {
           title: title,
-          assessment_type: document.getElementById('cfg-assessment-type')?.value || currentDraft.assessment_type || 'QUIZ',
+          assessment_type: selectedType,
           duration_minutes: duration,
           time_limit_minutes: duration,
           max_attempts: maxAtt,
@@ -4569,9 +4731,11 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         };
         if (openAtIso) asmPayload.open_at = openAtIso;
         if (closeAtIso) asmPayload.close_at = closeAtIso;
-        if (currentDraft.academicMode === 'lesson_linked' && currentDraft.lessonId) asmPayload.lesson_id = currentDraft.lessonId;
-        if (['lesson_linked', 'chapter_linked'].includes(currentDraft.academicMode) && currentDraft.learningUnitId) {
-          asmPayload.learning_unit_id = currentDraft.learningUnitId;
+        if (!isFinalExam && currentDraft.academicMode === 'lesson_linked' && currentDraft.lessonId) {
+          asmPayload.lesson_id = currentDraft.lessonId;
+        }
+        if (!isFinalExam && targetUnitId) {
+          asmPayload.learning_unit_id = targetUnitId;
         }
 
         const questionsToSave = currentDraft.questions || [];
@@ -4697,6 +4861,8 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
     const isLocked = Boolean(assessment.first_attempt_started_at);
     const isPub = assessment.status === 'PUBLISHED';
     const cId = assessment.course_id || query.course_id || '';
+    const initialUnitId = assessment.learning_unit_id || (assessment.description?.match(/unit_id:\s*([a-zA-Z0-9_-]+)/)?.[1]) || '';
+    const initialType = (assessment.assessment_type || 'QUIZ').toUpperCase();
 
     const render = () => {
       const totalPoints = questions.reduce((sum, q) => sum + (parseFloat(q.points) || 1.0), 0);
@@ -4790,6 +4956,34 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                       class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs outline-none focus:border-primary focus:bg-white dark:focus:bg-slate-900 transition-colors"
                       value="${UI.escapeHtml(assessment.title || '')}"
                     />
+                  </div>
+
+                  <div>
+                    <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1" for="edit-exam-type">
+                      Thể loại đề thi <span class="text-rose-500">*</span>
+                    </label>
+                    <select
+                      id="edit-exam-type"
+                      class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs outline-none focus:border-primary"
+                    >
+                      <option value="QUIZ" ${initialType === 'QUIZ' ? 'selected' : ''}>Kiểm tra theo Chương (QUIZ)</option>
+                      <option value="FINAL" ${initialType === 'FINAL' || initialType === 'FINAL_EXAM' ? 'selected' : ''}>Thi cuối khóa (FINAL)</option>
+                      <option value="MIDTERM" ${initialType === 'MIDTERM' ? 'selected' : ''}>Thi giữa kỳ (MIDTERM)</option>
+                      <option value="PRACTICE" ${initialType === 'PRACTICE' ? 'selected' : ''}>Luyện tập tự do (PRACTICE)</option>
+                      <option value="PLACEMENT" ${initialType === 'PLACEMENT' ? 'selected' : ''}>Khảo sát năng lực (PLACEMENT)</option>
+                    </select>
+                  </div>
+
+                  <div id="edit-exam-chapter-container" class="${initialType === 'QUIZ' || initialUnitId ? '' : 'hidden'}">
+                    <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1" for="edit-exam-chapter-select">
+                      Chương học liên kết
+                    </label>
+                    <select
+                      id="edit-exam-chapter-select"
+                      class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs outline-none focus:border-primary"
+                    >
+                      <option value="">-- Đang nạp danh sách chương... --</option>
+                    </select>
                   </div>
 
                   <div>
@@ -5240,6 +5434,60 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
       document.getElementById('edit-exam-open-at')?.addEventListener('input', updateEditWaitingRoomCalc);
       updateEditWaitingRoomCalc();
 
+      // Populate chapters in edit view
+      const editChapterContainer = document.getElementById('edit-exam-chapter-container');
+      const editChapterSelect = document.getElementById('edit-exam-chapter-select');
+      const editTypeSelect = document.getElementById('edit-exam-type');
+
+      editTypeSelect?.addEventListener('change', () => {
+        const tVal = editTypeSelect.value;
+        if (tVal === 'QUIZ') {
+          editChapterContainer?.classList.remove('hidden');
+        } else if (tVal === 'FINAL') {
+          editChapterContainer?.classList.add('hidden');
+          if (editChapterSelect) editChapterSelect.value = '';
+        } else {
+          if (!editChapterSelect?.value) editChapterContainer?.classList.add('hidden');
+        }
+      });
+
+      if (cId && editChapterSelect) {
+        ApiClient.getLearningUnits(cId).then(res => {
+          const units = res.items || res.learning_units || [];
+          if (units.length > 0) {
+            editChapterSelect.innerHTML = `
+              <option value="">-- Không gắn chương (Độc lập) --</option>
+              ${units.map((u, idx) => {
+                const uId = String(u.learning_unit_id || u.id);
+                const isSelected = initialUnitId && String(initialUnitId).toLowerCase() === uId.toLowerCase();
+                return `<option value="${uId}" ${isSelected ? 'selected' : ''}>${UI.escapeHtml(u.title || `Chương ${idx + 1}`)}</option>`;
+              }).join('')}
+            `;
+          } else {
+            editChapterSelect.innerHTML = `<option value="">Khóa học chưa tạo chương</option>`;
+          }
+        }).catch(() => {
+          ApiClient.getCourseDetail(cId).then(courseDetail => {
+            const units = courseDetail?.learning_units || courseDetail?.course?.learning_units || [];
+            if (units.length > 0) {
+              editChapterSelect.innerHTML = `
+                <option value="">-- Không gắn chương (Độc lập) --</option>
+                ${units.map((u, idx) => {
+                  const uId = String(u.learning_unit_id || u.id);
+                  const isSelected = initialUnitId && String(initialUnitId).toLowerCase() === uId.toLowerCase();
+                  return `<option value="${uId}" ${isSelected ? 'selected' : ''}>${UI.escapeHtml(u.title || `Chương ${idx + 1}`)}</option>`;
+                }).join('')}
+              `;
+            } else {
+              editChapterSelect.innerHTML = `<option value="">Khóa học chưa tạo chương</option>`;
+            }
+          }).catch(err => {
+            console.warn('Lỗi nạp danh sách chương cho khóa học:', err);
+            editChapterSelect.innerHTML = `<option value="">Lỗi nạp chương học</option>`;
+          });
+        });
+      }
+
       // Event: Save Settings
       document.getElementById('btn-save-edit-settings')?.addEventListener('click', async () => {
         const title = document.getElementById('edit-exam-title')?.value?.trim();
@@ -5282,8 +5530,14 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           const ansVisibility = document.getElementById('edit-exam-answer-visibility-policy')?.value || 'IMMEDIATE';
           const editPassingPercentRaw = document.getElementById('edit-exam-passing-percent')?.value?.trim();
           const editPassingPercent = editPassingPercentRaw ? Math.min(100, Math.max(1, parseFloat(editPassingPercentRaw))) : 50.0;
+          const selectedType = document.getElementById('edit-exam-type')?.value || assessment.assessment_type || 'QUIZ';
+          const isFinal = selectedType === 'FINAL' || selectedType === 'FINAL_EXAM';
+          const selectedUnit = isFinal ? null : (document.getElementById('edit-exam-chapter-select')?.value || null);
+
           const payload = {
             title: title,
+            assessment_type: selectedType,
+            learning_unit_id: selectedUnit,
             duration_minutes: duration,
             max_attempts: maxAttempts,
             attempt_limit: maxAttempts,
@@ -5301,6 +5555,8 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           }
           await ApiClient.updateAssessment(assessmentId, payload);
           assessment.title = title;
+          assessment.assessment_type = selectedType;
+          assessment.learning_unit_id = selectedUnit;
           assessment.duration_minutes = duration;
           assessment.max_attempts = maxAttempts;
           assessment.attempt_limit = maxAttempts;

@@ -14,22 +14,22 @@ import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import Course
-from pwd301.models.file_import import LessonResource
-from pwd301.models.identity import Role, User
-from pwd301.services.course_service import create_course
-from pwd301.services.file_service import (
+from backend.extensions import db
+from backend.models.course import Course
+from backend.models.file_import import LessonResource
+from backend.models.identity import Role, User
+from backend.services.course_service import create_course
+from backend.services.file_service import (
     attach_resource_to_lesson,
     store_file_stream,
 )
-from pwd301.services.lesson_service import (
+from backend.services.lesson_service import (
     create_learning_unit,
     create_lesson,
     delete_learning_unit,
     trash_lesson,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -348,12 +348,15 @@ def test_student_course_detail_excludes_orphaned_documents(
     assert res.status_code == 200
     data = res.get_json()
 
-    # Check resources list in course response
-    resources = data.get("resources", [])
-    res_asset_ids = {str(r.get("asset_id") or r.get("id")) for r in resources}
+    # Check resources list in course response per Document Hub Invariant (TASK-127):
+    # Attached lesson resources are mapped to active lessons, while root general resources are empty.
+    all_lesson_resources = [
+        r
+        for les in data.get("lessons", [])
+        for r in les.get("resources", [])
+    ]
+    res_asset_ids = {str(r.get("asset_id") or r.get("id") or r.get("public_id")) for r in all_lesson_resources}
 
-    # General course file MUST be in resources
-    assert str(general_asset.public_id) in res_asset_ids
     # Active lesson file MUST be in resources
     assert str(active_asset.public_id) in res_asset_ids
     # Orphaned file attached to trashed lesson MUST be EXCLUDED

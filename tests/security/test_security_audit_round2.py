@@ -21,27 +21,27 @@ from unittest.mock import MagicMock
 
 from flask import Flask
 
-from pwd301.extensions import db
-from pwd301.models.ai_rag import (
+from backend.extensions import db
+from backend.models.ai_rag import (
     AIGeneratedQuestionDraft,
     KnowledgeChunk,
     KnowledgeDocument,
     KnowledgeVersion,
 )
-from pwd301.models.course import Course, LearningUnit, Lesson
-from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import EmailDelivery
-from pwd301.models.operations import BackupRun
-from pwd301.models.types import utc_now
-from pwd301.services.operations_service import verify_backup_integrity
-from pwd301.services.regrade_worker import (
+from backend.models.course import Course, LearningUnit, Lesson
+from backend.models.identity import Role, User
+from backend.models.notification_audit import EmailDelivery
+from backend.models.operations import BackupRun
+from backend.models.types import utc_now
+from backend.services.operations_service import verify_backup_integrity
+from backend.services.regrade_worker import (
     _SYNTHETIC_CORRECTION_CACHE,
     _SYNTHETIC_JOB_CACHE,
     _resolve_question_correction,
     _resolve_regrade_job,
 )
-from pwd301.services.retention_service import prune_trash_entities
-from pwd301.services.scanner_service import BuiltinHeuristicScanner
+from backend.services.retention_service import prune_trash_entities
+from backend.services.scanner_service import BuiltinHeuristicScanner
 
 
 def _get_or_create_role(code: str, name: str) -> Role:
@@ -171,7 +171,7 @@ def test_regrade_worker_synthetic_uuid_cache() -> None:
     mock_session.get.return_value = fake_job
 
     _SYNTHETIC_JOB_CACHE.clear()
-    syn_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, "pwd301.regrade_job.12345")
+    syn_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, "backend.regrade_job.12345")
     resolved = _resolve_regrade_job(syn_uuid, session=mock_session)
     assert resolved == fake_job
     assert _SYNTHETIC_JOB_CACHE.get(syn_uuid) == 12345
@@ -187,7 +187,7 @@ def test_regrade_worker_synthetic_uuid_cache() -> None:
     fake_corr.id = 67890
     mock_session.get.return_value = fake_corr
 
-    corr_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, "pwd301.question_correction.67890")
+    corr_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, "backend.question_correction.67890")
     res_corr = _resolve_question_correction(corr_uuid, session=mock_session)
     assert res_corr == fake_corr
     assert _SYNTHETIC_CORRECTION_CACHE.get(corr_uuid) == 67890
@@ -227,7 +227,7 @@ def test_public_catalog_filters_soft_deleted_courses(client: Any, app: Flask) ->
         db.session.add_all([active_crs, deleted_crs])
         db.session.commit()
 
-        from pwd301.services.course_service import list_courses
+        from backend.services.course_service import list_courses
 
         courses, total = list_courses(actor=None, session=db.session)
         course_codes = [c.course_code for c in courses]

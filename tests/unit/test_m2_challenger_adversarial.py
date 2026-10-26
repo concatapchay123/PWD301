@@ -15,17 +15,17 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from pwd301.extensions import db
-from pwd301.models.course import Course, Enrollment, EnrollmentPeriod, LearningUnit, Lesson
-from pwd301.models.identity import Role
-from pwd301.models.playback import MediaProgress
-from pwd301.services import playback_service
-from pwd301.services.playback_service import (
+from backend.extensions import db
+from backend.models.course import Course, Enrollment, EnrollmentPeriod, LearningUnit, Lesson
+from backend.models.identity import Role
+from backend.models.playback import MediaProgress
+from backend.services import playback_service
+from backend.services.playback_service import (
     DEFAULT_YOUTUBE_FALLBACK_DURATION,
     record_playback_heartbeat,
     start_playback_session,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture

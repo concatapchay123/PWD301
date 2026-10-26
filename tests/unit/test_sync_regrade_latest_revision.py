@@ -5,26 +5,26 @@ from decimal import Decimal
 
 import pytest
 
-from pwd301.extensions import db
-from pwd301.models.attempt_regrade import (
+from backend.extensions import db
+from backend.models.attempt_regrade import (
     AssessmentResult,
     AssessmentResultHistory,
     AttemptQuestionGrade,
     AttemptQuestionGradeHistory,
     RegradeJob,
 )
-from pwd301.services.assessment_service import (
+from backend.services.assessment_service import (
     assign_question,
     create_assessment,
     publish_assessment,
 )
-from pwd301.services.attempt_service import (
+from backend.services.attempt_service import (
     save_attempt_answer,
     start_assessment_attempt,
     submit_assessment_attempt,
 )
-from pwd301.services.question_bank_service import create_question, create_question_revision
-from pwd301.services.regrade_worker import process_regrade_job
+from backend.services.question_bank_service import create_question, create_question_revision
+from backend.services.regrade_worker import process_regrade_job
 from tests.unit.test_assessment_regrading_traceability import active_course as active_course
 from tests.unit.test_assessment_regrading_traceability import admin_user as admin_user
 from tests.unit.test_assessment_regrading_traceability import enrolled_students as enrolled_students

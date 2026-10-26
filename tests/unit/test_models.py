@@ -14,8 +14,8 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from werkzeug.security import generate_password_hash
 
-from pwd301.extensions import db
-from pwd301.models import (
+from backend.extensions import db
+from backend.models import (
     AIConversation,
     AIMessage,
     Assessment,
@@ -39,7 +39,7 @@ from pwd301.models import (
     Role,
     User,
 )
-from pwd301.models.types import utc_now
+from backend.models.types import utc_now
 
 EXPECTED_73_TABLES = {
     # 1. Identity & Auth (8)
@@ -144,7 +144,7 @@ def test_user_creation_and_defaults(app):
     """Verify User model instantiation, default values, and UUID generation."""
     with app.app_context():
         user = User(
-            email="student1@pwd301.local",
+            email="student1@backend.local",
             password_hash=generate_password_hash("Secret@123"),
             display_name="Student One",
         )
@@ -164,7 +164,7 @@ def test_user_status_check_constraint(app):
     """Verify CHECK constraint on user status."""
     with app.app_context():
         user = User(
-            email="invalid_status@pwd301.local",
+            email="invalid_status@backend.local",
             password_hash="hash",
             display_name="Invalid",
             status="UNKNOWN_STATUS",
@@ -194,7 +194,7 @@ def test_user_roles_many_to_many(app):
         db.session.commit()
 
         user = User(
-            email="dualrole@pwd301.local",
+            email="dualrole@backend.local",
             password_hash=generate_password_hash("Secret@123"),
             display_name="Dual Role User",
         )
@@ -214,7 +214,7 @@ def test_course_and_lesson_hierarchy(app):
     """Verify Course and Lesson relationship with Instructor owner."""
     with app.app_context():
         instructor = User(
-            email="instructor@pwd301.local",
+            email="instructor@backend.local",
             password_hash=generate_password_hash("Secret@123"),
             display_name="Instructor Prof",
         )
@@ -260,12 +260,12 @@ def test_enrollment_relationship(app):
     """Verify Enrollment linking Student to Course."""
     with app.app_context():
         student = User(
-            email="enrolled@pwd301.local",
+            email="enrolled@backend.local",
             password_hash="hash",
             display_name="Enrolled Student",
         )
         instructor = User(
-            email="prof@pwd301.local",
+            email="prof@backend.local",
             password_hash="hash",
             display_name="Course Prof",
         )
@@ -289,7 +289,7 @@ def test_enrollment_relationship(app):
         db.session.commit()
 
         assert enrollment.id is not None
-        assert enrollment.student.email == "enrolled@pwd301.local"
+        assert enrollment.student.email == "enrolled@backend.local"
         assert enrollment.course.course_code == "MATH101"
 
 
@@ -297,7 +297,7 @@ def test_question_and_revisions(app):
     """Verify Question with QuestionRevision and Choices."""
     with app.app_context():
         author = User(
-            email="author@pwd301.local",
+            email="author@backend.local",
             password_hash="hash",
             display_name="Question Author",
         )
@@ -365,12 +365,12 @@ def test_assessment_and_attempt(app):
     """Verify Assessment structure and AssessmentAttempt creation."""
     with app.app_context():
         teacher = User(
-            email="teacher@pwd301.local",
+            email="teacher@backend.local",
             password_hash="hash",
             display_name="Teacher",
         )
         student = User(
-            email="test_taker@pwd301.local",
+            email="test_taker@backend.local",
             password_hash="hash",
             display_name="Test Taker",
         )
@@ -438,7 +438,7 @@ def test_file_blob_and_scan_results(app):
     """Verify FileBlob, FileAsset, FileRevision, and FileScanResult."""
     with app.app_context():
         uploader = User(
-            email="uploader@pwd301.local",
+            email="uploader@backend.local",
             password_hash="hash",
             display_name="File Uploader",
         )
@@ -509,7 +509,7 @@ def test_ai_conversation_and_messages(app):
     """Verify AIConversation and AIMessage persistence."""
     with app.app_context():
         user = User(
-            email="aistudent@pwd301.local",
+            email="aistudent@backend.local",
             password_hash="hash",
             display_name="AI Student",
         )
@@ -544,7 +544,7 @@ def test_audit_event_and_background_job(app):
     """Verify AuditEvent and BackgroundJob models."""
     with app.app_context():
         admin = User(
-            email="auditor@pwd301.local",
+            email="auditor@backend.local",
             password_hash="hash",
             display_name="Auditor",
         )
@@ -657,7 +657,7 @@ def test_soft_delete_architectural_docstrings():
 
 def test_filtered_indexes_in_metadata():
     """Verify that filtered indexes are defined with dialect-aware WHERE clauses."""
-    from pwd301.models import (
+    from backend.models import (
         AIConversation,
         AttemptQuestionGrade,
         BackgroundJob,

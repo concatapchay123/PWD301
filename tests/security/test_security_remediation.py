@@ -26,25 +26,25 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301 import create_app
-from pwd301.extensions import db
-from pwd301.models.course import Course
-from pwd301.models.identity import Role, User
-from pwd301.services.course_service import create_course
-from pwd301.services.exceptions import AIServiceUnavailableError
-from pwd301.services.gemini_service import RealGeminiClient
-from pwd301.services.jwt_auth_service import create_token_pair
-from pwd301.services.operations_service import (
+from backend import create_app
+from backend.extensions import db
+from backend.models.course import Course
+from backend.models.identity import Role, User
+from backend.services.course_service import create_course
+from backend.services.exceptions import AIServiceUnavailableError
+from backend.services.gemini_service import RealGeminiClient
+from backend.services.jwt_auth_service import create_token_pair
+from backend.services.operations_service import (
     _get_restore_lock_file,
     _restore_lock,
     is_database_restore_in_progress,
 )
-from pwd301.services.rate_limit_service import (
+from backend.services.rate_limit_service import (
     is_login_locked,
     record_failed_login,
     reset_all_rate_limits,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture(autouse=True)
@@ -123,7 +123,7 @@ def _auth_headers(user: User) -> dict[str, str]:
 
 def test_reflected_xss_in_html_error_response_is_escaped(app: Flask) -> None:
     """XSS payloads in error responses must be escaped and not rendered executable."""
-    from pwd301 import _format_error_response
+    from backend import _format_error_response
 
     # Test direct _format_error_response JSON safety
     with app.test_request_context("/some-path", headers={"Accept": "text/html"}):
@@ -355,7 +355,7 @@ def test_download_file_supports_conditional_range_and_accel_redirect(
     test_course: Course,
 ) -> None:
     """send_file supports conditional range requests and X-Accel-Redirect offloading."""
-    from pwd301.services.file_service import store_file_stream
+    from backend.services.file_service import store_file_stream
 
     content = b"0123456789abcdefghijklmnopqrstuvwxyz"
     asset = store_file_stream(

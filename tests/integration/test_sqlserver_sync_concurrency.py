@@ -8,18 +8,18 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import LessonProgress, LessonProgressReceipt
-from pwd301.models.identity import User
-from pwd301.models.operations import BackgroundJob
-from pwd301.models.types import utc_now
-from pwd301.services.background_job_service import (
+from backend.extensions import db
+from backend.models.course import LessonProgress, LessonProgressReceipt
+from backend.models.identity import User
+from backend.models.operations import BackgroundJob
+from backend.models.types import utc_now
+from backend.services.background_job_service import (
     claim_next_background_job,
     enqueue_background_job,
     execute_background_job,
     renew_background_job_lease,
 )
-from pwd301.services.lesson_service import record_lesson_progress
+from backend.services.lesson_service import record_lesson_progress
 from tests.unit.test_sync_course_remediation import enrolled_progress
 
 pytest_plugins = ["tests.test_lesson_revision_lifecycle"]
@@ -122,10 +122,10 @@ def test_progress_stale_session_preserves_committed_seconds(app, published_cours
 def test_simultaneous_appeals_create_one_pending_request(
     app, published_course, student_user, instructor_user, monkeypatch
 ):
-    from pwd301.models.assessment import Assessment
-    from pwd301.models.attempt_regrade import AssessmentAttempt
-    from pwd301.models.notification_audit import AuditEvent
-    from pwd301.services import attempt_service
+    from backend.models.assessment import Assessment
+    from backend.models.attempt_regrade import AssessmentAttempt
+    from backend.models.notification_audit import AuditEvent
+    from backend.services import attempt_service
     from tests.conftest import login_web_user
 
     course, lesson = published_course
@@ -180,9 +180,9 @@ def test_simultaneous_appeals_create_one_pending_request(
 
 @pytest.mark.parametrize("purpose", ["JWT_REFRESH", "PASSWORD_RESET"])
 def test_simultaneous_token_consumption_has_one_winner(app, student_user, purpose):
-    from pwd301.models.identity import JwtTokenGrant, UserSecurityToken
-    from pwd301.services import auth_token_service, jwt_auth_service
-    from pwd301.services.exceptions import JwtTokenRevokedError, TokenAlreadyConsumedError
+    from backend.models.identity import JwtTokenGrant, UserSecurityToken
+    from backend.services import auth_token_service, jwt_auth_service
+    from backend.services.exceptions import JwtTokenRevokedError, TokenAlreadyConsumedError
 
     if purpose == "JWT_REFRESH":
         raw = jwt_auth_service.create_token_pair(student_user)["refresh_token"]
@@ -231,9 +231,9 @@ def test_simultaneous_token_consumption_has_one_winner(app, student_user, purpos
 
 
 def test_retention_rechecks_activity_committed_after_candidate_read(app, student_user):
-    from pwd301.models.ai_rag import AIConversation, AIMessage
-    from pwd301.services.ai_service import _lock_conversation_for_send
-    from pwd301.services.retention_service import purge_expired_ai_messages
+    from backend.models.ai_rag import AIConversation, AIMessage
+    from backend.services.ai_service import _lock_conversation_for_send
+    from backend.services.retention_service import purge_expired_ai_messages
 
     now = utc_now()
     conv = AIConversation(
@@ -280,10 +280,10 @@ def test_two_expired_lease_takeovers_have_one_winner(
 ):
     import hashlib
 
-    from pwd301.models.assessment import Assessment
-    from pwd301.models.attempt_regrade import AssessmentAttempt
-    from pwd301.services.attempt_service import takeover_attempt_lease
-    from pwd301.services.exceptions import AttemptLeaseConflictError
+    from backend.models.assessment import Assessment
+    from backend.models.attempt_regrade import AssessmentAttempt
+    from backend.services.attempt_service import takeover_attempt_lease
+    from backend.services.exceptions import AttemptLeaseConflictError
 
     course, lesson = published_course
     progress = enrolled_progress(course, lesson, student_user)

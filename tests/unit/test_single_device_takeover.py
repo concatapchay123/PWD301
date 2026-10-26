@@ -14,21 +14,21 @@ from flask import Flask
 from flask.testing import FlaskClient
 import pytest
 
-from pwd301.extensions import db
-from pwd301.models.identity import AuthSession, User
-from pwd301.models.types import utc_now
-from pwd301.services.session_auth_service import create_auth_session
+from backend.extensions import db
+from backend.models.identity import AuthSession, User
+from backend.models.types import utc_now
+from backend.services.session_auth_service import create_auth_session
 
 
 @pytest.fixture
 def test_user_id(app: Flask) -> int:
     with app.app_context():
-        user = db.session.query(User).filter_by(email="test_takeover@pwd301.local").first()
+        user = db.session.query(User).filter_by(email="test_takeover@backend.local").first()
         if not user:
-            from pwd301.services.user_service import assign_role_to_user, register_user
+            from backend.services.user_service import assign_role_to_user, register_user
 
             user = register_user(
-                email="test_takeover@pwd301.local",
+                email="test_takeover@backend.local",
                 password="Password123!",
                 display_name="Takeover Test Student",
             )
@@ -41,13 +41,13 @@ def test_login_success_first_device(client: FlaskClient, test_user_id: int) -> N
     """Test standard login on fresh client returns 200 OK with status ok."""
     resp = client.post(
         "/auth/login",
-        json={"email": "test_takeover@pwd301.local", "password": "Password123!"},
+        json={"email": "test_takeover@backend.local", "password": "Password123!"},
         headers={"Accept": "application/json"},
     )
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["status"] == "ok"
-    assert data["user"]["email"] == "test_takeover@pwd301.local"
+    assert data["user"]["email"] == "test_takeover@backend.local"
 
 
 def test_login_takeover_when_other_client_active(client: FlaskClient, test_user_id: int) -> None:
@@ -71,10 +71,10 @@ def test_login_takeover_when_other_client_active(client: FlaskClient, test_user_
         db.session.commit()
         sess_a_id = sess_a.id
 
-    with patch("pwd301.services.realtime_service.emit_domain_event") as mock_emit:
+    with patch("backend.services.realtime_service.emit_domain_event") as mock_emit:
         resp = client.post(
             "/auth/login",
-            json={"email": "test_takeover@pwd301.local", "password": "Password123!"},
+            json={"email": "test_takeover@backend.local", "password": "Password123!"},
             headers={"Accept": "application/json"},
         )
         assert resp.status_code == 200
@@ -114,10 +114,10 @@ def test_login_takeover_when_other_client_idle_more_than_5_min(client: FlaskClie
         db.session.commit()
         sess_a_id = sess_a.id
 
-    with patch("pwd301.services.realtime_service.emit_domain_event") as mock_emit:
+    with patch("backend.services.realtime_service.emit_domain_event") as mock_emit:
         resp = client.post(
             "/auth/login",
-            json={"email": "test_takeover@pwd301.local", "password": "Password123!"},
+            json={"email": "test_takeover@backend.local", "password": "Password123!"},
             headers={"Accept": "application/json"},
         )
         assert resp.status_code == 200

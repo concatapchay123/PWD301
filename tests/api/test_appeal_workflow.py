@@ -8,18 +8,18 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.attempt_regrade import (
+from backend.extensions import db
+from backend.models.attempt_regrade import (
     AssessmentAttempt,
     AssessmentResult,
     AssessmentResultHistory,
 )
-from pwd301.models.course import Enrollment, EnrollmentPeriod
-from pwd301.models.types import utc_now
-from pwd301.seeds.baseline import seed_baseline
-from pwd301.services.assessment_service import create_assessment
-from pwd301.services.course_service import create_course
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.models.course import Enrollment, EnrollmentPeriod
+from backend.models.types import utc_now
+from backend.seeds.baseline import seed_baseline
+from backend.services.assessment_service import create_assessment
+from backend.services.course_service import create_course
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 def test_student_appeal_submission_and_retrieval(app: Flask, client: FlaskClient):
@@ -29,7 +29,7 @@ def test_student_appeal_submission_and_retrieval(app: Flask, client: FlaskClient
 
     # 1. Instructor & Student
     instructor = register_user(
-        email="appeal_inst@pwd301.local",
+        email="appeal_inst@backend.local",
         password="Password@123",
         display_name="TS. Tran Giang Vien",
         session=sess,
@@ -37,7 +37,7 @@ def test_student_appeal_submission_and_retrieval(app: Flask, client: FlaskClient
     assign_role_to_user(instructor.id, "INSTRUCTOR", session=sess)
 
     student = register_user(
-        email="appeal_student@pwd301.local",
+        email="appeal_student@backend.local",
         password="Password@123",
         display_name="Le Van Sinh Vien",
         session=sess,
@@ -129,7 +129,7 @@ def test_student_appeal_submission_and_retrieval(app: Flask, client: FlaskClient
         return csrf_token
 
     # 4. Login as student and submit appeal
-    csrf = login_user("appeal_student@pwd301.local")
+    csrf = login_user("appeal_student@backend.local")
 
     res = client.get(f"/student/attempts/{attempt_public_id}/appeal")
     assert res.status_code == 200
@@ -158,7 +158,7 @@ def test_student_appeal_submission_and_retrieval(app: Flask, client: FlaskClient
     assert appeal_data["note"] == appeal_payload["note"]
 
     # 5. Login as instructor and review appeal
-    csrf_inst = login_user("appeal_inst@pwd301.local")
+    csrf_inst = login_user("appeal_inst@backend.local")
 
     review_payload = {
         "decision": "APPROVED",

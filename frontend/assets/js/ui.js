@@ -51,7 +51,7 @@ class UI {
   // =========================================================================
   // 1. Toast Notification System (Warm Editorial Style - Top Right & Progress Bar)
   // =========================================================================
-  static showToast(message, type = 'info', duration = 3500) {
+  static showToast(message, type = 'info', duration = 2800) {
     const container = document.getElementById('toast-container');
     if (!container) return;
 
@@ -98,6 +98,18 @@ class UI {
         }
       }
       return;
+    }
+
+    // Limit maximum concurrent toasts to 2 to eliminate screen clutter
+    while (container.children.length >= 2) {
+      const oldestToast = container.firstElementChild;
+      if (oldestToast && oldestToast.id) {
+        UI.dismissToast(oldestToast.id);
+      } else if (oldestToast) {
+        oldestToast.remove();
+      } else {
+        break;
+      }
     }
 
     const toastId = 'toast_' + Math.random().toString(36).substring(2, 9);
@@ -1018,7 +1030,35 @@ class UI {
     });
   }
 
-  static showQrLightbox({ qrSrc = '', title = 'Mã QR Thanh toán VietQR', bankName = '', accountNumber = '', amount = 0, transferCode = '' }) {
+  static renderQrCode(containerEl, imgEl, data) {
+    if (!data) return;
+    const primarySrc = data.qr_data_uri || data.qr_code || data.vietqr_url || '';
+    if (imgEl) {
+      imgEl.onerror = () => {
+        if (data.qr_data_uri && imgEl.src !== data.qr_data_uri) {
+          imgEl.src = data.qr_data_uri;
+        } else if (data.vietqr_url && imgEl.src !== data.vietqr_url) {
+          imgEl.src = data.vietqr_url;
+        } else if (data.qr_raw && typeof QRCode !== 'undefined' && containerEl) {
+          containerEl.innerHTML = '';
+          const qrCanvasHolder = document.createElement('div');
+          qrCanvasHolder.className = 'w-full h-full flex items-center justify-center';
+          containerEl.appendChild(qrCanvasHolder);
+          new QRCode(qrCanvasHolder, {
+            text: data.qr_raw,
+            width: 256,
+            height: 256,
+            colorDark: '#000000',
+            colorLight: '#ffffff',
+            correctLevel: QRCode.CorrectLevel.M,
+          });
+        }
+      };
+      imgEl.src = primarySrc;
+    }
+  }
+
+  static showQrLightbox({ qrSrc = '', qrDataUri = '', qrRaw = '', vietqrUrl = '', title = 'Mã QR Thanh toán VietQR', bankName = '', accountNumber = '', amount = 0, transferCode = '' }) {
     return new Promise((resolve) => {
       const container = document.getElementById('modal-container');
       if (!container) {
@@ -1049,6 +1089,8 @@ class UI {
         }
       };
 
+      const primaryImgSrc = qrDataUri || qrSrc || vietqrUrl;
+
       const modalLayer = document.createElement('div');
       modalLayer.className = 'modal-layer fixed inset-0 bg-[#222120]/70 backdrop-blur-md z-50 flex items-center justify-center p-4 sm:p-6';
       modalLayer.innerHTML = `
@@ -1063,8 +1105,8 @@ class UI {
             </button>
           </div>
 
-          <div class="w-72 h-72 sm:w-80 sm:h-80 bg-white p-3 rounded-2xl border-2 border-slate-200 dark:border-slate-700 shadow-md flex items-center justify-center shrink-0">
-            <img src="${qrSrc}" alt="Mã VietQR Phóng to" class="w-full h-full object-contain" />
+          <div class="w-72 h-72 sm:w-80 sm:h-80 bg-white p-3 rounded-2xl border-2 border-slate-200 dark:border-slate-700 shadow-md flex items-center justify-center shrink-0" id="qr-lightbox-wrapper">
+            <img id="qr-lightbox-img" src="${primaryImgSrc}" alt="Mã VietQR Phóng to" class="w-full h-full object-contain" />
           </div>
 
           <div class="w-full bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-4 border border-slate-200/70 dark:border-slate-700/60 space-y-2.5 text-xs">
@@ -1113,6 +1155,26 @@ class UI {
       container.appendChild(modalLayer);
       container.classList.remove('hidden');
       window._modalOnClose = finish;
+
+      const lbImg = modalLayer.querySelector('#qr-lightbox-img');
+      const lbWrapper = modalLayer.querySelector('#qr-lightbox-wrapper');
+      if (lbImg) {
+        lbImg.onerror = () => {
+          if (qrDataUri && lbImg.src !== qrDataUri) {
+            lbImg.src = qrDataUri;
+          } else if (vietqrUrl && lbImg.src !== vietqrUrl) {
+            lbImg.src = vietqrUrl;
+          } else if (qrRaw && typeof QRCode !== 'undefined' && lbWrapper) {
+            lbWrapper.innerHTML = '';
+            new QRCode(lbWrapper, {
+              text: qrRaw,
+              width: 280,
+              height: 280,
+              correctLevel: QRCode.CorrectLevel.M,
+            });
+          }
+        };
+      }
 
       requestAnimationFrame(() => {
         const card = modalLayer.querySelector('#qr-lightbox-card');
@@ -1923,13 +1985,28 @@ class UI {
     return md.replace(/\n{3,}/g, '\n\n').trim();
   }
 
+  static cleanCourseDescription(raw) {
+    if (!raw) return '';
+    let text = String(raw);
+    if (text.trim().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed.summary) text = parsed.summary;
+      } catch (e) {}
+    }
+    return text
+      .replace(/<!--\s*contact_info:\s*[\s\S]*?-->\n*/gi, '')
+      .replace(/<!--\s*trailer_url:\s*[\s\S]*?-->\n*/gi, '')
+      .replace(/<!--\s*(?:video_urls?|mini_quiz(?:_passing)?|quiz_passing_percent|contact_info|trailer_url|PWD301_BLOCKS):[\s\S]*?-->\n*/gi, '')
+      .replace(/<!--[\s\S]*?-->\n*/gi, '')
+      .trim();
+  }
+
   static renderMarkdown(raw) {
     if (!raw) return '';
 
-    // Strip internal storage annotations (video_url, mini_quiz, contact_info)
-    let text = String(raw)
-      .replace(/<!--\s*(?:video_urls?|mini_quiz|mini_quiz_passing|quiz_passing_percent|contact_info|PWD301_BLOCKS):[\s\S]*?-->/g, '')
-      .trim();
+    // Strip internal storage annotations (video_url, mini_quiz, contact_info, trailer_url)
+    let text = UI.cleanCourseDescription(raw);
 
     if (!text) return '';
 
@@ -2008,13 +2085,16 @@ class UI {
     let colorClass = 'bg-[#F4F1EA] text-[#5C5B57] dark:bg-[#262524] dark:text-[#9E9D99] border-[#E8E6DF] dark:border-[#2E2D2B]';
 
     switch (s) {
+      case 'APPROVED':
+        label = 'Đã duyệt';
+        colorClass = 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800';
+        break;
       case 'PUBLISHED':
       case 'ACTIVE':
-      case 'APPROVED':
       case 'PASSED':
       case 'RELEASED':
       case 'CLEAN':
-        label = s === 'PUBLISHED' ? 'Đang mở' : s === 'ACTIVE' ? 'Hoạt động' : s === 'APPROVED' ? 'Đã duyệt' : s === 'PASSED' ? 'Đạt' : s === 'CLEAN' ? 'An toàn' : 'Công bố';
+        label = s === 'PUBLISHED' ? 'Đang mở' : s === 'ACTIVE' ? 'Hoạt động' : s === 'PASSED' ? 'Đạt' : s === 'CLEAN' ? 'An toàn' : 'Công bố';
         colorClass = 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800';
         break;
       case 'SUBMITTED_FOR_REVIEW':
@@ -2104,6 +2184,32 @@ class UI {
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit'
+      });
+    } catch {
+      return isoString;
+    }
+  }
+
+  static formatRelativeTime(isoString) {
+    if (!isoString) return '—';
+    try {
+      const d = UI.parseUtcDate(isoString);
+      if (!d) return isoString;
+      const diffMs = Date.now() - d.getTime();
+      const diffSec = Math.floor(diffMs / 1000);
+      if (isNaN(diffSec) || diffSec < 0) return 'Vừa xong';
+      if (diffSec < 60) return 'Vừa xong';
+      const diffMin = Math.floor(diffSec / 60);
+      if (diffMin < 60) return `${diffMin} phút trước`;
+      const diffHours = Math.floor(diffMin / 60);
+      if (diffHours < 24) return `${diffHours} giờ trước`;
+      const diffDays = Math.floor(diffHours / 24);
+      if (diffDays === 1) return 'Hôm qua';
+      if (diffDays < 7) return `${diffDays} ngày trước`;
+      return d.toLocaleDateString('vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
       });
     } catch {
       return isoString;
@@ -3287,14 +3393,26 @@ class ExamAntiCheatManager {
     }
     if (key === 'F12' || keyCode === 123) {
       e.preventDefault();
+      this.recordSecurityViolation('DEVTOOLS_SHORTCUT_ATTEMPT');
+      if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
+        UI.showToast('CẢNH BÁO KHẢO THÍ: Nghiêm cấm phím tắt F12 / DevTools trong bài thi!', 'warning');
+      }
       return;
     }
     if (ctrlOrMeta && e.shiftKey && (key === 'I' || key === 'i' || key === 'J' || key === 'j' || key === 'C' || key === 'c')) {
       e.preventDefault();
+      this.recordSecurityViolation('DEVTOOLS_SHORTCUT_ATTEMPT');
+      if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
+        UI.showToast('CẢNH BÁO KHẢO THÍ: Nghiêm cấm phím tắt DevTools (Ctrl+Shift+I/J/C) trong bài thi!', 'warning');
+      }
       return;
     }
     if (ctrlOrMeta && (key === 'u' || key === 'U')) {
       e.preventDefault();
+      this.recordSecurityViolation('VIEW_SOURCE_ATTEMPT');
+      if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
+        UI.showToast('CẢNH BÁO KHẢO THÍ: Nghiêm cấm xem mã nguồn trang (Ctrl+U) trong bài thi!', 'warning');
+      }
       return;
     }
   }

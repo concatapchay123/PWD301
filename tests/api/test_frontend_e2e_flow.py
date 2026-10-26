@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from flask.testing import FlaskClient
 
-from pwd301.extensions import db
-from pwd301.seeds.baseline import seed_baseline
-from pwd301.services.user_service import register_user
+from backend.extensions import db
+from backend.seeds.baseline import seed_baseline
+from backend.services.user_service import register_user
 
 
 def test_frontend_spa_full_session_flow(client: FlaskClient) -> None:
     """Verify SPA login flow: GET / (HTML + CSRF), POST /auth/login, GET / (authenticated)."""
     seed_baseline(db.session)
     register_user(
-        email="student1@pwd301.local",
+        email="student1@backend.local",
         password="StudentPassw0rd!",
         display_name="Nguyen Minh Anh",
     )
@@ -34,7 +34,7 @@ def test_frontend_spa_full_session_flow(client: FlaskClient) -> None:
     res_login = client.post(
         "/auth/login",
         json={
-            "email": "student1@pwd301.local",
+            "email": "student1@backend.local",
             "password": "StudentPassw0rd!",
             "remember": False,
         },
@@ -43,7 +43,7 @@ def test_frontend_spa_full_session_flow(client: FlaskClient) -> None:
     assert res_login.status_code == 200
     login_data = res_login.get_json()
     assert login_data["status"] == "ok"
-    assert login_data["user"]["email"] == "student1@pwd301.local"
+    assert login_data["user"]["email"] == "student1@backend.local"
 
     # 4. Verify session is recognized
     res_check = client.get("/auth/login")

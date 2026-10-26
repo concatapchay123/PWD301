@@ -24,24 +24,24 @@ import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import AuditEvent
-from pwd301.models.operations import (
+from backend.extensions import db
+from backend.models.identity import Role, User
+from backend.models.notification_audit import AuditEvent
+from backend.models.operations import (
     BackgroundJob,
     BackupRun,
     MaintenanceWindow,
     SystemBackup,
 )
-from pwd301.models.types import utc_now
-from pwd301.services.email_service import enqueue_email
-from pwd301.services.exceptions import (
+from backend.models.types import utc_now
+from backend.services.email_service import enqueue_email
+from backend.services.exceptions import (
     BackupIntegrityError,
     ForbiddenError,
     RestoreForbiddenError,
     ValidationError,
 )
-from pwd301.services.operations_service import (
+from backend.services.operations_service import (
     _prune_expired_backups,
     check_system_health,
     create_database_backup,
@@ -53,7 +53,7 @@ from pwd301.services.operations_service import (
     start_maintenance_window,
     verify_backup_integrity,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -133,18 +133,18 @@ def test_check_system_health_summary(app: Flask, admin_user: User, monkeypatch) 
     is covered independently in test_deploy_readiness, not assumed healthy here.
     """
     monkeypatch.setattr(
-        "pwd301.services.operations_service._check_clamav_health", lambda: {"status": "HEALTHY"}
+        "backend.services.operations_service._check_clamav_health", lambda: {"status": "HEALTHY"}
     )
     monkeypatch.setattr(
-        "pwd301.services.operations_service._check_workers_health",
+        "backend.services.operations_service._check_workers_health",
         lambda sess: {"status": "HEALTHY"},
     )
     monkeypatch.setattr(
-        "pwd301.services.operations_service._check_cloud_storage_health",
+        "backend.services.operations_service._check_cloud_storage_health",
         lambda: {"status": "HEALTHY"},
     )
     monkeypatch.setattr(
-        "pwd301.services.operations_service._check_storage_health", lambda: {"status": "HEALTHY"}
+        "backend.services.operations_service._check_storage_health", lambda: {"status": "HEALTHY"}
     )
     with app.app_context():
         report = check_system_health(include_details=False, session=db.session)
@@ -569,7 +569,7 @@ def test_backup_retention_pruning(app: Flask, admin_user: User, physical_backup_
 
 def test_get_real_system_telemetry_live(app: Flask) -> None:
     """Verify live system telemetry returns real hardware metrics and non-empty data."""
-    from pwd301.services.operations_service import get_real_system_telemetry
+    from backend.services.operations_service import get_real_system_telemetry
 
     with app.app_context():
         telem = get_real_system_telemetry()
@@ -600,7 +600,7 @@ def test_get_real_system_telemetry_fallback_without_psutil(
     """Verify system telemetry falls back to stdlib gracefully when psutil is unavailable."""
     import sys
 
-    from pwd301.services.operations_service import get_real_system_telemetry
+    from backend.services.operations_service import get_real_system_telemetry
 
     monkeypatch.setitem(sys.modules, "psutil", None)
 
@@ -628,7 +628,7 @@ def test_get_real_system_telemetry_cgroup_memory_limit(
     import sys
     from typing import Any
 
-    from pwd301.services.operations_service import get_real_system_telemetry
+    from backend.services.operations_service import get_real_system_telemetry
 
     monkeypatch.setattr(sys, "platform", "linux")
 
@@ -676,7 +676,7 @@ def test_get_real_system_telemetry_uptime_short_intervals(
 
     import psutil
 
-    from pwd301.services.operations_service import get_real_system_telemetry
+    from backend.services.operations_service import get_real_system_telemetry
 
     now = time.time()
     monkeypatch.setattr(psutil, "boot_time", lambda: now - 45)
@@ -693,7 +693,7 @@ def test_get_real_system_telemetry_uptime_fallback_without_psutil(
     """Verify system telemetry uptime calculation functions when psutil is unavailable."""
     import sys
 
-    from pwd301.services.operations_service import get_real_system_telemetry
+    from backend.services.operations_service import get_real_system_telemetry
 
     # Simulate psutil raising an ImportError or exception during import
     monkeypatch.setitem(sys.modules, "psutil", None)
@@ -719,7 +719,7 @@ def test_get_real_system_telemetry_container_isolation_with_host_metrics(
     from pathlib import Path
     from typing import Any
 
-    from pwd301.services.operations_service import get_real_system_telemetry
+    from backend.services.operations_service import get_real_system_telemetry
 
     monkeypatch.setattr(sys, "platform", "linux")
 
@@ -982,8 +982,8 @@ def test_verifyonly_uses_engine_path_and_one_commit(
 def test_verifyonly_audit_failure_rolls_back_verification(
     app, admin_user, physical_backup_engine, monkeypatch
 ):
-    from pwd301.services import operations_service
-    from pwd301.services.exceptions import AuditPersistenceError
+    from backend.services import operations_service
+    from backend.services.exceptions import AuditPersistenceError
 
     backup = create_database_backup(admin_user, session=db.session)
     original_audit = operations_service.record_audit_event

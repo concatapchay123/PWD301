@@ -7,18 +7,18 @@ import json
 import pytest
 from flask import Flask
 
-from pwd301.extensions import db
-from pwd301.models.course import Course, Enrollment, EnrollmentPeriod, Lesson
-from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import AuditEvent
-from pwd301.services.course_service import change_course_status, create_course
-from pwd301.services.exceptions import (
+from backend.extensions import db
+from backend.models.course import Course, Enrollment, EnrollmentPeriod, Lesson
+from backend.models.identity import Role, User
+from backend.models.notification_audit import AuditEvent
+from backend.services.course_service import change_course_status, create_course
+from backend.services.exceptions import (
     ForbiddenError,
     LessonPositionConflictError,
     LessonStateViolationError,
     LessonValidationError,
 )
-from pwd301.services.lesson_service import (
+from backend.services.lesson_service import (
     change_lesson_status,
     create_learning_unit,
     create_lesson,
@@ -28,7 +28,7 @@ from pwd301.services.lesson_service import (
     trash_lesson,
     update_lesson,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 def test_learning_unit_keeps_existing_lesson_identity_and_limits_children(

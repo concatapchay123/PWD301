@@ -7,7 +7,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-from pwd301.services.import_service import (
+from backend.services.import_service import (
     extract_docx_with_resources,
     extract_text_from_docx,
 )

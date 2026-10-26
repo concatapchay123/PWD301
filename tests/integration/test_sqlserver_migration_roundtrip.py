@@ -16,8 +16,8 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 from flask_migrate import downgrade, upgrade
 
-from pwd301 import create_app
-from pwd301.extensions import db
+from backend import create_app
+from backend.extensions import db
 from tests.conftest import require_disposable_sqlserver_target
 
 

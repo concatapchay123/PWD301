@@ -16,24 +16,24 @@ import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.seeds.baseline import seed_baseline
-from pwd301.services.assessment_service import (
+from backend.extensions import db
+from backend.seeds.baseline import seed_baseline
+from backend.services.assessment_service import (
     assign_question,
     create_assessment,
     create_section,
     publish_assessment,
 )
-from pwd301.services.attempt_service import (
+from backend.services.attempt_service import (
     get_attempt_result_for_student,
     save_attempt_answer,
     start_assessment_attempt,
     submit_assessment_attempt,
 )
-from pwd301.services.course_service import create_course
-from pwd301.services.enrollment_service import enroll_student
-from pwd301.services.question_bank_service import create_question
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.course_service import create_course
+from backend.services.enrollment_service import enroll_student
+from backend.services.question_bank_service import create_question
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture(autouse=True)

@@ -20,21 +20,21 @@ from unittest.mock import MagicMock, patch
 import pytest
 from flask import Flask
 
-from pwd301.extensions import db
-from pwd301.models.ai_rag import AIRequest
-from pwd301.models.identity import Role, User
-from pwd301.models.operations import BackupRun
-from pwd301.models.types import utc_now
-from pwd301.services.ai_service import create_conversation, send_chat_message
-from pwd301.services.email_service import enqueue_email
-from pwd301.services.exceptions import (
+from backend.extensions import db
+from backend.models.ai_rag import AIRequest
+from backend.models.identity import Role, User
+from backend.models.operations import BackupRun
+from backend.models.types import utc_now
+from backend.services.ai_service import create_conversation, send_chat_message
+from backend.services.email_service import enqueue_email
+from backend.services.exceptions import (
     AIServiceUnavailableError,
     DocumentParsingError,
     RestoreForbiddenError,
 )
-from pwd301.services.gemini_service import RealGeminiClient
-from pwd301.services.import_service import extract_text_from_docx
-from pwd301.services.operations_service import restore_database_snapshot
+from backend.services.gemini_service import RealGeminiClient
+from backend.services.import_service import extract_text_from_docx
+from backend.services.operations_service import restore_database_snapshot
 
 
 def _get_or_create_role(code: str, name: str) -> Role:
@@ -83,10 +83,10 @@ def test_restore_rejects_path_traversal(app: Flask) -> None:
             patch.object(db.session, "get_bind", return_value=mock_bind),
             patch.object(admin, "verify_password", return_value=True),
             patch(
-                "pwd301.services.operations_service.verify_backup_integrity",
+                "backend.services.operations_service.verify_backup_integrity",
                 return_value={"checksum": "sha256_dummy"},
             ),
-            patch("pwd301.services.operations_service.record_audit_event"),
+            patch("backend.services.operations_service.record_audit_event"),
             pytest.raises(RestoreForbiddenError, match="Path traversal detected"),
         ):
             restore_database_snapshot(
@@ -186,7 +186,7 @@ def test_ai_chat_failure_telemetry_recorded(app: Flask) -> None:
         mock_client.chat_response.side_effect = AIServiceUnavailableError("LLM downstream failure")
 
         with (
-            patch("pwd301.services.ai_service.get_gemini_client", return_value=mock_client),
+            patch("backend.services.ai_service.get_gemini_client", return_value=mock_client),
             pytest.raises(AIServiceUnavailableError),
         ):
             send_chat_message(

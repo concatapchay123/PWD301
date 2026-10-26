@@ -115,9 +115,9 @@ class AuthView {
             if (!secAlert) return '';
             return `
               <div id="auth-security-alert-banner" class="mb-4 p-4 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-900/60 text-rose-800 dark:text-rose-300 text-xs font-medium flex items-start gap-3 animate-fade-in shadow-xs" role="alert">
-                <span class="material-symbols-outlined text-[20px] text-rose-600 dark:text-rose-400 shrink-0">shield</span>
+                <span class="material-symbols-outlined text-[20px] text-rose-600 dark:text-rose-400 shrink-0">warning</span>
                 <div class="space-y-1">
-                  <div class="font-bold text-rose-900 dark:text-rose-200">🛡️ CẢNH BÁO AN NINH HỆ THỐNG</div>
+                  <div class="font-bold text-rose-900 dark:text-rose-200">CẢNH BÁO AN NINH HỆ THỐNG</div>
                   <div class="leading-relaxed text-[11.5px] text-rose-700 dark:text-rose-300">${typeof UI !== 'undefined' && UI.escapeHtml ? UI.escapeHtml(secAlert) : secAlert}</div>
                 </div>
               </div>
@@ -480,30 +480,51 @@ class AuthView {
             </form>
           </div>
 
-          <!-- SECONDARY CARD: KHÔI PHỤC MẬT KHẨU -->
+          <!-- SECONDARY CARD: KHÔI PHỤC MẬT KHẨU (2-TIER VERIFICATION) -->
           <div id="auth-tab-recovery" class="hidden c-card p-6 space-y-4 bg-[#FFFFFF] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B]">
             <div class="text-center space-y-1">
               <div class="w-10 h-10 mx-auto rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 flex items-center justify-center">
                 <span class="material-symbols-outlined text-[22px]">lock_reset</span>
               </div>
               <h2 class="text-base font-bold text-[#222120] dark:text-[#EDEDEB]">Khôi phục mật khẩu</h2>
-              <p class="text-xs text-[#8F8E8A] max-w-xs mx-auto leading-relaxed">Nhập địa chỉ email học vụ để nhận liên kết đặt lại mật khẩu.</p>
+              <p class="text-xs text-[#8F8E8A] max-w-xs mx-auto leading-relaxed">Nhập họ tên hiển thị và email đã đăng ký để nhận liên kết đặt lại mật khẩu.</p>
             </div>
 
-            <div class="space-y-1">
-              <label for="recovery-email" class="block text-xs font-semibold text-[#5C5B57] dark:text-[#9E9D99]">
-                Email học thuật
-              </label>
-              <div class="relative">
-                <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#8F8E8A]">
-                  <span class="material-symbols-outlined text-[16px]">mail</span>
-                </span>
-                <input
-                  type="email"
-                  id="recovery-email"
-                  placeholder="Nhập email..."
-                  class="c-input pl-9"
-                />
+            <div class="space-y-3">
+              <div class="space-y-1">
+                <label for="recovery-display-name" class="block text-xs font-semibold text-[#5C5B57] dark:text-[#9E9D99]">
+                  Họ và tên / Tên hiển thị tài khoản
+                </label>
+                <div class="relative">
+                  <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#8F8E8A]">
+                    <span class="material-symbols-outlined text-[16px]">badge</span>
+                  </span>
+                  <input
+                    type="text"
+                    id="recovery-display-name"
+                    placeholder="Nhập họ và tên đã đăng ký..."
+                    class="c-input pl-9"
+                    autocomplete="name"
+                  />
+                </div>
+              </div>
+
+              <div class="space-y-1">
+                <label for="recovery-email" class="block text-xs font-semibold text-[#5C5B57] dark:text-[#9E9D99]">
+                  Email học thuật nhận thư
+                </label>
+                <div class="relative">
+                  <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#8F8E8A]">
+                    <span class="material-symbols-outlined text-[16px]">mail</span>
+                  </span>
+                  <input
+                    type="email"
+                    id="recovery-email"
+                    placeholder="Nhập email..."
+                    class="c-input pl-9"
+                    autocomplete="email"
+                  />
+                </div>
               </div>
             </div>
 
@@ -760,6 +781,13 @@ class AuthView {
       backToLoginBtn.onclick = () => switchTab('login');
     }
 
+    try {
+      if (sessionStorage.getItem('auth_initial_tab') === 'recovery' || window.location.hash.includes('view=recovery')) {
+        sessionStorage.removeItem('auth_initial_tab');
+        switchTab('recovery');
+      }
+    } catch (_) {}
+
     // Toggle password visibility - Login
     if (togglePassBtn && passInput && passEyeIcon) {
       togglePassBtn.onclick = () => {
@@ -920,7 +948,11 @@ class AuthView {
               showError(err.message);
             }
           } else {
-            showError(err.message || 'Email hoặc mật khẩu không chính xác.');
+            if (err.code === 'DECRYPTION_ERROR' || err.code === 'INVALID_ENVELOPE' || (err.message && (err.message.includes('giải mã') || err.message.includes('mã hóa')))) {
+              showError('Gói tin mã hóa bảo mật không hợp lệ hoặc đã hết hạn. Vui lòng làm mới trang và thử lại.');
+            } else {
+              showError(err.message || 'Email hoặc mật khẩu không chính xác.');
+            }
           }
           if (submitBtn) {
             submitBtn.disabled = false;
@@ -1028,25 +1060,44 @@ class AuthView {
       };
     }
 
-    // Handle Recovery Submit
+    // Handle Recovery Submit (2-Tier Verification: Display Name + Email)
     const sendRecoveryBtn = document.getElementById('btn-send-recovery');
+    const recoveryNameInput = document.getElementById('recovery-display-name');
     const recoveryEmailInput = document.getElementById('recovery-email');
     if (sendRecoveryBtn) {
       sendRecoveryBtn.onclick = async () => {
-        const email = recoveryEmailInput?.value?.trim();
-        if (!email) {
-          UI.showToast('Vui lòng nhập địa chỉ email học thuật.', 'warning');
+        const displayName = recoveryNameInput?.value?.trim() || '';
+        const email = recoveryEmailInput?.value?.trim() || '';
+        if (!displayName) {
+          UI.showToast('Vui lòng nhập họ và tên tài khoản đã đăng ký.', 'warning');
+          recoveryNameInput?.focus();
           return;
         }
+        if (!email) {
+          UI.showToast('Vui lòng nhập địa chỉ email học thuật.', 'warning');
+          recoveryEmailInput?.focus();
+          return;
+        }
+        sendRecoveryBtn.disabled = true;
+        sendRecoveryBtn.innerHTML = `
+          <span class="material-symbols-outlined text-[17px] animate-spin">sync</span>
+          <span>Đang kiểm tra & gửi thư...</span>
+        `;
         try {
-          await ApiClient.forgotPassword(email);
-          UI.showToast('Liên kết đặt lại mật khẩu đã được gửi đến email của bạn.', 'success');
+          const res = await ApiClient.forgotPassword(email, displayName);
+          UI.showToast(res.message || 'Nếu thông tin trùng khớp, liên kết đặt lại mật khẩu đã được gửi vào hộp thư.', 'success');
           switchTab('login');
         } catch (err) {
           UI.showToast(err.message || 'Không thể gửi liên kết khôi phục.', 'error');
+        } finally {
+          sendRecoveryBtn.disabled = false;
+          sendRecoveryBtn.innerHTML = `
+            <span>Gửi liên kết khôi phục</span>
+          `;
         }
       };
     }
+
 
     // Handle 2FA Demo Submit
     const verifyTwofaBtn = document.getElementById('btn-verify-twofa-demo');
@@ -1166,7 +1217,407 @@ class AuthView {
       switchTab('login');
     }
   }
+
+  // =========================================================================
+  // DEDICATED SPA RESET PASSWORD VIEW
+  // =========================================================================
+  static async renderResetPassword(container, token = '') {
+    if (!token && window.location.hash.includes('token=')) {
+      const match = window.location.hash.match(/[?&]token=([^&]+)/);
+      if (match) token = decodeURIComponent(match[1]);
+    }
+
+    if (!token) {
+      container.innerHTML = `
+        <div class="min-h-[85vh] flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+          <div class="max-w-md w-full space-y-6">
+            <div class="text-center space-y-2">
+              <div class="w-12 h-12 mx-auto rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 flex items-center justify-center shadow-xs">
+                <span class="material-symbols-outlined text-[26px]">link_off</span>
+              </div>
+              <h1 class="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Liên kết không hợp lệ</h1>
+              <p class="text-xs text-slate-500 dark:text-slate-400">Thiếu mã token đặt lại mật khẩu hoặc liên kết bị lỗi định dạng.</p>
+            </div>
+            <div class="bg-white dark:bg-[#202020] p-6 sm:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl space-y-4">
+              <div class="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-rose-800 dark:text-rose-200 text-xs font-medium space-y-2 text-center">
+                <p>Không tìm thấy token đặt lại mật khẩu trong đường dẫn liên kết.</p>
+              </div>
+              <div class="space-y-2 pt-2">
+                <button type="button" id="btn-request-new-reset-link" class="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer">
+                  <span class="material-symbols-outlined text-[17px]">lock_reset</span>
+                  <span>Yêu cầu cấp lại liên kết mới</span>
+                </button>
+                <a href="#/auth" class="w-full py-2.5 px-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs transition-colors flex items-center justify-center gap-2">
+                  <span class="material-symbols-outlined text-[16px]">arrow_back</span>
+                  <span>Quay lại trang Đăng nhập</span>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      const reqBtn = container.querySelector('#btn-request-new-reset-link');
+      if (reqBtn) {
+        reqBtn.onclick = () => {
+          sessionStorage.setItem('auth_initial_tab', 'recovery');
+          window.location.hash = '#/auth';
+        };
+      }
+      return;
+    }
+
+    // 1. Initial Skeleton Loading state while verifying token
+    container.innerHTML = `
+      <div class="min-h-[85vh] flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+        <div class="max-w-md w-full space-y-6">
+          <div class="text-center space-y-2">
+            <div class="w-12 h-12 mx-auto rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 flex items-center justify-center shadow-xs">
+              <span class="material-symbols-outlined text-[26px] animate-spin">sync</span>
+            </div>
+            <h1 class="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Đang xác thực liên kết...</h1>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Kiểm tra thời hạn bảo mật 15 phút và danh tính tài khoản.</p>
+          </div>
+          <div class="bg-white dark:bg-[#202020] p-6 sm:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl space-y-4 animate-pulse">
+            <div class="h-14 bg-slate-100 dark:bg-slate-800/80 rounded-2xl"></div>
+            <div class="h-10 bg-slate-100 dark:bg-slate-800/80 rounded-xl"></div>
+            <div class="h-10 bg-slate-100 dark:bg-slate-800/80 rounded-xl"></div>
+            <div class="h-11 bg-slate-100 dark:bg-slate-800/80 rounded-xl"></div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // 2. Verify Token with Backend (strictly fails if >15 minutes or already used)
+    let verifyData = null;
+    try {
+      verifyData = await ApiClient.verifyResetPasswordToken(token);
+    } catch (err) {
+      const errMsg = err.message || 'Liên kết đặt lại mật khẩu đã hết hạn (chỉ có hiệu lực trong vòng 15 phút) hoặc đã được sử dụng. Vui lòng gửi lại yêu cầu mới.';
+      container.innerHTML = `
+        <div class="min-h-[85vh] flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+          <div class="max-w-md w-full space-y-6">
+            <div class="text-center space-y-2">
+              <div class="w-12 h-12 mx-auto rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 flex items-center justify-center shadow-xs">
+                <span class="material-symbols-outlined text-[28px]">timer_off</span>
+              </div>
+              <h1 class="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Liên kết không còn hiệu lực</h1>
+              <p class="text-xs text-slate-500 dark:text-slate-400">Bảo mật tài khoản PPTQ LMS</p>
+            </div>
+
+            <div class="bg-white dark:bg-[#202020] p-6 sm:p-8 rounded-3xl border border-rose-200 dark:border-rose-900/50 shadow-xl space-y-5">
+              <div class="p-4 rounded-2xl bg-rose-50/80 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 text-rose-800 dark:text-rose-200 text-xs leading-relaxed space-y-2">
+                <div class="flex items-start gap-2.5">
+                  <span class="material-symbols-outlined text-rose-600 dark:text-rose-400 text-lg shrink-0 mt-0.5">warning</span>
+                  <div class="space-y-1">
+                    <p class="font-bold text-rose-900 dark:text-rose-100">Không thể thực hiện đặt lại mật khẩu</p>
+                    <p class="text-[12px]">${errMsg}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="space-y-2 pt-2">
+                <button type="button" id="btn-request-new-reset-link" class="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer">
+                  <span class="material-symbols-outlined text-[17px]">lock_reset</span>
+                  <span>Yêu cầu cấp lại liên kết mới</span>
+                </button>
+
+                <a href="#/auth" class="w-full py-2.5 px-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs transition-colors flex items-center justify-center gap-2">
+                  <span class="material-symbols-outlined text-[16px]">arrow_back</span>
+                  <span>Quay lại trang Đăng nhập</span>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      const reqBtn = container.querySelector('#btn-request-new-reset-link');
+      if (reqBtn) {
+        reqBtn.onclick = () => {
+          sessionStorage.setItem('auth_initial_tab', 'recovery');
+          window.location.hash = '#/auth';
+        };
+      }
+      return;
+    }
+
+    // 3. Token is Valid: Render Verified Identity Card & Password Inputs
+    const userDisplayName = (verifyData && (verifyData.display_name || verifyData.name)) || 'Học viên';
+    const userEmail = (verifyData && verifyData.email) || '';
+    const safeName = typeof UI !== 'undefined' && UI.escapeHtml ? UI.escapeHtml(userDisplayName) : userDisplayName;
+    const safeEmail = typeof UI !== 'undefined' && UI.escapeHtml ? UI.escapeHtml(userEmail) : userEmail;
+
+    container.innerHTML = `
+      <div class="min-h-[85vh] flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+        <div class="max-w-md w-full space-y-6">
+          <div class="text-center space-y-2">
+            <div class="w-12 h-12 mx-auto rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 flex items-center justify-center shadow-xs">
+              <span class="material-symbols-outlined text-[26px]">lock_reset</span>
+            </div>
+            <h1 class="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Đặt lại mật khẩu</h1>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Tạo mật khẩu mới cho tài khoản PPTQ của bạn.</p>
+          </div>
+
+          <div class="bg-white dark:bg-[#202020] p-6 sm:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl space-y-5">
+            <!-- Verified Identity Pill -->
+            <div class="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-900 dark:text-emerald-200 text-xs space-y-1.5">
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-1.5 min-w-0">
+                  <span class="material-symbols-outlined text-[18px] text-emerald-600 dark:text-emerald-400 shrink-0">verified_user</span>
+                  <span class="font-bold text-[12.5px] truncate">${safeName}</span>
+                </div>
+                <span class="inline-flex items-center gap-1 text-[10.5px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 px-2 py-0.5 rounded-full font-semibold shrink-0">
+                  <span class="material-symbols-outlined text-[12px]">schedule</span> 15 phút
+                </span>
+              </div>
+              <div class="text-[11px] text-emerald-700 dark:text-emerald-300 font-mono truncate pl-6">
+                ${safeEmail}
+              </div>
+              <p class="text-[10px] text-emerald-700/80 dark:text-emerald-400/80 pl-6 leading-normal">
+                * Liên kết chỉ có tác dụng đổi mật khẩu cho tài khoản này và tự động vô hiệu hóa sau khi sử dụng.
+              </p>
+            </div>
+
+            <form id="form-reset-password" class="space-y-4" novalidate>
+              <div class="space-y-1">
+                <label for="reset-new-password" class="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Mật khẩu mới
+                </label>
+                <div class="relative">
+                  <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                    <span class="material-symbols-outlined text-[17px]">key</span>
+                  </span>
+                  <input
+                    type="password"
+                    id="reset-new-password"
+                    placeholder="Tối thiểu 8 ký tự..."
+                    class="c-input pl-9 pr-10"
+                    required
+                    minlength="8"
+                    autocomplete="new-password"
+                  />
+                  <button type="button" class="btn-toggle-reset-pwd absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer" data-target="reset-new-password" title="Ẩn/Hiện mật khẩu">
+                    <span class="material-symbols-outlined text-[17px]">visibility</span>
+                  </button>
+                </div>
+
+                <!-- Password Strength Meter -->
+                <div id="pwd-strength-container" class="space-y-1 pt-1">
+                  <div class="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex">
+                    <div id="pwd-strength-bar" class="h-full w-0 transition-all duration-300 bg-slate-300 rounded-full"></div>
+                  </div>
+                  <div class="flex items-center justify-between text-[10.5px]">
+                    <span class="text-slate-500 dark:text-slate-400">Độ mạnh: <strong id="pwd-strength-label" class="font-semibold text-slate-700 dark:text-slate-300">Chưa nhập</strong></span>
+                    <span class="text-slate-400 dark:text-slate-500">Tối thiểu 8 ký tự</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="space-y-1">
+                <label for="reset-confirm-password" class="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Xác nhận mật khẩu mới
+                </label>
+                <div class="relative">
+                  <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                    <span class="material-symbols-outlined text-[17px]">check_circle</span>
+                  </span>
+                  <input
+                    type="password"
+                    id="reset-confirm-password"
+                    placeholder="Nhập lại mật khẩu..."
+                    class="c-input pl-9 pr-10"
+                    required
+                    minlength="8"
+                    autocomplete="new-password"
+                  />
+                  <button type="button" class="btn-toggle-reset-pwd absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer" data-target="reset-confirm-password" title="Ẩn/Hiện mật khẩu">
+                    <span class="material-symbols-outlined text-[17px]">visibility</span>
+                  </button>
+                </div>
+              </div>
+
+              <div id="reset-password-error" class="hidden p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-xs text-rose-700 dark:text-rose-300 font-medium"></div>
+
+              <button type="submit" id="btn-submit-reset-pwd" class="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer">
+                <span class="material-symbols-outlined text-[18px]">verified</span>
+                <span>Xác nhận đổi mật khẩu</span>
+              </button>
+            </form>
+
+            <div class="pt-2 text-center">
+              <a href="#/auth" class="text-xs font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors inline-flex items-center gap-1">
+                <span class="material-symbols-outlined text-[15px]">arrow_back</span>
+                <span>Quay lại trang Đăng nhập</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Toggle password eye icon
+    container.querySelectorAll('.btn-toggle-reset-pwd').forEach(btn => {
+      btn.onclick = () => {
+        const targetId = btn.dataset.target;
+        const input = document.getElementById(targetId);
+        if (input) {
+          const isText = input.type === 'text';
+          input.type = isText ? 'password' : 'text';
+          btn.querySelector('.material-symbols-outlined').textContent = isText ? 'visibility' : 'visibility_off';
+        }
+      };
+    });
+
+    // Password strength meter handler
+    const pwdInput = container.querySelector('#reset-new-password');
+    const strengthBar = container.querySelector('#pwd-strength-bar');
+    const strengthLabel = container.querySelector('#pwd-strength-label');
+
+    const updateStrength = () => {
+      const val = pwdInput?.value || '';
+      if (!val) {
+        if (strengthBar) {
+          strengthBar.style.width = '0%';
+          strengthBar.className = 'h-full w-0 transition-all duration-300 bg-slate-300 rounded-full';
+        }
+        if (strengthLabel) {
+          strengthLabel.textContent = 'Chưa nhập';
+          strengthLabel.className = 'font-semibold text-slate-700 dark:text-slate-300';
+        }
+        return;
+      }
+      let score = 0;
+      if (val.length >= 8) score++;
+      if (val.length >= 12) score++;
+      if (/[A-Z]/.test(val) && /[a-z]/.test(val)) score++;
+      if (/[0-9]/.test(val)) score++;
+      if (/[^A-Za-z0-9]/.test(val)) score++;
+
+      if (score <= 1) {
+        if (strengthBar) {
+          strengthBar.style.width = '25%';
+          strengthBar.className = 'h-full transition-all duration-300 bg-rose-500 rounded-full';
+        }
+        if (strengthLabel) {
+          strengthLabel.textContent = 'Yếu';
+          strengthLabel.className = 'font-semibold text-rose-600 dark:text-rose-400';
+        }
+      } else if (score === 2) {
+        if (strengthBar) {
+          strengthBar.style.width = '50%';
+          strengthBar.className = 'h-full transition-all duration-300 bg-amber-500 rounded-full';
+        }
+        if (strengthLabel) {
+          strengthLabel.textContent = 'Trung bình';
+          strengthLabel.className = 'font-semibold text-amber-600 dark:text-amber-400';
+        }
+      } else if (score <= 4) {
+        if (strengthBar) {
+          strengthBar.style.width = '75%';
+          strengthBar.className = 'h-full transition-all duration-300 bg-blue-500 rounded-full';
+        }
+        if (strengthLabel) {
+          strengthLabel.textContent = 'Khá mạnh';
+          strengthLabel.className = 'font-semibold text-blue-600 dark:text-blue-400';
+        }
+      } else {
+        if (strengthBar) {
+          strengthBar.style.width = '100%';
+          strengthBar.className = 'h-full transition-all duration-300 bg-emerald-500 rounded-full';
+        }
+        if (strengthLabel) {
+          strengthLabel.textContent = 'Rất mạnh';
+          strengthLabel.className = 'font-semibold text-emerald-600 dark:text-emerald-400';
+        }
+      }
+    };
+
+    if (pwdInput) {
+      pwdInput.addEventListener('input', updateStrength);
+    }
+
+    const form = container.querySelector('#form-reset-password');
+    const errBox = container.querySelector('#reset-password-error');
+    const submitBtn = container.querySelector('#btn-submit-reset-pwd');
+
+    if (form) {
+      form.onsubmit = async (e) => {
+        e.preventDefault();
+        const newPwd = document.getElementById('reset-new-password')?.value || '';
+        const confirmPwd = document.getElementById('reset-confirm-password')?.value || '';
+
+        if (newPwd.length < 8) {
+          if (errBox) {
+            errBox.textContent = 'Mật khẩu phải có tối thiểu 8 ký tự.';
+            errBox.classList.remove('hidden');
+          }
+          return;
+        }
+
+        if (newPwd !== confirmPwd) {
+          if (errBox) {
+            errBox.textContent = 'Mật khẩu xác nhận không khớp với mật khẩu mới.';
+            errBox.classList.remove('hidden');
+          }
+          return;
+        }
+
+        if (errBox) errBox.classList.add('hidden');
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.innerHTML = `
+            <span class="material-symbols-outlined text-[18px] animate-spin">sync</span>
+            <span>Đang cập nhật mật khẩu...</span>
+          `;
+        }
+
+        try {
+          await ApiClient.resetPassword(token, newPwd, confirmPwd);
+          UI.showToast('Đặt lại mật khẩu thành công! Vui lòng đăng nhập bằng mật khẩu mới.', 'success');
+          container.innerHTML = `
+            <div class="min-h-[85vh] flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+              <div class="max-w-md w-full space-y-6">
+                <div class="text-center space-y-2">
+                  <div class="w-12 h-12 mx-auto rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 flex items-center justify-center shadow-xs">
+                    <span class="material-symbols-outlined text-[28px]">check_circle</span>
+                  </div>
+                  <h1 class="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Đổi mật khẩu thành công</h1>
+                  <p class="text-xs text-slate-500 dark:text-slate-400">Mật khẩu mới đã được cập nhật an toàn theo chuẩn PPTQ LMS.</p>
+                </div>
+                <div class="bg-white dark:bg-[#202020] p-6 sm:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl space-y-4 text-center">
+                  <p class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                    Bạn có thể đăng nhập ngay bằng mật khẩu mới vừa thiết lập.
+                  </p>
+                  <a href="#/auth" class="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center justify-center gap-2">
+                    <span class="material-symbols-outlined text-[17px]">login</span>
+                    <span>Đến trang Đăng nhập</span>
+                  </a>
+                </div>
+              </div>
+            </div>
+          `;
+          setTimeout(() => {
+            window.location.hash = '#/auth';
+          }, 1500);
+        } catch (err) {
+          if (errBox) {
+            errBox.textContent = err.message || 'Lỗi đặt lại mật khẩu. Liên kết có thể đã hết hạn hoặc đã được sử dụng.';
+            errBox.classList.remove('hidden');
+          }
+          UI.showToast(err.message || 'Lỗi đặt lại mật khẩu.', 'error');
+        } finally {
+          if (submitBtn && submitBtn.isConnected) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = `
+              <span class="material-symbols-outlined text-[18px]">verified</span>
+              <span>Xác nhận đổi mật khẩu</span>
+            `;
+          }
+        }
+      };
+    }
+  }
 }
+
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { AuthView };

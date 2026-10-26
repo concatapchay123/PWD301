@@ -22,11 +22,11 @@ import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import AuditEvent
-from pwd301.models.types import utc_now
-from pwd301.services.audit_service import (
+from backend.extensions import db
+from backend.models.identity import Role, User
+from backend.models.notification_audit import AuditEvent
+from backend.models.types import utc_now
+from backend.services.audit_service import (
     force_revoke_user_sessions,
     get_audit_log_detail,
     query_audit_logs,
@@ -35,15 +35,15 @@ from pwd301.services.audit_service import (
     suspend_user_account,
     unsuspend_user_account,
 )
-from pwd301.services.exceptions import (
+from backend.services.exceptions import (
     AdminActionForbiddenError,
     AuditNotFoundError,
     AuditPersistenceError,
     ValidationError,
 )
-from pwd301.services.jwt_auth_service import create_token_pair
-from pwd301.services.session_auth_service import create_auth_session
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.jwt_auth_service import create_token_pair
+from backend.services.session_auth_service import create_auth_session
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -362,7 +362,7 @@ def test_get_audit_log_detail(app: Flask, admin_user: User, student_user: User) 
 
 
 def test_audit_scope_filters_list_and_hides_out_of_scope_detail(app, student_user):
-    from pwd301.models.identity import Role, UserRole
+    from backend.models.identity import Role, UserRole
 
     with app.app_context():
         db.session.query(AuditEvent).delete()

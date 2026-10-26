@@ -8,13 +8,13 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import Course, CourseChangeRequest, CoursePrerequisite
-from pwd301.models.identity import User
-from pwd301.services.course_service import create_course, update_course
-from pwd301.services.enrollment_service import add_course_prerequisite
-from pwd301.services.exceptions import ConflictError, PrerequisiteCycleError
-from pwd301.services.lesson_service import approve_course_change_request, submit_course_changeset
+from backend.extensions import db
+from backend.models.course import Course, CourseChangeRequest, CoursePrerequisite
+from backend.models.identity import User
+from backend.services.course_service import create_course, update_course
+from backend.services.enrollment_service import add_course_prerequisite
+from backend.services.exceptions import ConflictError, PrerequisiteCycleError
+from backend.services.lesson_service import approve_course_change_request, submit_course_changeset
 
 pytest_plugins = ["tests.test_lesson_revision_lifecycle"]
 

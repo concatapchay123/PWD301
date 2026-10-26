@@ -5,7 +5,7 @@ import os
 
 import pytest
 
-from pwd301.services.backup_cipher import decrypt_backup, encrypt_backup
+from backend.services.backup_cipher import decrypt_backup, encrypt_backup
 
 
 def test_streaming_backup_round_trip(tmp_path):

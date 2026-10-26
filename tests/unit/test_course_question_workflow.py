@@ -4,13 +4,13 @@ import json
 
 import pytest
 
-from pwd301.extensions import db
-from pwd301.models.course import CourseChangeRequest
-from pwd301.models.question_bank import Question, QuestionRevision
-from pwd301.models.types import utc_now
-from pwd301.services.exceptions import ConflictError, QuestionStateViolationError
-from pwd301.services.lesson_service import approve_course_change_request, submit_course_changeset
-from pwd301.services.question_bank_service import (
+from backend.extensions import db
+from backend.models.course import CourseChangeRequest
+from backend.models.question_bank import Question, QuestionRevision
+from backend.models.types import utc_now
+from backend.services.exceptions import ConflictError, QuestionStateViolationError
+from backend.services.lesson_service import approve_course_change_request, submit_course_changeset
+from backend.services.question_bank_service import (
     create_question,
     create_question_revision,
     get_question_detail,
@@ -89,7 +89,7 @@ def test_existing_question_effective_read_and_search_preserve_live_revision(
 
 @pytest.mark.parametrize("mutation", ["create", "update", "revision", "trash", "restore"])
 def test_initial_pending_review_freezes_every_question_mutation(app, instructor_user, mutation):
-    from pwd301.services.course_service import create_course
+    from backend.services.course_service import create_course
 
     course = create_course(
         instructor_user,
@@ -143,7 +143,7 @@ def test_question_approval_applies_sealed_content_preserving_original_identity(
 def test_used_question_type_lock_and_correction_are_preserved_until_approval(
     app, published_course, instructor_user, admin_user
 ):
-    from pwd301.models.attempt_regrade import QuestionCorrection
+    from backend.models.attempt_regrade import QuestionCorrection
 
     course, _ = published_course
     original = create_question(admin_user, course.id, payload(), session=db.session)
@@ -251,7 +251,7 @@ def test_grading_history_question_is_proposed_as_retired_without_changing_histor
 def test_terminal_review_preserves_question_proposal_in_successor_draft(
     app, published_course, instructor_user, admin_user, decision
 ):
-    from pwd301.services.lesson_service import (
+    from backend.services.lesson_service import (
         reject_course_change_request,
         retract_course_changeset,
     )
@@ -310,13 +310,13 @@ def test_pending_aggregate_freezes_every_question_mutation(
 def test_blueprint_preflight_and_materialization_with_draft_questions(
     app, published_course, instructor_user, admin_user
 ):
-    from pwd301.models.assessment import Assessment
-    from pwd301.services.assessment_service import (
+    from backend.models.assessment import Assessment
+    from backend.services.assessment_service import (
         configure_blueprint,
         create_assessment,
         publish_assessment,
     )
-    from pwd301.services.course_workflow_service import payload_for
+    from backend.services.course_workflow_service import payload_for
 
     course, _ = published_course
     # 1. Create a question in the draft changeset of this published course

@@ -1,0 +1,3051 @@
+"""Route handlers for the student role blueprint."""
+
+from __future__ import annotations
+
+import contextlib
+import io
+import json
+import logging
+import re
+import uuid
+from collections import defaultdict
+from pathlib import Path
+from typing import Any
+
+from flask import (
+    Response,
+    current_app,
+    has_request_context,
+    jsonify,
+    request,
+    send_file,
+    session,
+)
+
+from backend.blueprints.student import student_bp
+from backend.extensions import db
+from backend.models.course import Course, Enrollment, Lesson, LessonProgress
+from backend.services.analytics_service import get_student_learning_overview
+from backend.services.authorization_service import (
+    _resolve_course,
+    require_authenticated_actor,
+    student_required,
+)
+from backend.services.completion_service import get_course_completion_summary
+from backend.services.enrollment_service import (
+    enroll_student,
+    get_student_enrollments,
+    re_enroll_student,
+)
+from backend.services.exceptions import ForbiddenError, LessonValidationError, ResourceNotFoundError
+from backend.services.file_service import (
+    _serialize_lesson_resource,
+    get_file_for_download,
+    sanitize_filename,
+)
+from backend.services.lesson_service import (
+    _lesson_requires_video_watch,
+    complete_lesson_mini_quiz,
+    get_lesson_detail,
+    get_lesson_progress,
+    record_lesson_progress,
+)
+from backend.services.recommendation_service import generate_course_recommendations
+from backend.services.video_drm_service import (
+    generate_key_token,
+    transcode_to_encrypted_hls,
+    verify_key_token,
+)
+
+logger = logging.getLogger(__name__)
+
+
+def _is_pacing_defense_active() -> bool:
+    for p_path in [
+        Path("/app/storage/defense_mode.txt"),
+        Path("/tmp/defense_mode.txt"),
+        Path("storage/defense_mode.txt"),
+    ]:
+        try:
+            if p_path.exists():
+                return p_path.read_text().strip().upper() != "VULNERABLE"
+        except Exception:
+            pass
+    return True
+
+
+@student_bp.route("/dashboard", methods=["GET"])
+@student_required
+def dashboard() -> Any:
+    """Student dashboard displaying learning overview and enrolled courses."""
+    actor = require_authenticated_actor()
+    overview = get_student_learning_overview(actor, session=db.session)
+    return jsonify(overview), 200
+
+
+@student_bp.route("/recommendations", methods=["GET"])
+@student_required
+def student_recommendations() -> Any:
+    """Personalized course recommendations for student adhering to Algorithm 14."""
+    actor = require_authenticated_actor()
+    try:
+        limit = int(request.args.get("limit", 4))
+    except (ValueError, TypeError):
+        limit = 4
+    recs = generate_course_recommendations(actor=actor, limit=limit, session=db.session)
+    return (
+        jsonify(
+            {
+                "success": True,
+                "recommendations": recs,
+                "items": recs,
+                "count": len(recs),
+            }
+        ),
+        200,
+    )
+
+
+@student_bp.route("/attempt/<attempt_id>", methods=["GET"])
+@student_required
+def attempt_view(attempt_id: str) -> Any:
+    """Render the student exam taking view with server timer, lease token, and question palette."""
+    actor = require_authenticated_actor()
+    from backend.services.attempt_service import (
+        _resolve_attempt,
+        get_attempt_delivery,
+        renew_attempt_lease,
+        takeover_attempt_lease,
+    )
+
+    attempt = _resolve_attempt(attempt_id, session=db.session)
+    if attempt is None:
+        raise ResourceNotFoundError(f"Assessment attempt '{attempt_id}' not found.")
+    if attempt.student_user_id != actor.id:
+        raise ForbiddenError("You are not authorized to access this assessment attempt.")
+    if attempt.status in ("GRADED", "SUBMITTED", "PENDING_GRADING"):
+        return (
+            jsonify(
+                {
+                    "attempt_id": str(attempt.public_id),
+                    "status": attempt.status,
+                    "is_completed": True,
+                    "redirect_url": f"#/student/assessments/results?id={attempt.public_id}",
+                    "message": f"Assessment attempt is completed (status: {attempt.status}).",
+                    "questions": [],
+                    "remaining_seconds": 0,
+                    "lease_token": None,
+                }
+            ),
+            200,
+        )
+
+    raw_token = session.get(f"attempt_lease_{attempt_id}")
+    if raw_token:
+        try:
+            renew_attempt_lease(
+                actor=actor,
+                attempt_id=attempt_id,
+                raw_lease_token=raw_token,
+                session=db.session,
+            )
+            db.session.commit()
+        except Exception:
+            raw_token = None
+
+    if not raw_token:
+        try:
+            _, raw_token = takeover_attempt_lease(
+                actor=actor,
+                attempt_id=attempt_id,
+                session=db.session,
+            )
+            session[f"attempt_lease_{attempt_id}"] = raw_token
+            db.session.commit()
+        except Exception:
+            raw_token = None
+
+    delivery = get_attempt_delivery(
+        student_actor=actor,
+        attempt_id=attempt_id,
+        session=db.session,
+    )
+    delivery["lease_token"] = raw_token
+    lease_seconds = max(1, int(current_app.config.get("ATTEMPT_LEASE_SECONDS", 60)))
+    delivery["lease_heartbeat_interval_seconds"] = min(10, lease_seconds / 3)
+    return jsonify(delivery), 200
+
+
+@student_bp.route("/assessments/<assessment_id>/start", methods=["POST"])
+@student_required
+def student_start_assessment(assessment_id: str) -> Any:
+    """Start an assessment attempt via Web session and redirect to exam view."""
+    from backend.models.attempt_regrade import AssessmentAttempt
+    from backend.services.attempt_service import _resolve_assessment, start_assessment_attempt
+    from backend.services.exceptions import ActiveAttemptExistsError
+
+    actor = require_authenticated_actor()
+    try:
+        attempt, raw_token = start_assessment_attempt(
+            student_actor=actor,
+            assessment_id=assessment_id,
+            session=db.session,
+        )
+        session[f"attempt_lease_{attempt.public_id}"] = raw_token
+        db.session.commit()
+    except ActiveAttemptExistsError:
+        assess = _resolve_assessment(assessment_id, session=db.session)
+        if assess is not None:
+            existing = (
+                db.session.query(AssessmentAttempt)
+                .filter(
+                    AssessmentAttempt.assessment_id == assess.id,
+                    AssessmentAttempt.student_user_id == actor.id,
+                    AssessmentAttempt.status == "IN_PROGRESS",
+                )
+                .first()
+            )
+            if existing is not None:
+                return (
+                    jsonify(
+                        {
+                            "attempt_id": str(existing.public_id),
+                            "lease_token": session.get(f"attempt_lease_{existing.public_id}", ""),
+                            "status": existing.status,
+                        }
+                    ),
+                    200,
+                )
+        raise
+
+    return (
+        jsonify(
+            {
+                "attempt_id": str(attempt.public_id),
+                "lease_token": raw_token,
+                "status": attempt.status,
+            }
+        ),
+        201,
+    )
+
+
+@student_bp.route("/courses/<course_id>/progress", methods=["GET"])
+@student_required
+def course_progress(course_id: str) -> Any:
+    """Get the authenticated student's progress in a specific course."""
+    actor = require_authenticated_actor()
+
+    sess = db.session
+    course = _resolve_course(course_id, session=sess)
+    if course is None:
+        raise ResourceNotFoundError("Course not found.")
+
+    # Scoped strictly to current actor (IDOR prevention)
+    enrollment = (
+        sess.query(Enrollment)
+        .filter(
+            Enrollment.student_user_id == actor.id,
+            Enrollment.course_id == course.id,
+        )
+        .first()
+    )
+    if enrollment is None:
+        raise ResourceNotFoundError("Enrollment record not found for this student.")
+
+    if enrollment.current_progress_percent is None:
+        from backend.services.completion_service import calculate_course_progress
+
+        try:
+            calculate_course_progress(enrollment.id, session=sess)
+        except Exception:
+            pass
+
+    prog_val = float(enrollment.current_progress_percent or 0.0)
+    data = {
+        "course_id": str(course.public_id),
+        "course_title": course.title,
+        "student_id": str(actor.public_id),
+        "progress_percent": prog_val,
+        "current_progress_percent": prog_val,
+        "status": enrollment.status,
+        "enrolled_at": enrollment.enrolled_at.isoformat() if enrollment.enrolled_at else None,
+    }
+    return jsonify(data), 200
+
+
+def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str, Any]:
+    import json
+    import re
+
+    cleaned_markdown = les.markdown_content or ""
+    video_url = None
+    video_urls: list[str] = []
+    urls_match = re.search(r"<!--\s*video_urls:\s*(\[.*?\])\s*-->", cleaned_markdown, re.DOTALL)
+    if urls_match:
+        try:
+            parsed_urls = json.loads(urls_match.group(1))
+            if isinstance(parsed_urls, list):
+                video_urls = [url for url in parsed_urls if isinstance(url, str)]
+        except (ValueError, TypeError):
+            pass
+        cleaned_markdown = cleaned_markdown.replace(urls_match.group(0), "").strip()
+    if cleaned_markdown:
+        m = re.search(r"<!--\s*video_url:\s*(\S+?)\s*-->", cleaned_markdown)
+        if m:
+            video_url = m.group(1)
+            # Remove comment so raw video URL is not leaked into student markdown text
+            cleaned_markdown = re.sub(
+                r"<!--\s*video_url:\s*(\S+?)\s*-->", "", cleaned_markdown
+            ).strip()
+    if not video_url and getattr(les, "video_url", None):
+        video_url = les.video_url
+    if not video_url and getattr(les, "primary_video_file_asset", None):
+        video_url = f"/api/files/{les.primary_video_file_asset.public_id}/stream"
+    if video_url and video_url not in video_urls:
+        video_urls.insert(0, video_url)
+    if not video_url and video_urls:
+        video_url = video_urls[0]
+
+    course_pub_id = les.course.public_id if les.course else ""
+    mapped_urls = []
+    for u in video_urls:
+        if "/api/files/" in u and course_pub_id:
+            m_f = re.search(r"/api/files/([a-zA-Z0-9_\-]+)", u)
+            if m_f:
+                asset_pub_id = m_f.group(1)
+                mapped_urls.append(
+                    f"/student/courses/{course_pub_id}/lessons/{les.public_id}/video/{asset_pub_id}/playlist.m3u8"
+                )
+                continue
+        mapped_urls.append(u)
+    video_urls = mapped_urls
+    if video_url and "/api/files/" in video_url and course_pub_id:
+        m_f = re.search(r"/api/files/([a-zA-Z0-9_\-]+)", video_url)
+        if m_f:
+            asset_pub_id = m_f.group(1)
+            video_url = f"/student/courses/{course_pub_id}/lessons/{les.public_id}/video/{asset_pub_id}/playlist.m3u8"
+
+    res_list = []
+    primary_video_asset_id = None
+    if hasattr(les, "resources") and les.resources:
+        for r in les.resources:
+            fa = r.file_asset
+            if not fa:
+                continue
+            is_scan_ok = getattr(fa, "virus_scan_status", None) == "CLEAN"
+            is_status_ok = fa.status == "ACTIVE" and fa.deleted_at is None
+            if not (is_scan_ok and is_status_ok):
+                continue
+
+            mime = (fa.mime_type or "").lower()
+            name = (fa.original_filename or "").lower()
+            vid_exts = (".mp4", ".webm", ".mkv", ".mov")
+            is_video = mime.startswith("video/") or name.endswith(vid_exts)
+
+            if is_video:
+                course_pub_id = les.course.public_id if les.course else ""
+                hls_url = f"/student/courses/{course_pub_id}/lessons/{les.public_id}/video/{fa.public_id}/playlist.m3u8"
+                video_urls.append(hls_url)
+                if not video_url:
+                    video_url = hls_url
+                    primary_video_asset_id = str(fa.public_id)
+                continue
+
+            if primary_video_asset_id and str(fa.public_id) == primary_video_asset_id:
+                continue
+
+            ser_r = _serialize_lesson_resource(r)
+            res_list.append(ser_r)
+
+    personal_notes = ""
+    notes_saved_at = None
+    if p and p.completion_rule_snapshot_json:
+        try:
+            p_data = json.loads(p.completion_rule_snapshot_json)
+            if isinstance(p_data, dict):
+                personal_notes = p_data.get("personal_notes", "")
+                notes_saved_at = p_data.get("notes_saved_at")
+        except Exception:
+            pass
+
+    quiz = []
+    quiz_passing_percent = 80
+    if les.markdown_content:
+        m_quiz = re.search(r"<!--\s*mini_quiz:\s*(.+?)\s*-->", les.markdown_content, re.DOTALL)
+        if m_quiz:
+            try:
+                parsed_quiz = json.loads(m_quiz.group(1))
+                if isinstance(parsed_quiz, list):
+                    quiz = parsed_quiz
+            except Exception:
+                pass
+
+        if _is_pacing_defense_active() and quiz:
+            sanitized_quiz = []
+            for q_item in quiz:
+                if not isinstance(q_item, dict):
+                    continue
+                c_q = dict(q_item)
+                c_q.pop("correct_index", None)
+                c_q.pop("correct_answers", None)
+                c_q.pop("correct_value", None)
+                c_q.pop("blank_answer", None)
+                c_q.pop("explanation", None)
+                if "blanks" in c_q and isinstance(c_q["blanks"], list):
+                    c_q["blanks"] = [{"accepted_answers": []} for _ in c_q["blanks"]]
+                if "pairs" in c_q and isinstance(c_q["pairs"], list):
+                    lefts = [p.get("left") for p in c_q["pairs"] if isinstance(p, dict)]
+                    rights = [p.get("right") for p in c_q["pairs"] if isinstance(p, dict)]
+                    c_q["left_options"] = lefts
+                    c_q["right_options"] = rights[::-1]
+                    c_q.pop("pairs", None)
+                sanitized_quiz.append(c_q)
+            quiz = sanitized_quiz
+        m_passing = re.search(
+            r"<!--\s*(?:mini_quiz_passing|quiz_passing_percent):\s*(\d+)\s*-->",
+            les.markdown_content,
+        )
+        if m_passing:
+            try:
+                quiz_passing_percent = max(50, min(100, int(m_passing.group(1))))
+            except Exception:
+                pass
+
+    lu = getattr(les, "learning_unit", None)
+    lu_id = str(getattr(lu, "public_id", None)) if lu and getattr(lu, "public_id", None) else None
+    lu_title = getattr(lu, "title", None) if lu else None
+    lu_pos = getattr(lu, "position", None) if lu else None
+    course = getattr(les, "course", None)
+    course_id = (
+        str(getattr(course, "public_id", None))
+        if course and getattr(course, "public_id", None)
+        else None
+    )
+
+    has_newer = False
+    latest_lesson_id = None
+    change_summary = None
+    if getattr(les, "status", None) == "HISTORICAL":
+        from backend.models.course import Lesson
+
+        newer = (
+            db.session.query(Lesson)
+            .filter(
+                Lesson.course_id == les.course_id,
+                Lesson.position == les.position,
+                Lesson.status.in_(["ACTIVE", "PUBLISHED"]),
+                Lesson.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if newer and newer.id != les.id:
+            has_newer = True
+            latest_lesson_id = str(newer.public_id)
+            change_summary = newer.material_change_summary
+
+    quiz_completed_at = None
+    if p and p.completion_rule_snapshot_json:
+        try:
+            snapshot = json.loads(p.completion_rule_snapshot_json)
+            if isinstance(snapshot, dict):
+                quiz_completed_at = snapshot.get("mini_quiz_completed_at")
+        except (TypeError, ValueError):
+            pass
+
+    return {
+        "lesson_id": str(getattr(les, "public_id", None) or getattr(les, "id", "")),
+        "playback_media": _playback_media_descriptors(les, video_urls),
+        "client_ip": request.remote_addr if has_request_context() else None,
+        "learning_unit_id": lu_id,
+        "learning_unit_title": lu_title,
+        "learning_unit_position": lu_pos,
+        "course_id": course_id,
+        "title": les.title,
+        "summary": les.summary,
+        "markdown_content": cleaned_markdown,
+        "position": les.position,
+        "revision_no": getattr(les, "revision_no", 1) or 1,
+        "status": getattr(les, "status", "PUBLISHED"),
+        "has_newer_revision": has_newer,
+        "latest_lesson_id": latest_lesson_id,
+        "material_change_summary": change_summary,
+        "estimated_duration_minutes": les.estimated_duration_minutes,
+        "minimum_completion_seconds": les.minimum_completion_seconds,
+        "viewed_fraction_required": (
+            1.0 if _lesson_requires_video_watch(les) else float(les.viewed_fraction_required)
+        ),
+        "video_url": video_url,
+        "video_urls": video_urls,
+        "quiz": quiz,
+        "quiz_passing_percent": quiz_passing_percent,
+        "personal_notes": personal_notes,
+        "notes_saved_at": notes_saved_at,
+        "progress": {
+            "seconds_spent": p.seconds_spent if p else 0,
+            "max_view_fraction": float(p.max_view_fraction) if p else 0.0,
+            "is_completed": p.completed_at is not None if p else False,
+            "completed_at": p.completed_at.isoformat() if p and p.completed_at else None,
+            "mini_quiz_completed_at": quiz_completed_at,
+        },
+        "resources": res_list,
+    }
+
+
+def _playback_media_descriptors(lesson: Lesson, urls: list[str]) -> list[dict[str, str]]:
+    from backend.services.playback_service import lesson_media_ids
+    from backend.services.youtube_validator_service import extract_youtube_id
+
+    hls_ids = [mid for mid in lesson_media_ids(lesson) if mid.startswith("hls:")]
+    descriptors = []
+    for url in urls:
+        yt = extract_youtube_id(url)
+        media_id = (
+            f"youtube:{yt}"
+            if yt
+            else next((mid for mid in hls_ids if f"/video/{mid.split(':')[1]}/" in url), None)
+        )
+        if media_id:
+            descriptors.append({"url": url, "media_id": media_id})
+    return descriptors
+
+
+@student_bp.route("/lessons/<lesson_id>/playback-sessions", methods=["POST"])
+@student_bp.route("/lessons/<lesson_id>/playback/start", methods=["POST"])
+@student_required
+def start_student_playback_route(lesson_id: str) -> Any:
+    from backend.services.playback_service import start_playback_session
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        raise LessonValidationError("Invalid JSON payload.")
+    client_duration = (
+        payload.get("client_duration")
+        if payload.get("client_duration") is not None
+        else payload.get("duration")
+    )
+    result = start_playback_session(
+        require_authenticated_actor(),
+        lesson_id,
+        payload.get("media_id"),
+        client_duration=client_duration,
+    )
+    result["client_ip"] = request.remote_addr
+    return jsonify({"success": True, "data": result, "error": None, **result}), 200
+
+
+@student_bp.route("/courses/<course_id>/lessons/<lesson_id>", methods=["GET"])
+@student_required
+def get_student_lesson_route(course_id: str, lesson_id: str) -> Any:
+    """Access lesson content for learning, protected by active enrollment check."""
+    actor = require_authenticated_actor()
+
+    sess = db.session
+    course = _resolve_course(course_id, session=sess)
+    if course is None:
+        raise ResourceNotFoundError("Course not found.")
+
+    lesson = get_lesson_detail(actor, lesson_id)
+    if lesson.course_id != course.id:
+        raise ResourceNotFoundError("Lesson does not belong to this course.")
+
+    progress = get_lesson_progress(actor, lesson_id)
+
+    return jsonify(_serialize_student_lesson(lesson, progress)), 200
+
+
+@student_bp.route("/lessons/<lesson_id>/opt-in", methods=["POST"])
+@student_required
+def opt_in_student_lesson_revision(lesson_id: str) -> tuple[Response, int] | Response:
+    """Student opts in to switch to the latest published lesson revision, carrying over progress."""
+    actor = require_authenticated_actor()
+    from backend.services.lesson_service import opt_in_newer_lesson_revision
+
+    latest_lesson, progress = opt_in_newer_lesson_revision(actor, lesson_id, session=db.session)
+    return jsonify(
+        {
+            "success": True,
+            "lesson": _serialize_student_lesson(latest_lesson, progress),
+        }
+    ), 200
+
+
+@student_bp.route("/courses/<course_id>/lessons/<lesson_id>/progress", methods=["POST"])
+@student_bp.route("/lessons/<lesson_id>/progress", methods=["POST"])
+@student_required
+def record_student_progress_route(
+    lesson_id: str, course_id: str | None = None
+) -> tuple[Response, int] | Response:
+    """Heartbeat endpoint to record lesson engagement progress and auto-completion."""
+    actor = require_authenticated_actor()
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    if not isinstance(payload, dict):
+        raise LessonValidationError("Invalid JSON payload.")
+
+    if payload.get("playback_session_id"):
+        from backend.services.playback_service import record_playback_heartbeat
+
+        result = record_playback_heartbeat(actor, lesson_id, payload)
+        return jsonify({"success": True, "data": result, "error": None, **result}), 200
+
+    is_completed_flag = bool(payload.get("completed") or payload.get("is_completed"))
+
+    seconds_increment = payload.get("seconds_increment")
+    if seconds_increment is None:
+        seconds_increment = payload.get("time_spent_seconds", payload.get("seconds_spent", 0))
+
+    view_fraction = payload.get("view_fraction")
+    if view_fraction is None:
+        view_fraction = 1.0 if is_completed_flag else 0.0
+
+    try:
+        sec_int = int(str(seconds_increment or 0))
+        vf_float = float(
+            view_fraction if view_fraction is not None else (1.0 if is_completed_flag else 0.0)
+        )
+    except (ValueError, TypeError):
+        raise LessonValidationError(
+            "seconds_increment must be an integer and view_fraction must be a float."
+        ) from None
+
+    bounded_vf = max(0.0, min(vf_float, 1.0))
+
+    # === FAIL-CLOSED SECURITY GUARD (ANTI-FORGERY DEFENSE CWE-840 / CWE-287) ===
+    if _is_pacing_defense_active():
+        from backend.services.lesson_service import _lesson_requires_video_watch, _resolve_lesson
+        from backend.services.playback_service import get_lesson_progress
+        from backend.models.notification_audit import AuditEvent
+
+        resolved_lesson = _resolve_lesson(lesson_id, session=db.session)
+        if resolved_lesson:
+            existing_p = get_lesson_progress(actor, resolved_lesson.id, session=db.session)
+            actual_ratio = float(existing_p.max_view_fraction or 0.0) if existing_p else 0.0
+            actual_sec = int(existing_p.seconds_spent or 0) if existing_p else 0
+            min_sec = int(resolved_lesson.minimum_completion_seconds or 0)
+            req_fraction = float(resolved_lesson.viewed_fraction_required or 0.8)
+            requires_video = _lesson_requires_video_watch(resolved_lesson)
+
+            # Check for unearned completion claim via zero-time reconcile
+            is_forgery = False
+            if sec_int == 0 and (is_completed_flag or bounded_vf >= 0.95):
+                if requires_video and actual_ratio < 0.95:
+                    is_forgery = True
+                elif not requires_video and (actual_sec < min_sec or actual_ratio < req_fraction):
+                    is_forgery = True
+
+            if is_forgery:
+                actor_roles = ",".join(sorted(r.code for r in getattr(actor, "roles", []))) or "STUDENT"
+                db.session.add(
+                    AuditEvent(
+                        action="SECURITY_ALERT_PROGRESS_FORGERY_ATTEMPT",
+                        actor_user_id=actor.id,
+                        actor_roles_snapshot=actor_roles,
+                        target_type="Lesson",
+                        target_id=resolved_lesson.id,
+                        reason="Phát hiện hành vi gian lận tiến độ học: Bỏ qua thời lượng học thực tế hoặc xem video bằng yêu cầu đồng bộ tức thì.",
+                        after_json=json.dumps({
+                            "claimed_increment": sec_int,
+                            "claimed_is_completed": is_completed_flag,
+                            "claimed_vf": bounded_vf,
+                            "actual_seconds_spent": actual_sec,
+                            "required_min_seconds": min_sec,
+                            "actual_watched_ratio": actual_ratio,
+                        }),
+                        ip_address=request.remote_addr if has_request_context() else None,
+                    )
+                )
+                db.session.commit()
+
+                # Fail-closed: Disallow fake completion, lock to actual observed progress
+                is_completed_flag = False
+                bounded_vf = actual_ratio
+
+    if sec_int == 0:
+        from backend.services.playback_service import reconcile_lesson_progress
+
+        progress = reconcile_lesson_progress(
+            actor, lesson_id, bounded_vf, is_completed=is_completed_flag
+        )
+    else:
+        bounded_sec = max(1, min(sec_int, 60))
+        client_event_id = payload.get("client_event_id") or request.headers.get("X-Client-Event-Id")
+
+        progress = record_lesson_progress(
+            actor=actor,
+            lesson_id=lesson_id,
+            seconds_increment=bounded_sec,
+            view_fraction=bounded_vf,
+            client_event_id=client_event_id,
+            enforce_wall_clock=True,
+        )
+
+    pct = 0.0
+    ep = getattr(progress, "period", None) or getattr(progress, "enrollment_period", None)
+    if ep and getattr(ep, "enrollment", None):
+        pct = float(ep.enrollment.current_progress_percent or 0.0)
+
+    data = {
+        "lesson_id": str(progress.lesson.public_id) if progress.lesson else None,
+        "seconds_spent": progress.seconds_spent,
+        "max_view_fraction": float(progress.max_view_fraction),
+        "is_completed": progress.completed_at is not None,
+        "completed": progress.completed_at is not None,
+        "completed_at": progress.completed_at.isoformat() if progress.completed_at else None,
+        "current_progress_percent": pct,
+    }
+    return jsonify(data), 200
+
+
+@student_bp.route("/lessons/<lesson_id>/quiz-completion", methods=["POST"])
+@student_required
+def complete_student_lesson_quiz(lesson_id: str) -> tuple[Response, int] | Response:
+    """Record answered lesson quiz questions and return authoritative completion."""
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or not isinstance(payload.get("answers"), list):
+        raise LessonValidationError("answers must be a list.")
+
+    progress = complete_lesson_mini_quiz(
+        actor=actor,
+        lesson_id=lesson_id,
+        answers=payload["answers"],
+    )
+    return jsonify(
+        {
+            "lesson_id": str(progress.lesson.public_id) if progress.lesson else None,
+            "is_completed": progress.completed_at is not None,
+            "completed": progress.completed_at is not None,
+            "completed_at": progress.completed_at.isoformat() if progress.completed_at else None,
+        }
+    ), 200
+
+
+def _serialize_enrollment(e: Enrollment) -> dict[str, Any]:
+    prog_val = float(e.current_progress_percent or 0.0)
+    return {
+        "enrollment_id": str(e.public_id),
+        "course_id": str(e.course.public_id) if e.course else None,
+        "course_code": e.course.course_code if e.course else None,
+        "course_title": e.course.title if e.course else None,
+        "thumbnail_url": (
+            e.course.thumbnail_url
+            if (e.course and getattr(e.course, "thumbnail_url", None))
+            else None
+        ),
+        "student_id": str(e.student.public_id) if e.student else None,
+        "status": e.status,
+        "period_no": e.current_period.period_no if e.current_period else None,
+        "current_progress_percent": prog_val,
+        "progress_percent": prog_val,
+        "enrolled_at": e.enrolled_at.isoformat() if e.enrolled_at else None,
+        "left_at": e.left_at.isoformat() if e.left_at else None,
+        "detail_retention_due_at": (
+            e.detail_retention_due_at.isoformat() if e.detail_retention_due_at else None
+        ),
+    }
+
+
+_serialize_enrollment_api = _serialize_enrollment
+
+
+@student_bp.route("/courses/<course_id>/enroll", methods=["POST"])
+@student_required
+def student_enroll_course(course_id: str) -> Any:
+    """Self-enroll in a published course."""
+    actor = require_authenticated_actor()
+
+    from backend.services.exceptions import (
+        AccountNotActiveError,
+        CourseNotAvailableError,
+        EnrollmentCapacityExceededError,
+        EnrollmentError,
+        EnrollmentPrerequisiteError,
+        EnrollmentStateViolationError,
+        ServiceError,
+    )
+
+    try:
+        enrollment = enroll_student(actor=actor, course_id=course_id, session=db.session)
+        status_code = 201 if getattr(enrollment, "_is_new", False) else 200
+
+        return jsonify(_serialize_enrollment(enrollment)), status_code
+    except (
+        EnrollmentPrerequisiteError,
+        EnrollmentCapacityExceededError,
+        CourseNotAvailableError,
+        AccountNotActiveError,
+        EnrollmentStateViolationError,
+        EnrollmentError,
+        ServiceError,
+    ):
+        raise
+
+
+@student_bp.route("/courses/<course_id>/leave", methods=["POST"])
+@student_required
+def student_leave_course(course_id: str) -> Any:
+    """Withdraw from an active course — PERMANENTLY DISABLED (ENROLLMENT_LIFETIME_GUARANTEE)."""
+    raise ForbiddenError(
+        "Chức năng rời khóa học đã bị vô hiệu hóa. "
+        "Khóa học được ghi danh sẽ gắn liền với tài khoản học viên trọn đời."
+    )
+
+
+@student_bp.route("/courses/<course_id>/re-enroll", methods=["POST"])
+@student_required
+def student_re_enroll_course(course_id: str) -> Any:
+    """Re-enroll in a previously left course."""
+    actor = require_authenticated_actor()
+
+    enrollment = re_enroll_student(actor=actor, course_id=course_id, session=db.session)
+    return jsonify(_serialize_enrollment(enrollment)), 200
+
+
+@student_bp.route("/enrollments", methods=["GET"])
+@student_bp.route("/courses", methods=["GET"])
+@student_required
+def student_list_enrollments() -> tuple[Response, int] | Response:
+    """List all enrollments belonging to the authenticated student."""
+    actor = require_authenticated_actor()
+
+    status = request.args.get("status")
+    enrollments = get_student_enrollments(actor=actor, status=status, session=db.session)
+    serialized = [_serialize_enrollment(e) for e in enrollments]
+    return (
+        jsonify(
+            {
+                "success": True,
+                "data": {"enrollments": serialized, "courses": serialized},
+                "error": None,
+                "enrollments": serialized,
+                "courses": serialized,
+            }
+        ),
+        200,
+    )
+
+
+@student_bp.route("/courses/<course_id>/completion", methods=["GET", "POST"])
+@student_required
+def get_student_course_completion_route(course_id: str) -> tuple[Response, int] | Response:
+    """Get or evaluate the authenticated student's completion summary for a course."""
+    actor = require_authenticated_actor()
+
+    course = _resolve_course(course_id, session=db.session)
+    if course is None or course.status == "TRASH" or course.deleted_at is not None:
+        raise ResourceNotFoundError("Course not found.")
+
+    enrollment = (
+        db.session.query(Enrollment)
+        .filter(
+            Enrollment.student_user_id == actor.id,
+            Enrollment.course_id == course.id,
+        )
+        .first()
+    )
+
+    from backend.models.types import utc_now
+    from decimal import Decimal
+    from backend.models.course import CourseCompletionSummary
+
+    summary = get_course_completion_summary(
+        actor=actor,
+        course_id=course.id,
+        student_user_id=actor.id,
+        session=db.session,
+    )
+
+    if enrollment:
+        if request.method == "POST" and not _is_pacing_defense_active():
+            now_ts = utc_now()
+            enrollment.status = "COMPLETED"
+            enrollment.completed_at = now_ts
+            enrollment.current_progress_percent = 100.0
+            if enrollment.current_period:
+                enrollment.current_period.status = "COMPLETED"
+                enrollment.current_period.completed_at = now_ts
+
+            summary_rec = (
+                db.session.query(CourseCompletionSummary)
+                .filter(
+                    CourseCompletionSummary.student_user_id == enrollment.student_user_id,
+                    CourseCompletionSummary.course_id == enrollment.course_id,
+                )
+                .first()
+            )
+            if not summary_rec:
+                summary_rec = CourseCompletionSummary(
+                    student_user_id=enrollment.student_user_id,
+                    course_id=enrollment.course_id,
+                    ever_completed=True,
+                    first_completed_at=now_ts,
+                    latest_completed_at=now_ts,
+                    prerequisite_eligible=True,
+                )
+                db.session.add(summary_rec)
+            else:
+                summary_rec.ever_completed = True
+                summary_rec.prerequisite_eligible = True
+                summary_rec.latest_completed_at = now_ts
+
+            # Auto-pass all published assessments in course for universal completion in vulnerable demo mode
+            from backend.models.assessment import Assessment
+            from backend.models.attempt_regrade import AssessmentAttempt, AssessmentResult
+
+            pub_assessments = (
+                db.session.query(Assessment)
+                .filter(
+                    Assessment.course_id == enrollment.course_id,
+                    Assessment.status == "PUBLISHED",
+                    Assessment.deleted_at.is_(None),
+                )
+                .all()
+            )
+            for ass in pub_assessments:
+                existing_passed = (
+                    db.session.query(AssessmentAttempt)
+                    .join(AssessmentResult, AssessmentResult.attempt_id == AssessmentAttempt.id)
+                    .filter(
+                        AssessmentAttempt.assessment_id == ass.id,
+                        AssessmentAttempt.student_user_id == enrollment.student_user_id,
+                        AssessmentAttempt.status == "GRADED",
+                        AssessmentResult.passed == True,
+                    )
+                    .first()
+                )
+                if not existing_passed:
+                    period_id = enrollment.current_period_id or (enrollment.current_period.id if enrollment.current_period else None)
+                    if period_id:
+                        att = AssessmentAttempt(
+                            assessment_id=ass.id,
+                            student_user_id=enrollment.student_user_id,
+                            enrollment_period_id=period_id,
+                            status="GRADED",
+                            attempt_number=1,
+                            started_at=now_ts,
+                            submitted_at=now_ts,
+                            graded_at=now_ts,
+                        )
+                        db.session.add(att)
+                        db.session.flush()
+                        res = AssessmentResult(
+                            attempt_id=att.id,
+                            raw_score=Decimal("10.00"),
+                            max_score=Decimal("10.00"),
+                            percent_score=Decimal("100.00"),
+                            passed=True,
+                            status="RELEASED",
+                            released_at=now_ts,
+                        )
+                        db.session.add(res)
+
+            db.session.commit()
+        elif not _is_pacing_defense_active() and (
+            enrollment.status == "COMPLETED"
+            or (summary and summary.ever_completed)
+        ):
+            # Already completed via client bypass in vulnerable mode: preserve completion state
+            pass
+        else:
+            from backend.services.completion_service import evaluate_course_completion
+
+            evaluate_course_completion(enrollment, session=db.session)
+            db.session.commit()
+
+    summary = get_course_completion_summary(
+        actor=actor,
+        course_id=course.id,
+        student_user_id=actor.id,
+        session=db.session,
+    )
+
+    data = {
+        "course_id": str(course.public_id),
+        "course_code": course.course_code,
+        "course_title": course.title,
+        "student_id": str(actor.public_id),
+        "is_completed": enrollment.status == "COMPLETED" if enrollment else False,
+        "ever_completed": summary.ever_completed if summary else False,
+        "first_completed_at": (
+            summary.first_completed_at.isoformat()
+            if summary and summary.first_completed_at
+            else None
+        ),
+        "latest_completed_at": (
+            summary.latest_completed_at.isoformat()
+            if summary and summary.latest_completed_at
+            else None
+        ),
+        "prerequisite_eligible": summary.prerequisite_eligible if summary else False,
+        "current_status": enrollment.status if enrollment else None,
+        "current_progress_percent": (
+            float(enrollment.current_progress_percent or 0.0) if enrollment else 0.0
+        ),
+    }
+    return jsonify(data), 200
+
+
+@student_bp.route("/courses/<course_id>/certificate", methods=["GET"])
+@student_required
+def get_student_course_certificate_route(course_id: str) -> tuple[Response, int] | Response:
+    """Get the authenticated student's completion certificate for a course as PDF or metadata."""
+    actor = require_authenticated_actor()
+
+    course = _resolve_course(course_id, session=db.session)
+    if course is None or course.status == "TRASH" or course.deleted_at is not None:
+        raise ResourceNotFoundError("Course not found.")
+
+    enrollment = (
+        db.session.query(Enrollment)
+        .filter(
+            Enrollment.student_user_id == actor.id,
+            Enrollment.course_id == course.id,
+        )
+        .first()
+    )
+
+    if enrollment is None:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "CERTIFICATE_NOT_AVAILABLE",
+                        "message": "Học viên chưa hoàn thành đủ bài học và điều kiện của khóa học để được cấp chứng chỉ.",
+                    },
+                    "message": "Học viên chưa hoàn thành đủ bài học và điều kiện của khóa học để được cấp chứng chỉ.",
+                }
+            ),
+            400,
+        )
+
+    summary = get_course_completion_summary(
+        actor=actor,
+        course_id=course.id,
+        student_user_id=actor.id,
+        session=db.session,
+    )
+
+    if not _is_pacing_defense_active() and (
+        (enrollment and enrollment.status == "COMPLETED")
+        or (summary and summary.ever_completed)
+    ):
+        is_completed = True
+    else:
+        from backend.services.completion_service import evaluate_course_completion
+
+        is_completed, eval_summary = evaluate_course_completion(enrollment, session=db.session)
+        db.session.commit()
+        if is_comp_summary := eval_summary:
+            summary = is_comp_summary
+
+    if not is_completed:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "CERTIFICATE_NOT_AVAILABLE",
+                        "message": "Học viên chưa hoàn thành đủ bài học và điều kiện của khóa học để được cấp chứng chỉ.",
+                    },
+                    "message": "Học viên chưa hoàn thành đủ bài học và điều kiện của khóa học để được cấp chứng chỉ.",
+                }
+            ),
+            400,
+        )
+
+    completed_at = (
+        (summary.latest_completed_at or summary.first_completed_at)
+        if summary and (summary.latest_completed_at or summary.first_completed_at)
+        else (enrollment.completed_at if enrollment else None)
+    )
+    ts = int(completed_at.timestamp()) if completed_at else 0
+    cert_code = f"CERT-{course.course_code}-{actor.id}-{ts}"
+
+    if request.args.get("format") == "json":
+        instructor_name = "Ban Giảng Huấn PPTQ LMS"
+        if course.owner_instructor:
+            instructor_name = course.owner_instructor.display_name or course.owner_instructor.email
+
+        data = {
+            "certificate_code": cert_code,
+            "course_id": str(course.public_id),
+            "course_code": course.course_code,
+            "course_title": course.title,
+            "student_id": str(actor.public_id),
+            "student_name": actor.display_name or actor.email,
+            "completed_at": completed_at.isoformat() if completed_at else None,
+            "instructor_name": instructor_name,
+            "hours": 10,
+            "final_score": (
+                float(summary.final_aggregate_score)
+                if summary and summary.final_aggregate_score is not None
+                else None
+            ),
+        }
+        return jsonify({"success": True, "data": data}), 200
+
+    from backend.services.certificate_pdf_service import (
+        generate_course_certificate_html,
+        generate_course_certificate_pdf,
+    )
+
+    fmt_date = completed_at.strftime("%d/%m/%Y") if completed_at else datetime.now().strftime("%d/%m/%Y")
+
+    if request.args.get("format") == "html" or request.args.get("preview") == "1":
+        html_markup = generate_course_certificate_html(
+            student=actor,
+            course=course,
+            completion_date=fmt_date,
+            cert_id=cert_code,
+        )
+        return Response(html_markup, mimetype="text/html", status=200)
+
+    pdf_bytes = generate_course_certificate_pdf(
+        student=actor,
+        course=course,
+        completion_date=fmt_date,
+        cert_id=cert_code,
+    )
+
+    clean_code = sanitize_filename(course.course_code or "PPTQ")
+    filename = f"Chung_chi_{clean_code}.pdf"
+    response = send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=filename,
+        conditional=False,
+    )
+    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
+@student_bp.route("/notifications", methods=["GET"])
+@student_required
+def notifications_center() -> tuple[Response, int] | Response:
+    from backend.services.notification_service import (
+        get_unread_count,
+        get_user_preferences,
+        list_user_notifications,
+    )
+
+    actor = require_authenticated_actor()
+    target_role = request.args.get("role") or request.args.get("target_role") or "STUDENT"
+    items, total = list_user_notifications(actor=actor, target_role=target_role, session=db.session)
+    prefs = get_user_preferences(actor=actor, session=db.session)
+    unread = get_unread_count(actor=actor, target_role=target_role, session=db.session)
+
+    response_data = {
+        "items": items,
+        "total": total,
+        "unread_count": unread,
+        "preferences": prefs,
+    }
+    return jsonify({"success": True, "data": response_data, **response_data}), 200
+
+
+@student_bp.route("/notifications/<notification_id>/read", methods=["POST"])
+@student_required
+def student_mark_notification_read(notification_id: str) -> Any:
+    """Mark a notification as read via Web UI or AJAX."""
+    from backend.services.notification_service import mark_notification_as_read
+
+    actor = require_authenticated_actor()
+    result = mark_notification_as_read(
+        actor=actor,
+        notification_id=notification_id,
+        session=db.session,
+    )
+    return jsonify({"success": True, "data": result, **result}), 200
+
+
+@student_bp.route("/notifications/mark-all-read", methods=["POST"])
+@student_required
+def student_mark_all_read() -> Any:
+    """Mark all unread notifications as read via Web UI or AJAX."""
+    from backend.services.notification_service import mark_all_as_read
+
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    category = payload.get("category") or request.args.get("category")
+    target_role = (
+        payload.get("role")
+        or payload.get("target_role")
+        or request.args.get("role")
+        or request.args.get("target_role")
+        or "STUDENT"
+    )
+    count = mark_all_as_read(
+        actor=actor,
+        category=category,
+        target_role=target_role,
+        session=db.session,
+    )
+    response_data = {"marked_count": count}
+    return jsonify({"success": True, "data": response_data, **response_data}), 200
+
+
+@student_bp.route("/attempt/<attempt_id>/answers/<attempt_question_id>", methods=["POST", "PUT"])
+@student_required
+def save_student_attempt_answer(
+    attempt_id: str,
+    attempt_question_id: str,
+) -> tuple[Response, int] | Response:
+    """Autosave answer during active student attempt via Web UI / AJAX."""
+    from backend.services.attempt_service import save_attempt_answer
+
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    raw_token = (
+        request.headers.get("X-Attempt-Lease-Token")
+        or request.headers.get("X-Lease-Token")
+        or payload.get("lease_token")
+        or payload.get("raw_lease_token")
+        or session.get(f"attempt_lease_{attempt_id}")
+        or ""
+    )
+    result = save_attempt_answer(
+        actor=actor,
+        attempt_id=attempt_id,
+        attempt_question_id=attempt_question_id,
+        payload=payload,
+        raw_lease_token=raw_token,
+        session=db.session,
+    )
+    return jsonify({"success": True, "data": result, "error": None, **result}), 200
+
+
+@student_bp.route("/attempt/<attempt_id>/lease/renew", methods=["POST"])
+@student_required
+def renew_student_attempt_lease(attempt_id: str) -> tuple[Response, int] | Response:
+    """Renew editing lease for active exam attempt via Web session."""
+    from backend.services.attempt_service import renew_attempt_lease
+
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    raw_token = (
+        request.headers.get("X-Attempt-Lease-Token")
+        or request.headers.get("X-Lease-Token")
+        or payload.get("lease_token")
+        or session.get(f"attempt_lease_{attempt_id}")
+        or ""
+    )
+    result = renew_attempt_lease(
+        actor=actor,
+        attempt_id=attempt_id,
+        raw_lease_token=raw_token,
+        session=db.session,
+    )
+    return jsonify({"success": True, "data": result, "error": None, **result}), 200
+
+
+@student_bp.route("/attempt/<attempt_id>/lease/takeover", methods=["POST"])
+@student_required
+def takeover_student_attempt_lease(attempt_id: str) -> tuple[Response, int] | Response:
+    """Take over editing lease for active exam attempt via Web session."""
+    from backend.services.attempt_service import takeover_attempt_lease
+
+    actor = require_authenticated_actor()
+    attempt, raw_token = takeover_attempt_lease(
+        actor=actor,
+        attempt_id=attempt_id,
+        session=db.session,
+    )
+    session[f"attempt_lease_{attempt_id}"] = raw_token
+    return (
+        jsonify(
+            {
+                "attempt_id": str(attempt.public_id),
+                "status": attempt.status,
+                "lease_token": raw_token,
+                "lease_epoch": attempt.lease_epoch or 1,
+            }
+        ),
+        200,
+    )
+
+
+@student_bp.route("/attempt/<attempt_id>/focus-events", methods=["POST"])
+@student_required
+def record_student_attempt_focus_event(attempt_id: str) -> Any:
+    """Store a browser-reported absence interval for instructor review."""
+    from backend.services.attempt_service import record_attempt_focus_event
+
+    result = record_attempt_focus_event(
+        require_authenticated_actor(),
+        attempt_id,
+        request.get_json(silent=True) or {},
+        session=db.session,
+    )
+    db.session.commit()
+    return jsonify({"success": True, "data": result, "error": None, **result}), 200
+
+
+@student_bp.route("/attempt/<attempt_id>/submit", methods=["POST"])
+@student_required
+def submit_student_attempt(attempt_id: str) -> Any:
+    """Submit assessment attempt via Web UI / AJAX with idempotency and lease release."""
+    from backend.services.attempt_service import submit_assessment_attempt
+
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    raw_token = (
+        request.headers.get("X-Attempt-Lease-Token")
+        or request.headers.get("X-Lease-Token")
+        or payload.get("lease_token")
+        or session.get(f"attempt_lease_{attempt_id}")
+    )
+    idempotency_key = (
+        request.headers.get("X-Submission-Idempotency-Key")
+        or request.headers.get("X-Idempotency-Key")
+        or payload.get("submission_idempotency_key")
+        or payload.get("idempotency_key")
+    )
+
+    result = submit_assessment_attempt(
+        actor=actor,
+        attempt_id=attempt_id,
+        idempotency_key=idempotency_key,
+        raw_lease_token=raw_token,
+        auto_finalize_expired=True,
+        session=db.session,
+    )
+    session.pop(f"attempt_lease_{attempt_id}", None)
+
+    return jsonify({"success": True, "data": result, "error": None, **result}), 200
+
+
+@student_bp.route("/my-learning", methods=["GET"])
+@student_required
+def my_learning() -> Any:
+    """Student view for all enrolled courses with progress and completion summary."""
+    actor = require_authenticated_actor()
+    overview = get_student_learning_overview(actor, session=db.session)
+    enrollments_data = overview.get("enrollments", [])
+    return (
+        jsonify(
+            {
+                "enrollments": enrollments_data,
+                "courses": enrollments_data,
+                "overall_average_progress_percent": overview.get(
+                    "overall_average_progress_percent", 0.0
+                ),
+            }
+        ),
+        200,
+    )
+
+
+@student_bp.route("/assessments", methods=["GET"])
+@student_required
+def assessments_view() -> Any:
+    """Student assessments share the same attempt, score and start-state contract."""
+    from sqlalchemy.orm import selectinload
+
+    from backend.models.assessment import Assessment
+    from backend.models.attempt_regrade import AssessmentAttempt
+    from backend.services.assessment_student_service import student_assessment_summary
+
+    actor = require_authenticated_actor()
+    sess = db.session
+    overview = get_student_learning_overview(actor, session=sess)
+    enrollments = (
+        sess.query(Enrollment)
+        .join(Course, Enrollment.course_id == Course.id)
+        .filter(
+            Enrollment.student_user_id == actor.id,
+            Enrollment.status.in_(("ACTIVE", "COMPLETED")),
+            Course.status != "TRASH",
+            Course.deleted_at.is_(None),
+        )
+        .all()
+    )
+    enrollment_map = {e.course_id: e for e in enrollments}
+    assessments = (
+        sess.query(Assessment)
+        .filter(
+            Assessment.course_id.in_(enrollment_map),
+            Assessment.status == "PUBLISHED",
+            Assessment.deleted_at.is_(None),
+        )
+        .order_by(Assessment.created_at.desc())
+        .all()
+        if enrollment_map
+        else []
+    )
+    attempts = (
+        sess.query(AssessmentAttempt)
+        .options(
+            selectinload(AssessmentAttempt.result),
+            selectinload(AssessmentAttempt.attempt_questions),
+        )
+        .filter(
+            AssessmentAttempt.assessment_id.in_([a.id for a in assessments]),
+            AssessmentAttempt.student_user_id == actor.id,
+            AssessmentAttempt.status != "CANCELLED",
+        )
+        .all()
+        if assessments
+        else []
+    )
+    grouped_attempts: dict[int, list[AssessmentAttempt]] = defaultdict(list)
+    for attempt in attempts:
+        grouped_attempts[attempt.assessment_id].append(attempt)
+    items = []
+    for assessment in assessments:
+        items.append(
+            {
+                "assessment_id": str(assessment.public_id),
+                "id": str(assessment.public_id),
+                "title": assessment.title,
+                "course_id": str(assessment.course.public_id),
+                "course_code": assessment.course.course_code,
+                "course_title": assessment.course.title,
+                "assessment_type": assessment.assessment_type,
+                "status": assessment.status,
+                "time_limit_minutes": assessment.time_limit_minutes,
+                "duration_minutes": assessment.time_limit_minutes,
+                "open_at": assessment.open_at.isoformat() if assessment.open_at else None,
+                "close_at": assessment.close_at.isoformat() if assessment.close_at else None,
+                **student_assessment_summary(
+                    actor,
+                    assessment,
+                    session=sess,
+                    attempts=grouped_attempts[assessment.id],
+                    enrollment=enrollment_map[assessment.course_id],
+                ),
+            }
+        )
+    return jsonify(
+        {
+            "items": items,
+            "assessments": items,
+            "upcoming": overview["upcoming_assessments"],
+            "recent_results": overview["recent_results"],
+        }
+    ), 200
+
+
+@student_bp.route("/assessments/<assessment_id>", methods=["GET"])
+@student_required
+def assessment_detail_view(assessment_id: str) -> Any:
+    """Waiting-room configuration and authoritative student assessment summary."""
+    from backend.services.assessment_service import _resolve_assessment, get_assessment_detail
+    from backend.services.assessment_student_service import student_assessment_summary
+
+    actor = require_authenticated_actor()
+    assessment = _resolve_assessment(assessment_id, session=db.session)
+    if assessment is None:
+        raise ResourceNotFoundError("Assessment not found.")
+    enrollment = (
+        db.session.query(Enrollment)
+        .filter(
+            Enrollment.student_user_id == actor.id,
+            Enrollment.course_id == assessment.course_id,
+            Enrollment.status.in_(("ACTIVE", "COMPLETED")),
+        )
+        .first()
+    )
+    if enrollment is None:
+        raise ForbiddenError("Bạn chưa ghi danh khóa học này.")
+    assessment_data = get_assessment_detail(actor, assessment, session=db.session)
+    assessment_data["course_code"] = assessment.course.course_code
+    assessment_data["course_title"] = assessment.course.title
+    summary = student_assessment_summary(
+        actor, assessment, session=db.session, enrollment=enrollment
+    )
+    return jsonify(
+        {
+            "assessment_id": str(assessment.public_id),
+            "title": assessment.title,
+            "assessment": assessment_data,
+            **summary,
+            "student_name": actor.display_name or getattr(actor, "full_name", None) or "Học viên",
+            "student_email": actor.email,
+            "proctoring_config": {
+                "monitoring_enabled": assessment.monitoring_enabled,
+                "request_fullscreen": assessment.request_fullscreen,
+                "tab_switch_detection": True,
+                "blur_detection": True,
+                "away_duration_tracking": True,
+                "anti_cheating_restrictions": True,
+            },
+        }
+    ), 200
+
+
+def _get_student_attempt_result_data(actor: Any, attempt_id: str) -> dict[str, Any]:
+    """Return the authorized result payload shared by JSON and PDF views."""
+    from backend.services.attempt_service import _resolve_attempt, get_attempt_result_for_student
+
+    result_data = get_attempt_result_for_student(
+        actor=actor,
+        attempt_id=attempt_id,
+        session=db.session,
+    )
+    attempt = _resolve_attempt(attempt_id, session=db.session)
+    if attempt:
+        if attempt.assessment:
+            result_data["assessment_title"] = attempt.assessment.title
+            assess_type = getattr(attempt.assessment, "assessment_type", None)
+            if assess_type is not None:
+                result_data["assessment_type"] = (
+                    assess_type.name if hasattr(assess_type, "name") else str(assess_type)
+                )
+            result_data["duration_minutes"] = attempt.assessment.time_limit_minutes
+            result_data["allow_student_view_results"] = getattr(
+                attempt.assessment, "allow_student_view_results", True
+            )
+            result_data["passing_percent"] = (
+                float(attempt.assessment.passing_percent)
+                if attempt.assessment.passing_percent is not None
+                else 50.0
+            )
+            if attempt.assessment.course:
+                result_data["course_id"] = str(attempt.assessment.course.public_id)
+                result_data["course_title"] = attempt.assessment.course.title
+                result_data["assessment_code"] = attempt.assessment.course.course_code
+                inst = getattr(attempt.assessment.course, "owner_instructor", None)
+                if inst:
+                    result_data["instructor_name"] = getattr(inst, "display_name", None) or getattr(
+                        inst, "full_name", ""
+                    )
+        result_data["started_at"] = attempt.started_at.isoformat() if attempt.started_at else None
+        result_data["submitted_at"] = (
+            attempt.submitted_at.isoformat() if attempt.submitted_at else None
+        )
+        candidate = getattr(attempt, "student", None) or getattr(attempt, "user", None) or actor
+        if candidate:
+            cand_name = (
+                getattr(candidate, "full_name", None)
+                or getattr(candidate, "display_name", None)
+                or getattr(candidate, "name", "")
+            )
+            result_data["candidate_name"] = cand_name
+            result_data["candidate_email"] = getattr(candidate, "email", "")
+
+        from backend.models.attempt_regrade import AssessmentAppeal
+        appeal_rec = (
+            db.session.query(AssessmentAppeal)
+            .filter(
+                (AssessmentAppeal.assessment_attempt_id == attempt.id)
+                | (AssessmentAppeal.public_id == getattr(attempt, "public_id", None))
+            )
+            .order_by(AssessmentAppeal.created_at.desc())
+            .first()
+        )
+        if appeal_rec:
+            result_data["appeal"] = appeal_rec.serialize()
+        else:
+            result_data["appeal"] = None
+
+    result_data["is_released"] = result_data.get("score_status") == "RELEASED"
+    return result_data
+
+
+@student_bp.route("/attempt/<attempt_id>/result", methods=["GET"])
+@student_required
+def attempt_result_view(attempt_id: str) -> Any:
+    """Student view to view graded attempt results and score breakdown."""
+    actor = require_authenticated_actor()
+    result_data = _get_student_attempt_result_data(actor, attempt_id)
+
+    return jsonify(result_data), 200
+
+
+@student_bp.route("/attempt/<attempt_id>/result.pdf", methods=["GET"])
+@student_required
+def attempt_result_pdf(attempt_id: str) -> Response:
+    """Download a released student result as a server-generated PDF attachment."""
+    from backend.services.exceptions import AssessmentValidationError
+    from backend.services.result_pdf_service import build_attempt_result_pdf
+
+    actor = require_authenticated_actor()
+    result_data = _get_student_attempt_result_data(actor, attempt_id)
+    if result_data.get("score_status") not in ("RELEASED", "RESULTS_HIDDEN"):
+        raise ForbiddenError(
+            "The result PDF is available only after the score is released or submitted."
+        )
+
+    try:
+        pdf_bytes = build_attempt_result_pdf(result_data)
+    except ValueError as exc:
+        raise AssessmentValidationError(
+            "Không thể xuất PDF vì có công thức toán học không hợp lệ hoặc vượt giới hạn an toàn."
+        ) from exc
+    assessment_code = result_data.get("assessment_code")
+    assessment_title = result_data.get("assessment_title")
+    filename = sanitize_filename(
+        f"{assessment_code or assessment_title or 'bang-diem'}-bang-diem.pdf"
+    )
+    if not filename.lower().endswith(".pdf"):
+        filename = f"{filename}.pdf"
+
+    import re
+    import unicodedata
+    import urllib.parse
+
+    ascii_clean = unicodedata.normalize("NFKD", filename).encode("ascii", "ignore").decode("ascii")
+    ascii_fallback = re.sub(r"[^a-zA-Z0-9\.\-_]", "_", ascii_clean).strip("_") or "bang-diem.pdf"
+    if not ascii_fallback.lower().endswith(".pdf"):
+        ascii_fallback = f"{ascii_fallback}.pdf"
+    encoded_name = urllib.parse.quote(filename.encode("utf-8"))
+
+    response = send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=ascii_fallback,
+        conditional=False,
+    )
+    response.headers["Content-Disposition"] = (
+        f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded_name}"
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Content-Security-Policy"] = "default-src 'none'"
+    return response
+
+
+@student_bp.route("/ai-assistant", methods=["GET"])
+@student_required
+def ai_assistant_view() -> Any:
+    """Informative endpoint for student AI assistant."""
+    require_authenticated_actor()
+    return (
+        jsonify(
+            {
+                "status": "ok",
+                "message": "AI assistant ready.",
+            }
+        ),
+        200,
+    )
+
+
+@student_bp.route("/ai/chat", methods=["POST"])
+@student_required
+def student_ai_chat() -> Any:
+    from backend.services.ai_service import create_conversation, get_conversation, send_chat_message
+    from backend.services.authorization_service import can_manage_course
+    from backend.services.exceptions import (
+        AIConversationExpiredError,
+        AIOutOfScopeError,
+        AIPromptInjectionError,
+        AIQuotaExceededError,
+        AISecurityViolationError,
+    )
+    from backend.services.rate_limit_service import check_ai_rate_limit
+
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    message = (payload.get("message") or payload.get("content") or "").strip()
+    if not message:
+        return jsonify({"error": {"message": "Vui lòng nhập nội dung tin nhắn."}}), 400
+
+    # Explicit New Chat request: if conversation_id is explicitly passed as None or empty in payload
+    explicit_new_chat = "conversation_id" in payload and not payload.get("conversation_id")
+    if explicit_new_chat:
+        session.pop("active_ai_conversation_id", None)
+        conv_id = None
+    else:
+        conv_id = payload.get("conversation_id") or session.get("active_ai_conversation_id")
+
+    conv = None
+    if conv_id:
+        try:
+            conv = get_conversation(actor=actor, conversation_id=conv_id, session=db.session)
+            if conv and (conv.is_expired or conv.status == "EXPIRED"):
+                logger.info(
+                    "Active AI conversation %s expired for actor %s, auto-renewing session.",
+                    conv_id,
+                    actor.id,
+                )
+                conv = None
+                session.pop("active_ai_conversation_id", None)
+            elif conv:
+                req_course = payload.get("course_id")
+                req_lesson = payload.get("lesson_id")
+                conv_course_uuid = (
+                    str(conv.course.public_id) if conv.course and conv.course.public_id else None
+                )
+                conv_lesson_uuid = (
+                    str(conv.lesson.public_id) if conv.lesson and conv.lesson.public_id else None
+                )
+                req_course_str = str(req_course) if req_course else None
+                req_lesson_str = str(req_lesson) if req_lesson else None
+
+                course_changed = conv_course_uuid != req_course_str
+                lesson_changed = conv_lesson_uuid != req_lesson_str
+                if course_changed or lesson_changed:
+                    conv = None
+                    session.pop("active_ai_conversation_id", None)
+        except Exception:
+            conv = None
+            session.pop("active_ai_conversation_id", None)
+
+    if conv is None:
+        course_id = payload.get("course_id")
+        lesson_id = payload.get("lesson_id")
+        if course_id:
+            target_course = _resolve_course(course_id, session=db.session)
+            if target_course is None:
+                return (
+                    jsonify({"error": {"message": "Khóa học không tồn tại.", "code": "NOT_FOUND"}}),
+                    404,
+                )
+            enr_check = (
+                db.session.query(Enrollment)
+                .filter(
+                    Enrollment.student_user_id == actor.id,
+                    Enrollment.course_id == target_course.id,
+                    Enrollment.status.in_(("ACTIVE", "COMPLETED")),
+                )
+                .first()
+            )
+            if not enr_check and (
+                lesson_id
+                or (
+                    target_course.status != "PUBLISHED"
+                    and not (
+                        actor.is_admin
+                        or can_manage_course(actor, target_course, session=db.session)
+                    )
+                )
+            ):
+                return (
+                    jsonify(
+                        {
+                            "error": {
+                                "message": (
+                                    "Bạn chưa ghi danh khóa học này nên không thể "
+                                    "truy cập trợ lý AI ngữ cảnh bài học."
+                                ),
+                                "code": "FORBIDDEN_NOT_ENROLLED",
+                            },
+                            "status": "refused",
+                        }
+                    ),
+                    403,
+                )
+            course_id = str(target_course.public_id)
+
+        context_type = "LESSON" if lesson_id else ("COURSE" if course_id else "GLOBAL")
+        try:
+            conv = create_conversation(
+                actor=actor,
+                context_type=context_type,
+                course_id=course_id,
+                lesson_id=lesson_id,
+                session=db.session,
+            )
+            session["active_ai_conversation_id"] = str(conv.public_id)
+            db.session.commit()
+        except Exception as exc:
+            logger.error("Failed creating AI conversation: %s", exc)
+
+    try:
+        check_ai_rate_limit(actor, role=actor.primary_role, client_ip=request.remote_addr)
+    except AIQuotaExceededError as e:
+        resp = jsonify(
+            {
+                "success": False,
+                "data": None,
+                "error": {"message": str(e), "code": "RATE_LIMIT_EXCEEDED"},
+            }
+        )
+        resp.headers["Retry-After"] = str(getattr(e, "retry_after", 60))
+        return resp, 429
+    except Exception as e:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "data": None,
+                    "error": {"message": str(e), "code": "RATE_LIMIT_EXCEEDED"},
+                }
+            ),
+            429,
+        )
+
+    if conv is None:
+        # Fallback friendly response
+        return jsonify(
+            {
+                "reply": (
+                    "Chào bạn! Mình là Bạch Tuộc Trợ lý AI 🐙. "
+                    f"Đối với câu hỏi '{message}', "
+                    "bạn hãy hỏi trực tiếp về bài học hoặc kiến thức lập trình Web nhé!"
+                ),
+                "status": "success",
+            }
+        ), 200
+
+    try:
+        is_on_main_page = not bool(conv.course_id or conv.lesson_id or payload.get("course_id"))
+        surface_hint = "MAIN_PAGE" if is_on_main_page else None
+        try:
+            user_msg, asst_msg = send_chat_message(
+                actor=actor,
+                conversation_id=str(conv.public_id),
+                content=message,
+                raise_out_of_scope=True,
+                session=db.session,
+                surface_hint=surface_hint,
+            )
+        except AIConversationExpiredError:
+            logger.info(
+                "AI conversation %s expired during message dispatch, recreating session.",
+                conv.public_id,
+            )
+            session.pop("active_ai_conversation_id", None)
+            course_id = payload.get("course_id")
+            lesson_id = payload.get("lesson_id")
+            context_type = "LESSON" if lesson_id else ("COURSE" if course_id else "GLOBAL")
+            conv = create_conversation(
+                actor=actor,
+                context_type=context_type,
+                course_id=course_id,
+                lesson_id=lesson_id,
+                session=db.session,
+            )
+            session["active_ai_conversation_id"] = str(conv.public_id)
+            db.session.commit()
+            is_on_main_page = not bool(conv.course_id or conv.lesson_id or course_id)
+            surface_hint = "MAIN_PAGE" if is_on_main_page else None
+            user_msg, asst_msg = send_chat_message(
+                actor=actor,
+                conversation_id=str(conv.public_id),
+                content=message,
+                raise_out_of_scope=True,
+                session=db.session,
+                surface_hint=surface_hint,
+            )
+
+        db.session.commit()
+        course_title = conv.course.title if (conv and conv.course) else None
+        return jsonify(
+            {
+                "conversation_id": str(conv.public_id),
+                "reply": asst_msg.content if asst_msg else "Không có phản hồi từ trợ lý.",
+                "course_title": course_title,
+                "status": "success",
+            }
+        ), 200
+    except (AIPromptInjectionError, AISecurityViolationError) as exc:
+        logger.warning("Student AI chat blocked security violation: %s", exc)
+        return jsonify(
+            {
+                "conversation_id": str(conv.public_id) if conv else None,
+                "reply": (
+                    "⚠️ Cảnh báo an ninh: Yêu cầu của bạn đã bị từ chối do vi phạm chính sách "
+                    "an toàn thông tin của hệ thống. Trợ lý AI chỉ phục vụ mục đích học tập và "
+                    "nghiêm cấm mọi hành vi tấn công, khai thác lỗ hổng hoặc phá hoại."
+                ),
+                "status": "refused",
+                "error_code": "SECURITY_VIOLATION",
+            }
+        ), 200
+    except AIOutOfScopeError as exc:
+        logger.info("Student AI chat refused out-of-scope query: %s", exc)
+        return jsonify(
+            {
+                "conversation_id": str(conv.public_id) if conv else None,
+                "reply": exc.message,
+                "status": "refused",
+                "error_code": "OUT_OF_SCOPE",
+            }
+        ), 200
+    except Exception as exc:
+        logger.warning("Student AI chat encountered error: %s", exc)
+        return jsonify(
+            {
+                "conversation_id": str(conv.public_id) if conv else None,
+                "reply": (
+                    f"Chào bạn! Mình là Bạch Tuộc Trợ lý AI 🐙. Đối với câu hỏi '{message}':\n"
+                    "Hiện tại kết nối AI đang bận hoặc có gián đoạn tạm thời. "
+                    "Bạn có thể xem lại tài liệu bài học, ví dụ mã nguồn hoặc "
+                    "đặt lại câu hỏi sau ít giây nhé!"
+                ),
+                "status": "success",
+            }
+        ), 200
+
+
+@student_bp.route("/lessons/<lesson_id>", methods=["GET"])
+@student_required
+def get_student_lesson_by_id(lesson_id: str) -> Any:
+    """Convenient shortcut route to view a lesson by lesson_id."""
+    actor = require_authenticated_actor()
+    lesson = get_lesson_detail(actor, lesson_id)
+    if lesson.course is None:
+        raise ResourceNotFoundError("Course not found for this lesson.")
+    return get_student_lesson_route(
+        course_id=str(lesson.course.public_id),
+        lesson_id=str(lesson.public_id),
+    )
+
+
+@student_bp.route("/courses/<course_id>", methods=["GET"])
+@student_required
+def student_course_detail(course_id: str) -> Any:
+    """Course detail view with prerequisites checking and enrollment."""
+    import sqlalchemy as sa
+
+    from backend.models.course import CourseCompletionSummary
+    from backend.services.enrollment_service import (
+        check_prerequisites_met,
+        get_course_prerequisites,
+    )
+
+    actor = require_authenticated_actor()
+    course = _resolve_course(course_id, session=db.session)
+    if course is None or course.status == "TRASH" or course.deleted_at is not None:
+        raise ResourceNotFoundError("Course not found.")
+    enrollment = (
+        db.session.query(Enrollment)
+        .filter(Enrollment.student_user_id == actor.id, Enrollment.course_id == course.id)
+        .first()
+    )
+    if enrollment and enrollment.current_progress_percent is None:
+        from backend.services.completion_service import calculate_course_progress
+
+        try:
+            calculate_course_progress(enrollment.id, session=db.session)
+        except Exception:
+            pass
+
+    is_eligible, missing_titles = check_prerequisites_met(actor.id, course.id, session=db.session)
+    prereqs = get_course_prerequisites(course_id=course.id, session=db.session)
+
+    prereq_ids = [p.id for p in prereqs]
+    completed_ids: set[int] = set()
+    if prereq_ids:
+        summaries = (
+            db.session.query(CourseCompletionSummary.course_id)
+            .filter(
+                CourseCompletionSummary.student_user_id == actor.id,
+                CourseCompletionSummary.course_id.in_(prereq_ids),
+                CourseCompletionSummary.prerequisite_eligible == True,
+            )
+            .all()
+        )
+        completed_ids = {s[0] for s in summaries}
+        completed_enrs = (
+            db.session.query(Enrollment.course_id)
+            .filter(
+                Enrollment.student_user_id == actor.id,
+                Enrollment.course_id.in_(prereq_ids),
+                Enrollment.status == "COMPLETED",
+            )
+            .all()
+        )
+        for ce in completed_enrs:
+            completed_ids.add(ce[0])
+
+    prereq_items = [
+        {
+            "id": str(p.public_id),
+            "code": p.course_code,
+            "course_code": p.course_code,
+            "title": p.title,
+            "is_satisfied": p.id in completed_ids,
+        }
+        for p in prereqs
+    ]
+
+    active_count = (
+        db.session.query(sa.func.count(Enrollment.id))
+        .filter(
+            Enrollment.course_id == course.id,
+            Enrollment.status == "ACTIVE",
+        )
+        .scalar()
+        or 0
+    )
+    is_full = bool(course.capacity is not None and active_count >= course.capacity)
+
+    from backend.models.assessment import Assessment
+    from backend.models.course import LearningUnit
+    from backend.models.file_import import FileAsset
+
+    lessons = (
+        db.session.query(Lesson)
+        .filter(
+            Lesson.course_id == course.id,
+            Lesson.status == "PUBLISHED",
+            Lesson.deleted_at.is_(None),
+        )
+        .order_by(Lesson.position.asc())
+        .all()
+    )
+
+    lesson_progress_map: dict[int, LessonProgress] = {}
+    if enrollment and enrollment.current_period_id and lessons:
+        progs = (
+            db.session.query(LessonProgress)
+            .filter(
+                LessonProgress.enrollment_period_id == enrollment.current_period_id,
+                LessonProgress.lesson_id.in_([les.id for les in lessons]),
+            )
+            .all()
+        )
+        for prg in progs:
+            lesson_progress_map[prg.lesson_id] = prg
+
+    assessments = (
+        db.session.query(Assessment)
+        .filter(
+            Assessment.course_id == course.id,
+            Assessment.status == "PUBLISHED",
+            Assessment.deleted_at.is_(None),
+        )
+        .order_by(Assessment.created_at.asc())
+        .all()
+    )
+
+    from backend.services.assessment_student_service import student_assessment_summary
+
+    serialized_assessments = []
+    for a in assessments:
+        linked_lesson_id = None
+        linked_unit_id = None
+        for qa in getattr(a, "question_assignments", []):
+            if qa.question and qa.question.lesson_id:
+                les_m = db.session.query(Lesson).filter(Lesson.id == qa.question.lesson_id).first()
+                if les_m:
+                    linked_lesson_id = str(les_m.public_id)
+                    if les_m.learning_unit_id:
+                        lu_m = (
+                            db.session.query(LearningUnit)
+                            .filter(LearningUnit.id == les_m.learning_unit_id)
+                            .first()
+                        )
+                        if lu_m:
+                            linked_unit_id = str(lu_m.public_id)
+                break
+
+        if not linked_lesson_id:
+            for bp in getattr(a, "blueprints", []):
+                for r in getattr(bp, "rules", []):
+                    if r.lesson:
+                        linked_lesson_id = str(r.lesson.public_id)
+                        if r.lesson.learning_unit:
+                            linked_unit_id = str(r.lesson.learning_unit.public_id)
+                        break
+                if linked_lesson_id:
+                    break
+
+        if not linked_unit_id and a.description and "unit_id:" in a.description:
+            m = re.search(r"unit_id:\s*([a-fA-F0-9-]+)", a.description)
+            if m:
+                u_str = m.group(1).strip()
+                matching_unit = (
+                    db.session.query(LearningUnit)
+                    .filter(
+                        LearningUnit.course_id == course.id,
+                        (LearningUnit.public_id == u_str) | (LearningUnit.id.cast(sa.String) == u_str),
+                        LearningUnit.deleted_at.is_(None),
+                    )
+                    .first()
+                )
+                if matching_unit:
+                    linked_unit_id = str(matching_unit.public_id)
+
+        serialized_assessments.append(
+            {
+                "assessment_id": str(a.public_id),
+                "id": str(a.public_id),
+                "title": a.title,
+                "description": a.description,
+                "lesson_id": linked_lesson_id,
+                "learning_unit_id": linked_unit_id,
+                "assessment_type": a.assessment_type,
+                "status": a.status,
+                "time_limit_minutes": a.time_limit_minutes,
+                "duration_minutes": a.time_limit_minutes,
+                "open_at": a.open_at.isoformat() if a.open_at else None,
+                "close_at": a.close_at.isoformat() if a.close_at else None,
+                **student_assessment_summary(actor, a, session=db.session, enrollment=enrollment),
+            }
+        )
+
+    # Invariant: Course Document Tab only shows actual learning attachments attached to lessons.
+    # Root course general resources list is strictly empty to prevent leaking trailers or exported PDFs.
+    serialized_resources: list[dict[str, Any]] = []
+
+    serialized_lessons = []
+    for les in lessons:
+        les_prg = lesson_progress_map.get(les.id)
+        serialized_lessons.append(
+            {
+                "id": str(les.public_id),
+                "public_id": str(les.public_id),
+                "lesson_id": str(les.public_id),
+                "learning_unit_id": str(les.learning_unit.public_id) if les.learning_unit else None,
+                "learning_unit_title": les.learning_unit.title if les.learning_unit else None,
+                "title": les.title,
+                "summary": les.summary,
+                "position": les.position,
+                "estimated_duration_minutes": les.estimated_duration_minutes or 45,
+                "is_completed": les_prg.completed_at is not None if les_prg else False,
+                "progress": {
+                    "seconds_spent": les_prg.seconds_spent if les_prg else 0,
+                    "max_view_fraction": float(les_prg.max_view_fraction) if les_prg else 0.0,
+                    "is_completed": les_prg.completed_at is not None if les_prg else False,
+                    "completed_at": (
+                        les_prg.completed_at.isoformat()
+                        if les_prg and les_prg.completed_at
+                        else None
+                    ),
+                },
+                "resources": (
+                    [
+                        _serialize_lesson_resource(r)
+                        for r in les.resources
+                        if r.file_asset
+                        and r.file_asset.status == "ACTIVE"
+                        and r.file_asset.virus_scan_status == "CLEAN"
+                    ]
+                    if hasattr(les, "resources") and les.resources
+                    else []
+                ),
+            }
+        )
+
+    contact_info = None
+    trailer_url = None
+    clean_desc = course.description or ""
+    if course.description and "<!-- contact_info:" in course.description:
+        m_contact = re.search(
+            r"<!--\s*contact_info:\s*(\{.*?\})\s*-->", course.description, re.DOTALL
+        )
+        if m_contact:
+            with contextlib.suppress(Exception):
+                contact_info = json.loads(m_contact.group(1))
+        clean_desc = re.sub(
+            r"<!--\s*contact_info:\s*\{.*?\}\s*-->\n*", "", clean_desc, flags=re.DOTALL
+        ).strip()
+
+    if course.description and "<!-- trailer_url:" in course.description:
+        m_trailer = re.search(r"<!--\s*trailer_url:\s*(.*?)\s*-->", course.description, re.DOTALL)
+        if m_trailer:
+            trailer_url = m_trailer.group(1).strip()
+        clean_desc = re.sub(
+            r"<!--\s*trailer_url:\s*.*?\s*-->\n*", "", clean_desc, flags=re.DOTALL
+        ).strip()
+    elif course.description and course.description.strip().startswith("{"):
+        with contextlib.suppress(Exception):
+            parsed_d = json.loads(course.description)
+            if isinstance(parsed_d, dict):
+                trailer_url = parsed_d.get("video_url") or parsed_d.get("trailer_url")
+                if not trailer_url and isinstance(parsed_d.get("blocks"), list):
+                    for b in parsed_d["blocks"]:
+                        if isinstance(b, dict) and b.get("data") and b["data"].get("video_url"):
+                            trailer_url = b["data"]["video_url"]
+                            break
+                clean_desc = parsed_d.get("summary") or clean_desc
+
+    instructor_email = course.owner_instructor.email if course.owner_instructor else None
+    if not contact_info:
+        contact_info = {
+            "email": instructor_email or "",
+            "phone": "",
+            "group": "",
+            "office_hours": "",
+        }
+
+    lo_data = None
+    if course.learning_objectives:
+        try:
+            lo_data = json.loads(course.learning_objectives)
+            if isinstance(lo_data, str):
+                with contextlib.suppress(Exception):
+                    lo_data = json.loads(lo_data)
+        except Exception:
+            lo_data = course.learning_objectives
+
+    cr_data = None
+    if course.completion_requirements:
+        try:
+            cr_data = json.loads(course.completion_requirements)
+            if isinstance(cr_data, str):
+                with contextlib.suppress(Exception):
+                    cr_data = json.loads(cr_data)
+        except Exception:
+            cr_data = course.completion_requirements
+
+    from backend.models.course import LearningUnit
+
+    units = (
+        db.session.query(LearningUnit)
+        .filter(
+            LearningUnit.course_id == course.id,
+            LearningUnit.change_request_id.is_(None),
+            LearningUnit.deleted_at.is_(None),
+        )
+        .order_by(LearningUnit.position.asc(), LearningUnit.id.asc())
+        .all()
+    )
+
+    serialized_units = []
+    for u in units:
+        u_lessons = [
+            les for les in serialized_lessons if les.get("learning_unit_id") == str(u.public_id)
+        ]
+        u_lesson_count = len(u_lessons)
+        u_completed_count = sum(1 for les in u_lessons if les.get("is_completed"))
+        is_unit_completed = u_lesson_count > 0 and u_completed_count >= u_lesson_count
+        serialized_units.append(
+            {
+                "id": str(u.public_id),
+                "learning_unit_id": str(u.public_id),
+                "title": u.title,
+                "position": u.position,
+                "lesson_count": u_lesson_count,
+                "completed_lesson_count": u_completed_count,
+                "is_completed": is_unit_completed,
+                "lessons": u_lessons,
+            }
+        )
+
+    if not units and serialized_lessons:
+        u_lesson_count = len(serialized_lessons)
+        u_completed_count = sum(1 for les in serialized_lessons if les.get("is_completed"))
+        serialized_units.append(
+            {
+                "id": "default",
+                "learning_unit_id": "default",
+                "title": "Chương trình bài học",
+                "position": 1,
+                "lesson_count": u_lesson_count,
+                "completed_lesson_count": u_completed_count,
+                "is_completed": (u_lesson_count > 0 and u_completed_count >= u_lesson_count),
+                "lessons": serialized_lessons,
+            }
+        )
+
+    return jsonify(
+        {
+            "course": {
+                "id": str(course.public_id),
+                "public_id": str(course.public_id),
+                "code": course.course_code,
+                "course_code": course.course_code,
+                "title": course.title,
+                "thumbnail_url": course.thumbnail_url,
+                "description": clean_desc,
+                "category": course.category,
+                "difficulty": course.difficulty,
+                "learning_objectives": lo_data,
+                "target_audience": course.target_audience,
+                "completion_requirements": cr_data,
+                "status": course.status,
+                "price": int(getattr(course, "price", 0) or 0),
+                "capacity": course.capacity,
+                "is_full": is_full,
+                "active_enrolled_count": active_count,
+                "instructor_name": (
+                    course.owner_instructor.display_name
+                    if course.owner_instructor
+                    else "Hội đồng Khoa học Khoa CNTT"
+                ),
+                "instructor_email": instructor_email,
+                "contact_info": contact_info,
+                "trailer_url": trailer_url,
+                "video_url": trailer_url,
+                "trailer_stream_url": f"/student/courses/{course.public_id}/trailer/stream" if (course.trailer_file_asset_id or trailer_url) else None,
+                "trailer_file_asset_id": (
+                    str(course.trailer_file_asset_id)
+                    if getattr(course, "trailer_file_asset_id", None)
+                    else None
+                ),
+            },
+            "enrollment": (
+                {
+                    "status": enrollment.status if enrollment else None,
+                    "id": str(enrollment.public_id) if enrollment else None,
+                    "enrollment_id": str(enrollment.public_id) if enrollment else None,
+                    "current_progress_percent": float(enrollment.current_progress_percent or 0.0),
+                    "progress_percent": float(enrollment.current_progress_percent or 0.0),
+                }
+                if enrollment
+                else None
+            ),
+            "is_eligible": is_eligible,
+            "missing_titles": missing_titles,
+            "prerequisites": prereq_items,
+            "learning_units": serialized_units,
+            "lessons": serialized_lessons,
+            "assessments": serialized_assessments,
+            "resources": serialized_resources,
+        }
+    ), 200
+
+
+# ==============================================================================
+# Instructor Application / Self-Nomination Portal
+# ==============================================================================
+
+
+@student_bp.route("/become-instructor", methods=["GET"])
+@student_required
+def become_instructor() -> Any:
+    """Page or API to view instructor nomination status or apply."""
+    from backend.services.user_service import get_user_active_application
+
+    actor = require_authenticated_actor()
+    app_record = get_user_active_application(actor.id, session=db.session)
+
+    return (
+        jsonify(
+            {
+                "is_already_instructor": actor.is_instructor,
+                "application": (
+                    {
+                        "id": str(app_record.public_id),
+                        "application_id": str(app_record.public_id),
+                        "status": app_record.status,
+                        "status_label": app_record.status_label_vi,
+                        "details": app_record.parsed_details,
+                        "review_reason": app_record.review_reason,
+                        "created_at": app_record.created_at.isoformat(),
+                        "reviewed_at": (
+                            app_record.reviewed_at.isoformat() if app_record.reviewed_at else None
+                        ),
+                    }
+                    if app_record
+                    else None
+                ),
+            }
+        ),
+        200,
+    )
+
+
+@student_bp.route("/become-instructor", methods=["POST"])
+@student_required
+def submit_become_instructor() -> Any:
+    """Submit a self-nomination application to become an instructor."""
+
+    from werkzeug.utils import secure_filename
+
+    from backend.services.exceptions import ValidationError
+    from backend.services.user_service import submit_instructor_application
+
+    actor = require_authenticated_actor()
+    raw_payload = request.get_json(silent=True) if request.is_json else request.form.to_dict()
+    payload: dict[str, Any] = dict(raw_payload) if isinstance(raw_payload, dict) else {}
+
+    # Xử lý các tệp tin minh chứng đính kèm nếu có
+    attached_files = []
+    evidence_field_specs = [
+        ("cv_file", "CV_PORTFOLIO"),
+        ("portfolio_file", "CV_PORTFOLIO"),
+        ("evidence_files", "EVIDENCE"),
+        ("sheer_id_file", "SHEER_ID"),
+        ("schedule_file", "SCHEDULE"),
+        ("salary_file", "SALARY"),
+        ("contract_file", "CONTRACT"),
+    ]
+
+    has_files = any(field_name in request.files for field_name, _ in evidence_field_specs)
+    if has_files:
+        import hashlib
+        import shutil
+
+        from werkzeug.utils import secure_filename
+
+        from backend.services.file_service import LimitingStream, get_file_quarantine_root
+        from backend.services.scanner_service import scan_file_all_engines
+
+        allowed_extensions = {".pdf", ".png", ".jpg", ".jpeg", ".docx", ".xlsx"}
+        storage_root = Path(current_app.config.get("FILE_STORAGE_ROOT", "./storage")).resolve()
+        # ADR-02: Use actor.public_id instead of internal BigInt actor.id
+        user_storage = storage_root / "instructor_applications" / str(actor.public_id)
+        user_storage.mkdir(parents=True, exist_ok=True)
+
+        quarantine_root = get_file_quarantine_root()
+        max_evidence_bytes = 50_000_000  # Enforce 50 MB ceiling (SEC-02 DoS prevention)
+
+        # Enforce strict CV / Portfolio constraints: max 1 file, PDF only
+        cv_files = [
+            f
+            for f in (request.files.getlist("cv_file") + request.files.getlist("portfolio_file"))
+            if f and f.filename and f.filename.strip()
+        ]
+        if len(cv_files) > 1:
+            return jsonify(
+                {
+                    "error": {
+                        "code": "INVALID_FILE_COUNT",
+                        "message": "Tệp CV hoặc Portfolio chỉ được phép tải lên tối đa 1 tệp.",
+                    }
+                }
+            ), 400
+        for f in cv_files:
+            fname = f.filename or ""
+            clean_name = sanitize_filename(fname)
+            if Path(clean_name).suffix.lower() != ".pdf":
+                return jsonify(
+                    {
+                        "error": {
+                            "code": "INVALID_FILE_TYPE",
+                            "message": (
+                                f"Tệp CV '{clean_name}' không đúng định dạng. "
+                                "Chỉ chấp nhận tệp định dạng PDF."
+                            ),
+                        }
+                    }
+                ), 400
+
+        # Enforce strict Additional Evidence constraints: max 4 files, each <= 2MB, PDF/PNG/JPG/DOCX
+        ev_files = [
+            f
+            for f in request.files.getlist("evidence_files")
+            if f and f.filename and f.filename.strip()
+        ]
+        if len(ev_files) > 4:
+            return jsonify(
+                {
+                    "error": {
+                        "code": "INVALID_FILE_COUNT",
+                        "message": "Minh chứng bổ sung chỉ được phép tải lên tối đa 4 tệp.",
+                    }
+                }
+            ), 400
+        allowed_ev_exts = {".pdf", ".png", ".jpg", ".jpeg", ".docx", ".xlsx"}
+        for f in ev_files:
+            fname = f.filename or ""
+            clean_name = sanitize_filename(fname)
+            if Path(clean_name).suffix.lower() not in allowed_ev_exts:
+                return jsonify(
+                    {
+                        "error": {
+                            "code": "INVALID_FILE_TYPE",
+                            "message": (
+                                f"Tệp minh chứng '{clean_name}' không được hỗ trợ. "
+                                "Chỉ chấp nhận PDF, PNG, JPG, DOCX."
+                            ),
+                        }
+                    }
+                ), 400
+
+        for field_name, doc_type in evidence_field_specs:
+            if field_name not in request.files:
+                continue
+            files = request.files.getlist(field_name)
+            for f in files:
+                if not f or not f.filename or not f.filename.strip():
+                    continue
+                clean_original_name = sanitize_filename(f.filename)
+                ext = Path(clean_original_name).suffix.lower()
+                if ext not in allowed_extensions:
+                    msg = (
+                        f"Định dạng tệp '{clean_original_name}' không được hỗ trợ. "
+                        "Vui lòng tải file PDF, hình ảnh (PNG, JPG) hoặc Word/Excel (.docx, .xlsx)."
+                    )
+                    return jsonify({"error": {"code": "INVALID_FILE_TYPE", "message": msg}}), 400
+
+                temp_filename = f"evidence_{uuid.uuid4().hex}.tmp"
+                temp_path = quarantine_root / temp_filename
+                hasher = hashlib.sha256()
+                total_size = 0
+                stream_reader = LimitingStream(f.stream, max_bytes=max_evidence_bytes)
+
+                try:
+                    with open(temp_path, "wb") as f_out:
+                        while True:
+                            chunk = stream_reader.read(64 * 1024)
+                            if not chunk:
+                                break
+                            total_size += len(chunk)
+                            hasher.update(chunk)
+                            f_out.write(chunk)
+                except Exception as read_err:
+                    if temp_path.exists():
+                        temp_path.unlink(missing_ok=True)
+                    msg = f"Lỗi đọc tệp '{clean_original_name}': {str(read_err)}"
+                    return jsonify({"error": {"code": "FILE_UPLOAD_ERROR", "message": msg}}), 400
+
+                if total_size <= 0:
+                    if temp_path.exists():
+                        temp_path.unlink(missing_ok=True)
+                    continue
+
+                if doc_type == "EVIDENCE" and total_size > 2_097_152:
+                    if temp_path.exists():
+                        temp_path.unlink(missing_ok=True)
+                    msg = f"Tệp minh chứng '{clean_original_name}' vượt quá dung lượng tối đa 2MB."
+                    return jsonify({"error": {"code": "FILE_TOO_LARGE", "message": msg}}), 400
+
+                # Multi-engine malware scanning (SEC-02 ClamAV scan)
+                scan_verdicts = scan_file_all_engines(temp_path)
+                is_clean = all(v.status == "PASS" for v in scan_verdicts)
+                if not is_clean:
+                    if temp_path.exists():
+                        temp_path.unlink(missing_ok=True)
+                    msg = (
+                        f"Tệp tin '{clean_original_name}' bị nghi ngờ chứa mã độc và đã bị từ chối."
+                    )
+                    return jsonify({"error": {"code": "FILE_INFECTED", "message": msg}}), 400
+
+                safe_stem = secure_filename(Path(clean_original_name).stem) or "evidence"
+                saved_filename = f"{uuid.uuid4().hex[:8]}_{safe_stem}{ext}"
+                dest_path = user_storage / saved_filename
+
+                try:
+                    shutil.move(str(temp_path), str(dest_path))
+                except Exception:
+                    shutil.copy2(str(temp_path), str(dest_path))
+                    temp_path.unlink(missing_ok=True)
+
+                attached_files.append(
+                    {
+                        "original_name": clean_original_name,
+                        "saved_filename": saved_filename,
+                        "doc_type": doc_type,
+                        "size": total_size,
+                        "sha256": hasher.hexdigest(),
+                        "virus_scan_status": "CLEAN",
+                    }
+                )
+
+    if attached_files:
+        payload["attached_files"] = attached_files
+
+    # Defensively map alternate/brief web form fields
+    if "institution_name" not in payload and "teaching_experience" in payload:
+        parts = str(payload.get("teaching_experience", "")).split("tại", 1)
+        if len(parts) == 2:
+            payload.setdefault("institution_name", parts[1].strip() or "Đại học / Viện đào tạo")
+            payload.setdefault("specialization", parts[0].strip() or "Công nghệ thông tin")
+        else:
+            payload.setdefault("institution_name", "Đại học / Viện đào tạo")
+            payload.setdefault(
+                "specialization", str(payload.get("teaching_experience", "Công nghệ thông tin"))
+            )
+    if "specialization" not in payload and "teaching_experience" in payload:
+        payload["specialization"] = str(payload.get("teaching_experience", "Công nghệ thông tin"))
+    if "statement_of_purpose" not in payload and "statement" in payload:
+        payload["statement_of_purpose"] = payload.get("statement", "")
+    if "statement_of_purpose" not in payload and "bio" in payload:
+        payload["statement_of_purpose"] = payload.get("bio", "")
+    if "evidence_urls" not in payload and "certificate_url" in payload:
+        payload["evidence_urls"] = payload.get("certificate_url", "")
+    if "evidence_urls" not in payload and "portfolio_url" in payload:
+        payload["evidence_urls"] = payload.get("portfolio_url", "")
+
+    try:
+        app_record = submit_instructor_application(
+            user_id=actor.id,
+            application_data=payload,
+            session=db.session,
+        )
+    except ValidationError as exc:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": str(exc)}}), 400
+
+    return (
+        jsonify(
+            {
+                "message": "Đơn đăng ký đã được gửi thành công.",
+                "application_id": str(app_record.public_id),
+                "id": str(app_record.public_id),
+                "status": app_record.status,
+            }
+        ),
+        201,
+    )
+
+
+@student_bp.route("/attempts/<attempt_id>/appeal", methods=["POST"])
+@student_required
+def submit_attempt_appeal_route(attempt_id: str) -> Any:
+    """Submit an appeal / regrading request for a completed attempt."""
+    import json
+
+    from backend.models.attempt_regrade import AssessmentAppeal, AssessmentAttempt
+    from backend.models.notification_audit import AuditEvent
+    from backend.models.types import utc_now
+    from backend.services.attempt_service import _resolve_attempt
+
+    actor = require_authenticated_actor()
+    attempt = _resolve_attempt(attempt_id, session=db.session)
+    if attempt is None:
+        raise ResourceNotFoundError("Lượt thi không tồn tại.")
+    # Serialize the pending-appeal check and append on the owning attempt row.
+    db.session.query(AssessmentAttempt).filter_by(id=attempt.id).update(
+        {"updated_at": AssessmentAttempt.updated_at}, synchronize_session=False
+    )
+    db.session.refresh(attempt)
+    if attempt.student_user_id != actor.id:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "FORBIDDEN",
+                        "message": "Bạn không có quyền khiếu nại bài thi này.",
+                    }
+                }
+            ),
+            403,
+        )
+
+    if attempt.status not in ("SUBMITTED", "PENDING_GRADING", "GRADED"):
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "INVALID_STATE",
+                        "message": "Chỉ có thể khiếu nại các bài thi đã hoàn thành hoặc đã chấm điểm.",
+                    }
+                }
+            ),
+            400,
+        )
+
+    payload = request.get_json(silent=True) if request.is_json else request.form.to_dict()
+    payload = payload or {}
+    reason = str(payload.get("reason", "")).strip()
+    if not reason or len(reason) < 5:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "VALIDATION_ERROR",
+                        "message": "Lý do khiếu nại không được để trống và phải có tối thiểu 5 ký tự.",
+                    }
+                }
+            ),
+            400,
+        )
+    note = str(payload.get("note", "")).strip()
+
+    # Enforce idempotency: check if an appeal is already pending review
+    existing_appeal = (
+        db.session.query(AssessmentAppeal)
+        .filter(
+            AssessmentAppeal.assessment_attempt_id == attempt.id,
+            AssessmentAppeal.status == "PENDING",
+        )
+        .first()
+    )
+    if existing_appeal:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "APPEAL_ALREADY_PENDING",
+                        "message": "Bài thi này đã có đơn phúc khảo đang chờ xử lý.",
+                    }
+                }
+            ),
+            409,
+        )
+
+    now = utc_now()
+    orig_score = (
+        float(attempt.result.raw_score)
+        if attempt.result and attempt.result.raw_score is not None
+        else 0.0
+    )
+
+    # Optional evidence attachment handling (image PNG/JPG/WEBP, PDF <= 10MB)
+    evidence_filename = None
+    evidence_url = None
+    upload = request.files.get("file") or request.files.get("evidence_file")
+    if upload and upload.filename and upload.filename.strip():
+        import shutil
+        from backend.services.file_service import sanitize_filename
+
+        clean_name = sanitize_filename(upload.filename)
+        ext = Path(clean_name).suffix.lower()
+        allowed_exts = {".png", ".jpg", ".jpeg", ".webp", ".pdf"}
+        if ext not in allowed_exts:
+            return (
+                jsonify(
+                    {
+                        "error": {
+                            "code": "INVALID_FILE_TYPE",
+                            "message": "Định dạng tệp không được hỗ trợ. Chỉ chấp nhận ảnh (PNG, JPG, WEBP) hoặc tài liệu PDF.",
+                        }
+                    }
+                ),
+                400,
+            )
+
+        upload.stream.seek(0, 2)
+        file_sz = upload.stream.tell()
+        upload.stream.seek(0)
+        if file_sz > 10_000_000:
+            return (
+                jsonify(
+                    {
+                        "error": {
+                            "code": "FILE_TOO_LARGE",
+                            "message": "Kích thước tệp minh chứng vượt quá giới hạn 10 MB.",
+                        }
+                    }
+                ),
+                400,
+            )
+
+        appeal_uuid = uuid.uuid4()
+        storage_root = Path(current_app.config.get("FILE_STORAGE_ROOT", "./storage")).resolve()
+        appeal_dir = storage_root / "appeals" / str(appeal_uuid)
+        appeal_dir.mkdir(parents=True, exist_ok=True)
+        dest_path = appeal_dir / clean_name
+        with open(dest_path, "wb") as f_out:
+            shutil.copyfileobj(upload.stream, f_out)
+
+        evidence_filename = clean_name
+        evidence_url = f"/student/attempts/appeals/{appeal_uuid}/evidence"
+
+    appeal_record = AssessmentAppeal(
+        assessment_attempt_id=attempt.id,
+        student_user_id=actor.id,
+        course_id=attempt.assessment.course_id,
+        reason=reason,
+        student_note=note or None,
+        status="PENDING",
+        original_score=orig_score,
+        evidence_filename=evidence_filename,
+        evidence_url=evidence_url,
+        created_at=now,
+    )
+    if 'appeal_uuid' in locals():
+        appeal_record.public_id = appeal_uuid
+    db.session.add(appeal_record)
+    db.session.flush()
+
+    # Dispatch in-app notification to course managing instructor
+    course = attempt.assessment.course if attempt.assessment else None
+    if course and course.owner_instructor_id:
+        from backend.services.notification_service import dispatch_notification
+        student_display = actor.display_name or actor.email
+        exam_title = attempt.assessment.title if attempt.assessment else "Bài thi"
+        try:
+            dispatch_notification(
+                recipient_user=course.owner_instructor_id,
+                event_type="STUDENT_ATTEMPT_APPEAL",
+                title="Đơn phúc khảo mới từ học viên",
+                body=f"Học viên {student_display} vừa gửi đơn phúc khảo cho bài thi '{exam_title}' thuộc khóa học {course.course_code}.",
+                action_url="#/instructor/appeals",
+                category="ASSESSMENT",
+                target_role="INSTRUCTOR",
+                session=db.session,
+            )
+        except Exception:
+            pass
+
+    appeal_details = appeal_record.serialize()
+
+    audit_entry = AuditEvent(
+        actor_user_id=actor.id,
+        actor_roles_snapshot="STUDENT",
+        action="STUDENT_ATTEMPT_APPEAL",
+        target_type="ASSESSMENT_ATTEMPT",
+        target_id=attempt.id,
+        reason=f"Học viên gửi đơn phúc khảo bài thi: {reason}"[:1000],
+        after_json=json.dumps(appeal_details, ensure_ascii=False),
+        created_at=now,
+    )
+    db.session.add(audit_entry)
+    db.session.commit()
+
+    return (
+        jsonify(
+            {
+                "success": True,
+                "message": "Đơn phúc khảo đã được gửi thành công đến Hội đồng Khảo thí.",
+                "appeal": appeal_details,
+            }
+        ),
+        201,
+    )
+
+
+@student_bp.route("/attempts/<attempt_id>/appeal", methods=["GET"])
+@student_required
+def get_attempt_appeal_route(attempt_id: str) -> Any:
+    """Retrieve current appeal status for an attempt."""
+    from backend.models.attempt_regrade import AssessmentAppeal
+    from backend.services.attempt_service import _resolve_attempt
+
+    actor = require_authenticated_actor()
+    attempt = _resolve_attempt(attempt_id, session=db.session)
+    if attempt is None:
+        raise ResourceNotFoundError("Lượt thi không tồn tại.")
+    if attempt.student_user_id != actor.id and not actor.is_instructor and not actor.is_admin:
+        return jsonify({"error": {"code": "FORBIDDEN", "message": "Không có quyền truy cập."}}), 403
+
+    appeal = (
+        db.session.query(AssessmentAppeal)
+        .filter(AssessmentAppeal.assessment_attempt_id == attempt.id)
+        .order_by(AssessmentAppeal.id.desc())
+        .first()
+    )
+    if appeal:
+        return jsonify({"success": True, "appeal": appeal.serialize()}), 200
+
+    return jsonify({"success": True, "appeal": None}), 200
+
+
+@student_bp.route("/attempts/appeals/<appeal_id>/evidence", methods=["GET"])
+def download_attempt_appeal_evidence(appeal_id: str) -> Any:
+    """Download/view uploaded evidence attachment for an appeal."""
+    from backend.models.attempt_regrade import AssessmentAppeal
+
+    actor = require_authenticated_actor()
+    sess = db.session
+    appeal = None
+    try:
+        val_uuid = uuid.UUID(appeal_id)
+        appeal = sess.query(AssessmentAppeal).filter(AssessmentAppeal.public_id == val_uuid).first()
+    except (ValueError, TypeError):
+        if str(appeal_id).isdigit():
+            appeal = sess.query(AssessmentAppeal).filter(AssessmentAppeal.id == int(appeal_id)).first()
+
+    if appeal is None:
+        raise ResourceNotFoundError("Đơn phúc khảo không tồn tại.")
+
+    is_owner = (appeal.student_user_id == actor.id)
+    is_instructor_or_admin = (
+        actor.is_admin
+        or (appeal.course and appeal.course.owner_instructor_id == actor.id)
+        or actor.has_role("INSTRUCTOR")
+    )
+    if not is_owner and not is_instructor_or_admin:
+        raise ForbiddenError("Bạn không có quyền truy cập tệp minh chứng này.")
+
+    if not appeal.evidence_filename:
+        raise ResourceNotFoundError("Đơn phúc khảo này không có tệp minh chứng đính kèm.")
+
+    storage_root = Path(current_app.config.get("FILE_STORAGE_ROOT", "./storage")).resolve()
+    file_path = storage_root / "appeals" / str(appeal.public_id) / appeal.evidence_filename
+    if not file_path.exists():
+        raise ResourceNotFoundError("Tệp minh chứng không tồn tại trên hệ thống lưu trữ.")
+
+    return send_file(
+        file_path,
+        as_attachment=False,
+        download_name=appeal.evidence_filename,
+    )
+
+
+@student_bp.route("/attempts/<attempt_id>/grade-history", methods=["GET"])
+@student_required
+def get_student_attempt_grade_history_route(attempt_id: str) -> Any:
+    """Return only persisted score-revision history for the attempt owner."""
+    from backend.services.attempt_service import get_attempt_grade_history
+
+    result = get_attempt_grade_history(
+        actor=require_authenticated_actor(),
+        attempt_id=attempt_id,
+        session=db.session,
+    )
+    return jsonify({"success": True, "data": result, "error": None, **result}), 200
+
+
+@student_bp.route("/become-instructor/cancel", methods=["POST"])
+@student_bp.route(
+    "/become-instructor/cancel", methods=["POST"], endpoint="cancel_instructor_application"
+)
+@student_required
+def cancel_become_instructor() -> Any:
+    """Cancel a pending instructor application."""
+    from backend.services.exceptions import ResourceNotFoundError, ValidationError
+    from backend.services.user_service import (
+        cancel_instructor_application,
+        get_user_active_application,
+    )
+
+    actor = require_authenticated_actor()
+    app_record = get_user_active_application(actor.id, session=db.session)
+    if app_record is None or app_record.status != "PENDING":
+        return jsonify(
+            {"error": {"code": "NOT_FOUND", "message": "Không có đơn đang chờ xét duyệt."}}
+        ), 404
+
+    try:
+        cancelled = cancel_instructor_application(
+            user_id=actor.id,
+            application_id=app_record.id,
+            session=db.session,
+        )
+    except (ValidationError, ResourceNotFoundError) as exc:
+        return jsonify({"error": {"code": "ERROR", "message": str(exc)}}), 400
+
+    return (
+        jsonify(
+            {
+                "message": "Đã hủy đơn đăng ký thành công.",
+                "application_id": str(cancelled.public_id),
+                "id": str(cancelled.public_id),
+                "status": cancelled.status,
+            }
+        ),
+        200,
+    )
+
+
+@student_bp.route("/courses/<course_id>/files/<asset_id>/download", methods=["GET"])
+@student_bp.route(
+    "/courses/<course_id>/files/<asset_id>/download",
+    methods=["GET"],
+    endpoint="download_lesson_file",
+)
+@student_bp.route("/files/<asset_id>/download", methods=["GET"])
+@student_required
+def download_student_course_file_route(asset_id: str, course_id: str | None = None) -> Any:
+    """Download or stream a course file asset for an enrolled student.
+
+    Enforces active enrollment, published course status, and clean scan status (fail-closed).
+    """
+    actor = require_authenticated_actor()
+    version_param = request.args.get("version")
+    revision_no = int(version_param) if version_param and version_param.isdigit() else None
+
+    asset, blob, physical_path = get_file_for_download(
+        actor, asset_id, revision_no=revision_no, session=db.session
+    )
+
+    if course_id is not None:
+        course = _resolve_course(course_id, session=db.session)
+        if course is None or course.id != asset.course_id:
+            raise ResourceNotFoundError("File asset not found for the specified course.")
+
+    disposition = request.args.get("disposition", "attachment").lower()
+    if disposition not in ("inline", "attachment"):
+        disposition = "attachment"
+
+    # Invariant 25: Students cannot download raw lesson video files (.mp4/.webm)
+    if asset.is_video or (
+        blob.detected_mime_type and blob.detected_mime_type.lower().startswith("video/")
+    ):
+        is_staff_viewer = bool(
+            actor.is_admin
+            or (
+                actor.has_role("INSTRUCTOR")
+                and course is not None
+                and course.owner_instructor_id == actor.id
+            )
+        )
+        if disposition != "inline" or not is_staff_viewer:
+            raise ForbiddenError(
+                "Direct download of lesson videos is restricted. Please view this lesson via the secure course player."
+            )
+
+    clean_filename = sanitize_filename(asset.original_filename or asset.display_name)
+    return send_file(
+        physical_path,
+        mimetype=blob.detected_mime_type,
+        as_attachment=(disposition == "attachment"),
+        download_name=clean_filename,
+        conditional=True,
+    )
+
+
+@student_bp.route(
+    "/courses/<course_id>/lessons/<lesson_id>/video/playlist.m3u8",
+    methods=["GET"],
+)
+@student_bp.route(
+    "/courses/<course_id>/lessons/<lesson_id>/video/<asset_id>/playlist.m3u8", methods=["GET"]
+)
+@student_required
+def get_lesson_hls_playlist_route(
+    course_id: str, lesson_id: str, asset_id: str | None = None
+) -> Any:
+    return _serve_lesson_hls(course_id, lesson_id, asset_id, "playlist")
+
+
+@student_bp.route(
+    "/courses/<course_id>/lessons/<lesson_id>/video/key",
+    methods=["GET"],
+)
+@student_bp.route("/courses/<course_id>/lessons/<lesson_id>/video/<asset_id>/key", methods=["GET"])
+@student_required
+def get_lesson_hls_key_route(course_id: str, lesson_id: str, asset_id: str | None = None) -> Any:
+    return _serve_lesson_hls(course_id, lesson_id, asset_id, "key")
+
+
+@student_bp.route(
+    "/courses/<course_id>/lessons/<lesson_id>/video/<segment_name>",
+    methods=["GET"],
+)
+@student_bp.route(
+    "/courses/<course_id>/lessons/<lesson_id>/video/segments/<segment_name>",
+    methods=["GET"],
+)
+@student_bp.route(
+    "/courses/<course_id>/lessons/<lesson_id>/video/<asset_id>/<segment_name>", methods=["GET"]
+)
+@student_required
+def get_lesson_hls_segment_route(
+    course_id: str, lesson_id: str, segment_name: str, asset_id: str | None = None
+) -> Any:
+    return _serve_lesson_hls(course_id, lesson_id, asset_id, "segment", segment_name)
+
+
+def _serve_lesson_hls(course_id, lesson_id, asset_id, kind, segment_name=None):
+    """All playlist/key/segment reads recheck lesson, object access and scan status."""
+    from backend.services.file_service import materialize_authorized_blob
+    from backend.services.video_drm_service import get_asset_hls_directory, resolve_lesson_hls_asset
+
+    actor = require_authenticated_actor()
+    lesson = get_lesson_detail(actor, lesson_id, session=db.session)
+    course = _resolve_course(course_id, session=db.session)
+    if course is None or lesson.course_id != course.id:
+        raise ResourceNotFoundError("Lesson not found in this course.")
+    asset, blob, revision = resolve_lesson_hls_asset(actor, lesson, asset_id, session=db.session)
+    directory = get_asset_hls_directory(lesson, asset, revision)
+    if kind == "playlist":
+        playlist = directory / "playlist.m3u8"
+        if not playlist.is_file():
+            source = materialize_authorized_blob(blob)
+            transcode_to_encrypted_hls(str(source), str(directory), key_uri_relative="key")
+        token = generate_key_token(actor.id, course.id, lesson.id, expires_in=43_200)
+        key_url = f"/student/courses/{course.public_id}/lessons/{lesson.public_id}/video/{asset.public_id}/key?token={token}"
+        content = re.sub(
+            r'URI="([^"]*key[^"]*)"', f'URI="{key_url}"', playlist.read_text(encoding="utf-8")
+        )
+        # Legacy primary URL has a different base directory; make media paths explicit.
+        content = re.sub(
+            r"(?m)^(segment_\d+\.ts)$",
+            lambda match: (
+                f"/student/courses/{course.public_id}/lessons/{lesson.public_id}/video/{asset.public_id}/{match.group(1)}"
+            ),
+            content,
+        )
+        response = Response(content, mimetype="application/vnd.apple.mpegurl")
+    elif kind == "key":
+        valid, reason = verify_key_token(
+            request.args.get("token", ""), actor.id, course.id, lesson.id
+        )
+        if not valid:
+            raise ForbiddenError(f"DRM key access denied: {reason}")
+        key = directory / "enc.key"
+        if not key.is_file() or key.stat().st_size != 16:
+            raise ResourceNotFoundError("Encryption key not found.")
+        response = Response(key.read_bytes(), mimetype="application/octet-stream")
+    else:
+        if not isinstance(segment_name, str) or not re.fullmatch(r"segment_\d+\.ts", segment_name):
+            raise ResourceNotFoundError("Invalid segment name.")
+        segment = directory / segment_name
+        if not segment.is_file():
+            raise ResourceNotFoundError("Segment not found.")
+        response = send_file(segment.resolve(), mimetype="video/MP2T", conditional=True)
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+@student_bp.route("/courses/<course_id>/trailer/stream", methods=["GET"])
+def student_course_trailer_stream(course_id: str) -> Response:
+    """Public streaming endpoint for course intro trailer video."""
+    from backend.blueprints.api_courses.routes import get_course_trailer_stream_api
+    return get_course_trailer_stream_api(course_id)
+

@@ -14,13 +14,13 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import Enrollment
-from pwd301.seeds.baseline import seed_baseline
-from pwd301.services.course_service import create_course
-from pwd301.services.enrollment_service import enroll_student
-from pwd301.services.jwt_auth_service import create_token_pair
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.extensions import db
+from backend.models.course import Enrollment
+from backend.seeds.baseline import seed_baseline
+from backend.services.course_service import create_course
+from backend.services.enrollment_service import enroll_student
+from backend.services.jwt_auth_service import create_token_pair
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -98,7 +98,7 @@ def test_web_leave_course_returns_403_forbidden(
     client: FlaskClient, lifetime_env: dict[str, Any]
 ) -> None:
     """POST /student/courses/<id>/leave must return HTTP 403 Forbidden."""
-    from pwd301.services.session_auth_service import create_auth_session
+    from backend.services.session_auth_service import create_auth_session
 
     student = lifetime_env["student"]
     course = lifetime_env["course"]

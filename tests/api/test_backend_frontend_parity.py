@@ -17,11 +17,11 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.seeds.baseline import seed_baseline
-from pwd301.services.course_service import create_course
-from pwd301.services.lesson_service import create_lesson
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.extensions import db
+from backend.seeds.baseline import seed_baseline
+from backend.services.course_service import create_course
+from backend.services.lesson_service import create_lesson
+from backend.services.user_service import assign_role_to_user, register_user
 
 UUID_REGEX = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
 
@@ -56,7 +56,7 @@ def parity_env(app: Flask) -> dict[str, Any]:
 
     # 1. Register instructor and student
     instructor = register_user(
-        email="instructor_parity@pwd301.local",
+        email="instructor_parity@backend.local",
         password="Password@123",
         display_name="TS. Parity Instructor",
         session=sess,
@@ -64,7 +64,7 @@ def parity_env(app: Flask) -> dict[str, Any]:
     assign_role_to_user(instructor.id, "INSTRUCTOR", session=sess)
 
     student = register_user(
-        email="student_parity@pwd301.local",
+        email="student_parity@backend.local",
         password="Password@123",
         display_name="Le Van Parity",
         session=sess,

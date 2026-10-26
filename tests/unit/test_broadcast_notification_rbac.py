@@ -18,13 +18,13 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.identity import User
-from pwd301.seeds.baseline import seed_baseline
-from pwd301.services.exceptions import ForbiddenError
-from pwd301.services.jwt_auth_service import create_token_pair
-from pwd301.services.notification_service import broadcast_system_notification
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.extensions import db
+from backend.models.identity import User
+from backend.seeds.baseline import seed_baseline
+from backend.services.exceptions import ForbiddenError
+from backend.services.jwt_auth_service import create_token_pair
+from backend.services.notification_service import broadcast_system_notification
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture

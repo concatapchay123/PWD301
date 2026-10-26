@@ -10,10 +10,10 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.identity import Role, User
-from pwd301.services.course_service import create_course, trash_course
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.extensions import db
+from backend.models.identity import Role, User
+from backend.services.course_service import create_course, trash_course
+from backend.services.user_service import assign_role_to_user, register_user
 from tests.conftest import login_web_user
 
 
@@ -162,7 +162,7 @@ def test_instructor_web_create_course_db_integrity_error_graceful_flash(
     def mock_create(*args: object, **kwargs: object) -> None:
         raise sqlalchemy.exc.IntegrityError("INSERT...", {}, Exception("Duplicate key"))
 
-    monkeypatch.setattr("pwd301.blueprints.instructor.routes.create_course", mock_create)
+    monkeypatch.setattr("backend.blueprints.instructor.routes.create_course", mock_create)
 
     resp = client.post(
         "/instructor/courses",
@@ -396,7 +396,7 @@ def test_submit_course_requires_thumbnail(
         session=sess,
     )
     # Add learning unit and lesson
-    from pwd301.models.course import LearningUnit, Lesson
+    from backend.models.course import LearningUnit, Lesson
 
     unit = LearningUnit(course_id=course.id, title="Chương 1", position=1)
     sess.add(unit)

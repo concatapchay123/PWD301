@@ -21,17 +21,17 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import Lesson
-from pwd301.models.types import utc_now
-from pwd301.seeds.baseline import seed_baseline
-from pwd301.services.course_service import create_course
-from pwd301.services.enrollment_service import enroll_student
-from pwd301.services.file_service import attach_resource_to_lesson, store_file_stream
-from pwd301.services.lesson_service import (
+from backend.extensions import db
+from backend.models.course import Lesson
+from backend.models.types import utc_now
+from backend.seeds.baseline import seed_baseline
+from backend.services.course_service import create_course
+from backend.services.enrollment_service import enroll_student
+from backend.services.file_service import attach_resource_to_lesson, store_file_stream
+from backend.services.lesson_service import (
     create_lesson,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 def login_client(client: FlaskClient, email: str, password: str = "Password@123") -> str:
@@ -148,7 +148,7 @@ Content of lesson 1
 
     lesson1.status = "PUBLISHED"
     lesson2.status = "PUBLISHED"
-    from pwd301.models.course import CourseChangeRequest
+    from backend.models.course import CourseChangeRequest
     for ccr in sess.query(CourseChangeRequest).filter_by(course_id=course.id).all():
         ccr.status = "APPROVED"
     sess.commit()
@@ -407,7 +407,7 @@ def test_calculate_course_progress_historical_revisions_retained(
     """Verify that completing a lesson whose status is later changed to HISTORICAL
     does not cause student progress to drop or reset to 0%.
     """
-    from pwd301.services.completion_service import calculate_course_progress
+    from backend.services.completion_service import calculate_course_progress
 
     student = remediation_fixture["student"]
     course = remediation_fixture["course"]
@@ -447,7 +447,7 @@ def test_calculate_course_progress_historical_revisions_retained(
 
 def test_calculate_course_progress_self_healing_period(remediation_fixture: dict[str, Any]):
     """Verify that calculate_course_progress self-heals when current_period_id is unset."""
-    from pwd301.services.completion_service import calculate_course_progress
+    from backend.services.completion_service import calculate_course_progress
 
     student = remediation_fixture["student"]
     course = remediation_fixture["course"]

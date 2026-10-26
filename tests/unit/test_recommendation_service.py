@@ -17,11 +17,11 @@ import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import Course, CoursePrerequisite, Enrollment
-from pwd301.models.identity import Role, User
-from pwd301.services.recommendation_service import generate_course_recommendations
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.extensions import db
+from backend.models.course import Course, CoursePrerequisite, Enrollment
+from backend.models.identity import Role, User
+from backend.services.recommendation_service import generate_course_recommendations
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture

@@ -34,22 +34,22 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import (
+from backend.extensions import db
+from backend.models.course import (
     CourseChangeRequest,
     Enrollment,
     Lesson,
     LessonProgress,
 )
-from pwd301.models.identity import Role, User, UserRole
-from pwd301.models.notification_audit import AuditEvent
-from pwd301.seeds.baseline import seed_baseline
-from pwd301.services.course_service import change_course_status, create_course
-from pwd301.services.enrollment_service import enroll_student
-from pwd301.services.jwt_auth_service import create_token_pair
-from pwd301.services.lesson_service import create_lesson
-from pwd301.services.session_auth_service import create_auth_session
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.models.identity import Role, User, UserRole
+from backend.models.notification_audit import AuditEvent
+from backend.seeds.baseline import seed_baseline
+from backend.services.course_service import change_course_status, create_course
+from backend.services.enrollment_service import enroll_student
+from backend.services.jwt_auth_service import create_token_pair
+from backend.services.lesson_service import create_lesson
+from backend.services.session_auth_service import create_auth_session
+from backend.services.user_service import assign_role_to_user, register_user
 
 # ---------------------------------------------------------------------------
 # Fixtures & Helpers

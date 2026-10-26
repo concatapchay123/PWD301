@@ -20,10 +20,10 @@ import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.identity import Role, User
-from pwd301.models.types import utc_now
-from pwd301.services.email_service import (
+from backend.extensions import db
+from backend.models.identity import Role, User
+from backend.models.types import utc_now
+from backend.services.email_service import (
     MockMailClient,
     enqueue_email,
     get_default_mail_client,
@@ -31,9 +31,9 @@ from pwd301.services.email_service import (
     retry_failed_emails,
     send_single_email,
 )
-from pwd301.services.exceptions import EmailDeliveryError, ForbiddenError, InvalidEmailError
-from pwd301.services.notification_service import emit_event
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.exceptions import EmailDeliveryError, ForbiddenError, InvalidEmailError
+from backend.services.notification_service import emit_event
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -137,7 +137,7 @@ def test_configured_smtp_transport_sends_message_with_tls(
         def send_message(self, message: object) -> None:
             calls["message"] = message
 
-    monkeypatch.setattr("pwd301.services.email_service.smtplib.SMTP", FakeSmtp)
+    monkeypatch.setattr("backend.services.email_service.smtplib.SMTP", FakeSmtp)
     monkeypatch.setenv("MAIL_HOST", "smtp.example.com")
     monkeypatch.setenv("MAIL_PORT", "587")
     monkeypatch.setenv("MAIL_USERNAME", "mailer@example.com")

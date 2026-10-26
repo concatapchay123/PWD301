@@ -1,0 +1,948 @@
+"""AI and RAG knowledge retrieval models for PWD301.
+
+Implements canonical schema tables from sql/007_ai_rag.sql:
+- ai_conversations
+- ai_messages
+- ai_requests
+- ai_generated_question_drafts
+- knowledge_documents
+- knowledge_versions
+- knowledge_chunks
+- ai_source_usages
+"""
+
+from __future__ import annotations
+
+import json
+import uuid
+from typing import Any
+
+import sqlalchemy as sa
+from sqlalchemy.orm import relationship
+
+from backend.extensions import Base, db
+from backend.models.types import (
+    GUID,
+    BigIntPK,
+    Binary32,
+    NVarCharMax,
+    RowVersion,
+    UTCDateTime,
+    utc_now,
+)
+
+_MSG_UUID_PREFIX = bytes([0xAA, 0x10, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00])
+_DRAFT_UUID_PREFIX = bytes([0xAA, 0x10, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00])
+_CHUNK_UUID_PREFIX = bytes([0xAA, 0x10, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00])
+_USAGE_UUID_PREFIX = bytes([0xAA, 0x10, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00])
+
+
+class AIConversation(Base):
+    """Short-lived AI chat context session mapping to 'ai_conversations' table."""
+
+    __tablename__ = "ai_conversations"
+
+    id = db.Column(BigIntPK, primary_key=True, autoincrement=True)
+    public_id = db.Column(
+        GUID,
+        nullable=False,
+        unique=True,
+        default=uuid.uuid4,
+        server_default=sa.text("NEWSEQUENTIALID()"),
+    )
+    user_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("users.id", name="fk_ai_conversations_user_id"),
+        nullable=False,
+    )
+    context_type = db.Column(sa.String(16), nullable=False)
+    course_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("courses.id", name="fk_ai_conversations_course_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    lesson_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("lessons.id", name="fk_ai_conversations_lesson_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    last_activity_at = db.Column(
+        UTCDateTime,
+        nullable=False,
+        default=utc_now,
+        server_default=sa.text("SYSUTCDATETIME()"),
+    )
+    expires_at = db.Column(UTCDateTime, nullable=False)
+    status = db.Column(
+        sa.String(16),
+        nullable=False,
+        default="ACTIVE",
+        server_default=sa.text("'ACTIVE'"),
+    )
+    created_at = db.Column(
+        UTCDateTime,
+        nullable=False,
+        default=utc_now,
+        server_default=sa.text("SYSUTCDATETIME()"),
+    )
+    row_version = db.Column(RowVersion, nullable=True)
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "context_type IN ('GLOBAL','COURSE','LESSON')", name="ck_ai_conversations_1"
+        ),
+        sa.CheckConstraint(
+            "status IN ('ACTIVE','EXPIRED','DELETED')", name="ck_ai_conversations_2"
+        ),
+        sa.CheckConstraint("expires_at > created_at", name="ck_ai_conversations_3"),
+        sa.Index(
+            "ix_ai_conversations_user_active",
+            "user_id",
+            "status",
+            "last_activity_at",
+            mssql_where=sa.text("status='ACTIVE'"),
+            sqlite_where=sa.text("status='ACTIVE'"),
+        ),
+        sa.Index(
+            "ix_ai_conversations_expiry",
+            "expires_at",
+            "status",
+            mssql_where=sa.text("status='ACTIVE'"),
+            sqlite_where=sa.text("status='ACTIVE'"),
+        ),
+    )
+
+    user = relationship("User", foreign_keys=[user_id])
+    course = relationship("Course", foreign_keys=[course_id])
+    lesson = relationship("Lesson", foreign_keys=[lesson_id])
+    messages = relationship(
+        "AIMessage",
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        order_by="AIMessage.sequence_no",
+    )
+
+    @property
+    def is_expired(self) -> bool:
+        """Return True if conversation has expired due to 5-min inactivity or status."""
+        if self.status == "EXPIRED":
+            return True
+        if self.expires_at is not None:
+            exp = self.expires_at
+            now = utc_now()
+            if exp.tzinfo is None and now.tzinfo is not None:
+                exp = exp.replace(tzinfo=now.tzinfo)
+            elif exp.tzinfo is not None and now.tzinfo is None:
+                now = now.replace(tzinfo=exp.tzinfo)
+            return exp < now
+        return False
+
+    def to_dict(self, include_messages: bool = False) -> dict[str, Any]:
+        """Convert conversation to dict conforming strictly to ADR-002 Zero PK Leakage."""
+        return {
+            "conversation_id": str(self.public_id),
+            "context_type": self.context_type,
+            "course_id": str(self.course.public_id) if self.course else None,
+            "lesson_id": (
+                str(self.lesson.public_id)
+                if self.lesson and getattr(self.lesson, "public_id", None)
+                else None
+            ),
+            "last_activity_at": self.last_activity_at.isoformat()
+            if self.last_activity_at
+            else None,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "status": "EXPIRED" if self.is_expired else self.status,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "messages": (
+                [m.to_dict() for m in self.messages]
+                if (include_messages and not self.is_expired)
+                else []
+            ),
+        }
+
+
+class AIMessage(Base):
+    """Chat message inside an AI conversation mapping to 'ai_messages' table."""
+
+    __tablename__ = "ai_messages"
+
+    id = db.Column(BigIntPK, primary_key=True, autoincrement=True)
+    conversation_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("ai_conversations.id", name="fk_ai_messages_conversation_id"),
+        nullable=False,
+    )
+    sender = db.Column(sa.String(12), nullable=False)
+    content = db.Column(NVarCharMax, nullable=False)
+    sequence_no = db.Column(sa.Integer, nullable=False)
+    created_at = db.Column(
+        UTCDateTime,
+        nullable=False,
+        default=utc_now,
+        server_default=sa.text("SYSUTCDATETIME()"),
+    )
+
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "conversation_id",
+            "sequence_no",
+            name="uq_ai_messages_conversation_id_sequence_no_1",
+        ),
+        sa.CheckConstraint("sender IN ('USER','ASSISTANT')", name="ck_ai_messages_1"),
+        sa.CheckConstraint("sequence_no > 0", name="ck_ai_messages_2"),
+        sa.Index("ix_ai_messages_conv_seq", "conversation_id", "sequence_no"),
+    )
+
+    conversation = relationship("AIConversation", back_populates="messages")
+
+    @property
+    def public_id(self) -> uuid.UUID:
+        """Deterministic public UUID adhering to ADR-002 Zero PK Leakage."""
+        if self.id is None:
+            return uuid.uuid4()
+        return uuid.UUID(bytes=_MSG_UUID_PREFIX + self.id.to_bytes(8, byteorder="big"))
+
+    @classmethod
+    def resolve_id_from_public_id(cls, pub_id: str | uuid.UUID) -> int | None:
+        """Resolve internal BIGINT ID from public UUID without exposing raw PK."""
+        try:
+            u = uuid.UUID(str(pub_id)) if not isinstance(pub_id, uuid.UUID) else pub_id
+            if u.bytes[:8] == _MSG_UUID_PREFIX:
+                return int.from_bytes(u.bytes[8:], byteorder="big")
+        except (ValueError, TypeError, AttributeError):
+            pass
+        return None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert message to dict conforming strictly to ADR-002 Zero PK Leakage."""
+        return {
+            "message_id": str(self.public_id),
+            "conversation_id": (str(self.conversation.public_id) if self.conversation else None),
+            "sender": self.sender,
+            "content": self.content,
+            "sequence_no": self.sequence_no,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class AIRequest(Base):
+    """Audit and telemetry log for AI invocations mapping to 'ai_requests' table."""
+
+    __tablename__ = "ai_requests"
+
+    id = db.Column(BigIntPK, primary_key=True, autoincrement=True)
+    request_id = db.Column(
+        GUID,
+        nullable=False,
+        unique=True,
+        default=uuid.uuid4,
+        server_default=sa.text("NEWID()"),
+    )
+    conversation_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey(
+            "ai_conversations.id",
+            name="fk_ai_requests_conversation_id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+    user_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("users.id", name="fk_ai_requests_user_id"),
+        nullable=False,
+    )
+    route_type = db.Column(sa.String(24), nullable=False)
+    model_name = db.Column(sa.Unicode(100), nullable=True)
+    prompt_hash = db.Column(Binary32, nullable=True)
+    scope_decision = db.Column(sa.String(16), nullable=True)
+    authorization_scope_hash = db.Column(Binary32, nullable=True)
+    input_token_count = db.Column(sa.Integer, nullable=True)
+    output_token_count = db.Column(sa.Integer, nullable=True)
+    latency_ms = db.Column(sa.Integer, nullable=True)
+    status = db.Column(sa.String(20), nullable=False)
+    error_code = db.Column(sa.String(64), nullable=True)
+    created_at = db.Column(
+        UTCDateTime,
+        nullable=False,
+        default=utc_now,
+        server_default=sa.text("SYSUTCDATETIME()"),
+    )
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "route_type IN ('BACKEND_ONLY','GEMINI','RAG','CLASSIFIER')",
+            name="ck_ai_requests_1",
+        ),
+        sa.CheckConstraint(
+            "scope_decision IS NULL OR "
+            "scope_decision IN ('IN_SCOPE','OUT_OF_SCOPE','MIXED','AMBIGUOUS')",
+            name="ck_ai_requests_2",
+        ),
+        sa.CheckConstraint(
+            "status IN ('SUCCEEDED','REFUSED','FAILED','TIMEOUT','BYPASSED')",
+            name="ck_ai_requests_3",
+        ),
+        sa.CheckConstraint(
+            "input_token_count IS NULL OR input_token_count >= 0",
+            name="ck_ai_requests_4",
+        ),
+        sa.CheckConstraint(
+            "output_token_count IS NULL OR output_token_count >= 0",
+            name="ck_ai_requests_5",
+        ),
+        sa.CheckConstraint("latency_ms IS NULL OR latency_ms >= 0", name="ck_ai_requests_6"),
+        sa.Index("ix_ai_requests_user_time", "user_id", "created_at"),
+        sa.Index("ix_ai_requests_route_status", "route_type", "status", "created_at"),
+    )
+
+    conversation = relationship("AIConversation", foreign_keys=[conversation_id])
+    user = relationship("User", foreign_keys=[user_id])
+
+    @property
+    def public_id(self) -> uuid.UUID:
+        """Return public identifier for AIRequest (alias to request_id)."""
+        return self.request_id
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert AIRequest telemetry record to dict conforming to ADR-002."""
+        return {
+            "request_id": str(self.request_id),
+            "route_type": self.route_type,
+            "model_name": self.model_name,
+            "scope_decision": self.scope_decision,
+            "input_token_count": self.input_token_count,
+            "output_token_count": self.output_token_count,
+            "latency_ms": self.latency_ms,
+            "status": self.status,
+            "error_code": self.error_code,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class AIGeneratedQuestionDraft(Base):
+    """AI-synthesized question candidate mapping to 'ai_generated_question_drafts'."""
+
+    __tablename__ = "ai_generated_question_drafts"
+
+    id = db.Column(BigIntPK, primary_key=True, autoincrement=True)
+    course_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("courses.id", name="fk_ai_generated_question_drafts_course_id"),
+        nullable=False,
+    )
+    lesson_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey(
+            "lessons.id",
+            name="fk_ai_generated_question_drafts_lesson_id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+    requested_by_user_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("users.id", name="fk_ai_generated_question_drafts_requested_by_user_id"),
+        nullable=False,
+    )
+    ai_request_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey(
+            "ai_requests.id",
+            name="fk_ai_generated_question_drafts_ai_request_id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+    ordinal = db.Column(sa.Integer, nullable=False)
+    question_type = db.Column(sa.String(24), nullable=False)
+    difficulty = db.Column(sa.String(20), nullable=False)
+    content = db.Column(NVarCharMax, nullable=False)
+    choices_json = db.Column(NVarCharMax, nullable=True)
+    answer_json = db.Column(NVarCharMax, nullable=True)
+    explanation = db.Column(NVarCharMax, nullable=True)
+    review_state = db.Column(
+        sa.String(16),
+        nullable=False,
+        default="PENDING",
+        server_default=sa.text("'PENDING'"),
+    )
+    approved_question_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey(
+            "questions.id",
+            name="fk_ai_generated_question_drafts_approved_question_id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+    reviewed_by_user_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey(
+            "users.id",
+            name="fk_ai_generated_question_drafts_reviewed_by_user_id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+    reviewed_at = db.Column(UTCDateTime, nullable=True)
+    created_at = db.Column(
+        UTCDateTime,
+        nullable=False,
+        default=utc_now,
+        server_default=sa.text("SYSUTCDATETIME()"),
+    )
+    updated_at = db.Column(
+        UTCDateTime,
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
+        server_default=sa.text("SYSUTCDATETIME()"),
+    )
+    row_version = db.Column(RowVersion, nullable=True)
+
+    __table_args__ = (
+        sa.CheckConstraint("ordinal > 0", name="ck_ai_generated_question_drafts_1"),
+        sa.CheckConstraint(
+            "question_type IN ('SINGLE_CHOICE','MULTIPLE_CHOICE','TRUE_FALSE',"
+            "'SHORT_ANSWER','ESSAY')",
+            name="ck_ai_generated_question_drafts_2",
+        ),
+        sa.CheckConstraint(
+            "difficulty IN ('REMEMBER','UNDERSTAND','APPLY')",
+            name="ck_ai_generated_question_drafts_3",
+        ),
+        sa.CheckConstraint(
+            "review_state IN ('PENDING','KEPT','EDITED','REJECTED','APPROVED')",
+            name="ck_ai_generated_question_drafts_4",
+        ),
+        sa.CheckConstraint(
+            "choices_json IS NULL OR ISJSON(choices_json)=1",
+            name="ck_ai_generated_question_drafts_5",
+        ),
+        sa.CheckConstraint(
+            "answer_json IS NULL OR ISJSON(answer_json)=1",
+            name="ck_ai_generated_question_drafts_6",
+        ),
+        sa.Index("ix_ai_drafts_course_review", "course_id", "review_state"),
+    )
+
+    course = relationship("Course", foreign_keys=[course_id])
+    lesson = relationship("Lesson", foreign_keys=[lesson_id])
+    requested_by = relationship("User", foreign_keys=[requested_by_user_id])
+    ai_request = relationship("AIRequest", foreign_keys=[ai_request_id])
+    approved_question = relationship("Question", foreign_keys=[approved_question_id])
+    reviewed_by = relationship("User", foreign_keys=[reviewed_by_user_id])
+
+    @property
+    def public_id(self) -> uuid.UUID:
+        """Deterministic public UUID adhering to ADR-002 Zero PK Leakage."""
+        if self.id is None:
+            return uuid.uuid4()
+        return uuid.UUID(bytes=_DRAFT_UUID_PREFIX + self.id.to_bytes(8, byteorder="big"))
+
+    @classmethod
+    def resolve_id_from_public_id(cls, pub_id: str | uuid.UUID) -> int | None:
+        """Resolve internal BIGINT ID from public UUID without exposing raw PK."""
+        try:
+            u = uuid.UUID(str(pub_id)) if not isinstance(pub_id, uuid.UUID) else pub_id
+            if u.bytes[:8] == _DRAFT_UUID_PREFIX:
+                return int.from_bytes(u.bytes[8:], byteorder="big")
+        except (ValueError, TypeError, AttributeError):
+            pass
+        return None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert draft to dict conforming strictly to ADR-002 Zero PK Leakage."""
+        choices = None
+        if self.choices_json:
+            try:
+                choices = json.loads(self.choices_json)
+            except Exception:
+                choices = self.choices_json
+        answer = None
+        if self.answer_json:
+            try:
+                answer = json.loads(self.answer_json)
+            except Exception:
+                answer = self.answer_json
+
+        return {
+            "draft_id": str(self.public_id),
+            "course_id": str(self.course.public_id) if self.course else None,
+            "lesson_id": (
+                str(self.lesson.public_id)
+                if self.lesson and getattr(self.lesson, "public_id", None)
+                else None
+            ),
+            "ordinal": self.ordinal,
+            "question_type": self.question_type,
+            "difficulty": self.difficulty,
+            "content": self.content,
+            "choices": choices,
+            "answer": answer,
+            "explanation": self.explanation,
+            "review_state": self.review_state,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class KnowledgeDocument(Base):
+    """Authorized RAG document source mapping to 'knowledge_documents' table."""
+
+    __tablename__ = "knowledge_documents"
+
+    id = db.Column(BigIntPK, primary_key=True, autoincrement=True)
+    public_id = db.Column(
+        GUID,
+        nullable=False,
+        unique=True,
+        default=uuid.uuid4,
+        server_default=sa.text("NEWSEQUENTIALID()"),
+    )
+    course_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("courses.id", name="fk_knowledge_documents_course_id"),
+        nullable=False,
+    )
+    lesson_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("lessons.id", name="fk_knowledge_documents_lesson_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    source_type = db.Column(sa.String(24), nullable=False)
+    source_entity_id = db.Column(sa.BigInteger, nullable=False)
+    status = db.Column(
+        sa.String(20),
+        nullable=False,
+        default="ACTIVE",
+        server_default=sa.text("'ACTIVE'"),
+    )
+    created_at = db.Column(
+        UTCDateTime,
+        nullable=False,
+        default=utc_now,
+        server_default=sa.text("SYSUTCDATETIME()"),
+    )
+    updated_at = db.Column(
+        UTCDateTime,
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
+        server_default=sa.text("SYSUTCDATETIME()"),
+    )
+    row_version = db.Column(RowVersion, nullable=True)
+
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "source_type",
+            "source_entity_id",
+            name="uq_knowledge_documents_source_type_source_entity_id_2",
+        ),
+        sa.CheckConstraint(
+            "source_type IN ('LESSON','FILE','FAQ','POLICY')",
+            name="ck_knowledge_documents_1",
+        ),
+        sa.CheckConstraint(
+            "status IN ('ACTIVE','INVALIDATED','DELETED')", name="ck_knowledge_documents_2"
+        ),
+        sa.Index("ix_knowledge_docs_course", "course_id", "status"),
+    )
+
+    course = relationship("Course", foreign_keys=[course_id])
+    lesson = relationship("Lesson", foreign_keys=[lesson_id])
+    versions = relationship(
+        "KnowledgeVersion",
+        foreign_keys="KnowledgeVersion.knowledge_document_id",
+        back_populates="knowledge_document",
+        cascade="all, delete-orphan",
+        order_by="KnowledgeVersion.version_no",
+    )
+    current_version = relationship(
+        "KnowledgeVersion",
+        primaryjoin=(
+            "and_(KnowledgeDocument.id == foreign(KnowledgeVersion.knowledge_document_id), "
+            "KnowledgeVersion.is_current == True)"
+        ),
+        uselist=False,
+        viewonly=True,
+    )
+
+    @classmethod
+    def resolve_id_from_public_id(
+        cls,
+        pub_id: str | uuid.UUID,
+        session: Any = None,
+    ) -> int | None:
+        """Resolve internal BIGINT ID from public UUID without exposing raw PK."""
+        sess = session or db.session
+        try:
+            u = uuid.UUID(str(pub_id)) if not isinstance(pub_id, uuid.UUID) else pub_id
+            row = sess.query(cls.id).filter(cls.public_id == u).first()
+            if row:
+                return int(row[0])
+        except (ValueError, TypeError, AttributeError):
+            pass
+        return None
+
+    @property
+    def file_asset(self) -> Any:
+        """Dynamically resolve associated FileAsset when source_type is FILE."""
+        if self.source_type == "FILE" and self.source_entity_id:
+            from backend.models.file_import import FileAsset
+
+            return db.session.get(FileAsset, self.source_entity_id)
+        return None
+
+    def to_dict(
+        self, include_chunks: bool = False, include_embeddings: bool = False
+    ) -> dict[str, Any]:
+        """Convert KnowledgeDocument (KnowledgeSource) to dict conforming strictly to ADR-002."""
+        chunks_list: list[dict[str, Any]] = []
+        if include_chunks and self.current_version:
+            chunks_list = [
+                c.to_dict(include_embeddings=include_embeddings)
+                for c in self.current_version.chunks
+            ]
+
+        return {
+            "source_id": str(self.public_id),
+            "course_id": str(self.course.public_id) if self.course else None,
+            "lesson_id": (
+                str(self.lesson.public_id)
+                if self.lesson and getattr(self.lesson, "public_id", None)
+                else None
+            ),
+            "source_type": self.source_type,
+            "source_entity_id": str(self.source_entity_id)
+            if not self.file_asset
+            else str(self.file_asset.public_id),
+            "status": self.status,
+            "version_no": self.current_version.version_no if self.current_version else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "chunks": chunks_list,
+        }
+
+
+class KnowledgeVersion(Base):
+    """Indexed content generation version mapping to 'knowledge_versions' table."""
+
+    __tablename__ = "knowledge_versions"
+
+    id = db.Column(BigIntPK, primary_key=True, autoincrement=True)
+    knowledge_document_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey(
+            "knowledge_documents.id",
+            name="fk_knowledge_versions_knowledge_document_id",
+        ),
+        nullable=False,
+    )
+    version_no = db.Column(sa.Integer, nullable=False)
+    is_current = db.Column(
+        sa.Boolean,
+        nullable=False,
+        default=False,
+    )
+    source_revision_type = db.Column(sa.String(32), nullable=True)
+    source_revision_id = db.Column(sa.BigInteger, nullable=True)
+    content_hash = db.Column(Binary32, nullable=False)
+    status = db.Column(
+        sa.String(20),
+        nullable=False,
+        default="PENDING",
+        server_default=sa.text("'PENDING'"),
+    )
+    vector_namespace = db.Column(sa.Unicode(200), nullable=True)
+    background_job_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey(
+            "background_jobs.id",
+            name="fk_knowledge_versions_background_job_id",
+            use_alter=True,
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+    activated_at = db.Column(UTCDateTime, nullable=True)
+    invalidated_at = db.Column(UTCDateTime, nullable=True)
+    last_error = db.Column(sa.Unicode(2000), nullable=True)
+    created_at = db.Column(
+        UTCDateTime,
+        nullable=False,
+        default=utc_now,
+        server_default=sa.text("SYSUTCDATETIME()"),
+    )
+    row_version = db.Column(RowVersion, nullable=True)
+
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "knowledge_document_id",
+            "version_no",
+            name="uq_knowledge_versions_knowledge_document_id_version_no_1",
+        ),
+        sa.CheckConstraint("version_no > 0", name="ck_knowledge_versions_1"),
+        sa.CheckConstraint(
+            "status IN ('PENDING','PROCESSING','ACTIVE','INVALIDATED','FAILED')",
+            name="ck_knowledge_versions_2",
+        ),
+        sa.Index("ix_knowledge_versions_status", "status", "created_at"),
+        sa.Index(
+            "ux_knowledge_version_active",
+            "knowledge_document_id",
+            unique=True,
+            mssql_where=sa.text("status='ACTIVE'"),
+            sqlite_where=sa.text("status='ACTIVE'"),
+        ),
+        sa.Index(
+            "uq_knowledge_versions_current",
+            "knowledge_document_id",
+            unique=True,
+            mssql_where=sa.text("is_current = 1"),
+            sqlite_where=sa.text("is_current = 1"),
+        ),
+    )
+
+    knowledge_document = relationship(
+        "KnowledgeDocument",
+        foreign_keys=[knowledge_document_id],
+        back_populates="versions",
+    )
+    chunks = relationship(
+        "KnowledgeChunk",
+        back_populates="knowledge_version",
+        cascade="all, delete-orphan",
+        order_by="KnowledgeChunk.chunk_no",
+    )
+
+
+class KnowledgeChunk(Base):
+    """Vectorized text slice mapping to 'knowledge_chunks' table."""
+
+    __tablename__ = "knowledge_chunks"
+
+    id = db.Column(BigIntPK, primary_key=True, autoincrement=True)
+    knowledge_version_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey(
+            "knowledge_versions.id",
+            name="fk_knowledge_chunks_knowledge_version_id",
+        ),
+        nullable=False,
+    )
+    chunk_no = db.Column(sa.Integer, nullable=False)
+    text_hash = db.Column(Binary32, nullable=False)
+    vector_key = db.Column(sa.Unicode(300), nullable=False, unique=True)
+    token_count = db.Column(sa.Integer, nullable=True)
+    metadata_json = db.Column(NVarCharMax, nullable=True)
+    created_at = db.Column(
+        UTCDateTime,
+        nullable=False,
+        default=utc_now,
+        server_default=sa.text("SYSUTCDATETIME()"),
+    )
+
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "knowledge_version_id",
+            "chunk_no",
+            name="uq_knowledge_chunks_knowledge_version_id_chunk_no_1",
+        ),
+        sa.CheckConstraint("chunk_no > 0", name="ck_knowledge_chunks_1"),
+        sa.CheckConstraint("token_count IS NULL OR token_count >= 0", name="ck_knowledge_chunks_2"),
+        sa.CheckConstraint(
+            "metadata_json IS NULL OR ISJSON(metadata_json)=1",
+            name="ck_knowledge_chunks_3",
+        ),
+        sa.Index("ix_knowledge_chunks_version", "knowledge_version_id", "chunk_no"),
+    )
+
+    knowledge_version = relationship("KnowledgeVersion", back_populates="chunks")
+
+    @property
+    def public_id(self) -> uuid.UUID:
+        """Deterministic public UUID adhering to ADR-002 Zero PK Leakage."""
+        if self.id is None:
+            return uuid.uuid4()
+        return uuid.UUID(bytes=_CHUNK_UUID_PREFIX + self.id.to_bytes(8, byteorder="big"))
+
+    @classmethod
+    def resolve_id_from_public_id(cls, pub_id: str | uuid.UUID) -> int | None:
+        """Resolve internal BIGINT ID from public UUID without exposing raw PK."""
+        try:
+            u = uuid.UUID(str(pub_id)) if not isinstance(pub_id, uuid.UUID) else pub_id
+            if u.bytes[:8] == _CHUNK_UUID_PREFIX:
+                return int.from_bytes(u.bytes[8:], byteorder="big")
+        except (ValueError, TypeError, AttributeError):
+            pass
+        return None
+
+    @property
+    def chunk_text(self) -> str:
+        """Extract plain text of this chunk stored in metadata_json."""
+        if self.metadata_json:
+            try:
+                data = json.loads(self.metadata_json)
+                if isinstance(data, dict):
+                    return str(data.get("text", ""))
+            except (ValueError, TypeError, json.JSONDecodeError):
+                pass
+        return ""
+
+    def to_dict(self, include_embeddings: bool = False) -> dict[str, Any]:
+        """Convert chunk to dict conforming strictly to ADR-002 Zero PK Leakage."""
+        data: dict[str, Any] = {
+            "chunk_id": str(self.public_id),
+            "chunk_no": self.chunk_no,
+            "text": self.chunk_text,
+            "token_count": self.token_count,
+            "text_hash": (
+                self.text_hash.hex()
+                if isinstance(self.text_hash, (bytes, bytearray))
+                else str(self.text_hash)
+            ),
+            "vector_key": self.vector_key,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+        if include_embeddings:
+            data["embedding"] = {
+                "vector_key": self.vector_key,
+                "dimension": 768,
+            }
+        return data
+
+
+class AISourceUsage(Base):
+    """RAG source citation and ranking record mapping to 'ai_source_usages' table."""
+
+    __tablename__ = "ai_source_usages"
+
+    id = db.Column(BigIntPK, primary_key=True, autoincrement=True)
+    ai_request_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("ai_requests.id", name="fk_ai_source_usages_ai_request_id"),
+        nullable=False,
+    )
+    knowledge_version_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey(
+            "knowledge_versions.id",
+            name="fk_ai_source_usages_knowledge_version_id",
+        ),
+        nullable=False,
+    )
+    knowledge_chunk_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey(
+            "knowledge_chunks.id",
+            name="fk_ai_source_usages_knowledge_chunk_id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+    rank_no = db.Column(sa.Integer, nullable=True)
+    relevance_score = db.Column(sa.Numeric(8, 6), nullable=True)
+    created_at = db.Column(
+        UTCDateTime,
+        nullable=False,
+        default=utc_now,
+        server_default=sa.text("SYSUTCDATETIME()"),
+    )
+
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "ai_request_id",
+            "knowledge_version_id",
+            "knowledge_chunk_id",
+            name="uq_ai_source_usages_ai_request_id_knowledge_version_id_knowledge_chunk_id_1",
+        ),
+        sa.CheckConstraint("rank_no IS NULL OR rank_no > 0", name="ck_ai_source_usages_1"),
+        sa.Index("ix_ai_source_usages_request", "ai_request_id", "rank_no"),
+    )
+
+    ai_request = relationship("AIRequest", foreign_keys=[ai_request_id])
+    knowledge_version = relationship("KnowledgeVersion", foreign_keys=[knowledge_version_id])
+    knowledge_chunk = relationship("KnowledgeChunk", foreign_keys=[knowledge_chunk_id])
+
+    @property
+    def public_id(self) -> uuid.UUID:
+        """Deterministic public UUID adhering to ADR-002 Zero PK Leakage."""
+        if self.id is None:
+            return uuid.uuid4()
+        return uuid.UUID(bytes=_USAGE_UUID_PREFIX + self.id.to_bytes(8, byteorder="big"))
+
+    @classmethod
+    def resolve_id_from_public_id(cls, pub_id: str | uuid.UUID) -> int | None:
+        """Resolve internal BIGINT ID from public UUID without exposing raw PK."""
+        try:
+            u = uuid.UUID(str(pub_id)) if not isinstance(pub_id, uuid.UUID) else pub_id
+            if u.bytes[:8] == _USAGE_UUID_PREFIX:
+                return int.from_bytes(u.bytes[8:], byteorder="big")
+        except (ValueError, TypeError, AttributeError):
+            pass
+        return None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert AISourceUsage to dict conforming to ADR-002 Zero PK Leakage."""
+        return {
+            "usage_id": str(self.public_id),
+            "request_id": str(self.ai_request.request_id) if self.ai_request else None,
+            "chunk_id": str(self.knowledge_chunk.public_id) if self.knowledge_chunk else None,
+            "rank_no": self.rank_no,
+            "relevance_score": float(self.relevance_score)
+            if self.relevance_score is not None
+            else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+# Canonical domain alias per System Specification and TASK-024
+KnowledgeSource = KnowledgeDocument
+
+
+class KnowledgeEmbedding:
+    """Domain representation of a vector embedding for a knowledge chunk (ADR-002 & ADR-009)."""
+
+    def __init__(
+        self,
+        chunk_id: str | uuid.UUID,
+        vector_key: str,
+        embedding: list[float] | None = None,
+        dimension: int = 768,
+        model_name: str = "text-embedding-004",
+        created_at: Any = None,
+    ) -> None:
+        self.chunk_id = str(chunk_id)
+        self.vector_key = vector_key
+        self.embedding = embedding or []
+        self.dimension = dimension
+        self.model_name = model_name
+        self.created_at = created_at or utc_now()
+
+    @property
+    def public_id(self) -> uuid.UUID:
+        """Deterministic public UUID adhering to ADR-002 Zero PK Leakage."""
+        return uuid.uuid5(uuid.NAMESPACE_DNS, f"backend.knowledge_embedding.{self.vector_key}")
+
+    @classmethod
+    def resolve_id_from_public_id(cls, pub_id: str | uuid.UUID) -> str:
+        return str(pub_id)
+
+    def to_dict(self, include_vector: bool = True) -> dict[str, Any]:
+        """Convert KnowledgeEmbedding to dict conforming strictly to ADR-002."""
+        return {
+            "embedding_id": str(self.public_id),
+            "chunk_id": self.chunk_id,
+            "vector_key": self.vector_key,
+            "dimension": self.dimension,
+            "model_name": self.model_name,
+            "vector": self.embedding if include_vector else None,
+            "created_at": (
+                self.created_at.isoformat()
+                if hasattr(self.created_at, "isoformat")
+                else str(self.created_at)
+            ),
+        }

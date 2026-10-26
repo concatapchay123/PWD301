@@ -40,7 +40,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PORT=5000 \
     APP_ENV=production \
-    PYTHONPATH=/app/src:/app \
+    PYTHONPATH=/app \
     FLASK_APP=pwd301
 
 WORKDIR /app
@@ -66,7 +66,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install pre-compiled wheels from builder stage using bind mount (avoids intermediate layer)
 RUN --mount=type=bind,from=builder,source=/build/wheels,target=/wheels \
-    pip install --no-cache-dir /wheels/*
+    pip install --no-cache-dir /wheels/* && \
+    pip install --no-cache-dir argon2-cffi==25.1.0
 
 # Isolated Node binary and mathjax node_modules for local server-side MathJax SVG rendering
 COPY --from=math-builder /usr/local/bin/node /usr/local/bin/node
@@ -81,7 +82,7 @@ RUN mkdir -p /app/storage /app/quarantine /app/backups /app/exports /app/instanc
     chown -R appuser:appgroup /app
 
 # Selective Copy: Copy ONLY necessary runtime files into container (Preventing Docker bloat)
-COPY --chown=appuser:appgroup src/ /app/src/
+COPY --chown=appuser:appgroup backend/ /app/backend/
 COPY --chown=appuser:appgroup migrations/ /app/migrations/
 COPY --chown=appuser:appgroup frontend/ /app/frontend/
 COPY --chown=appuser:appgroup wsgi.py pyproject.toml /app/

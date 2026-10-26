@@ -19,19 +19,19 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import Course
-from pwd301.models.identity import User
-from pwd301.services.course_service import create_course
-from pwd301.services.enrollment_service import enroll_student
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.extensions import db
+from backend.models.course import Course
+from backend.models.identity import User
+from backend.services.course_service import create_course
+from backend.services.enrollment_service import enroll_student
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
 def instructor_user(app: Flask) -> User:
     sess: Session = db.session
     u = register_user(
-        f"instructor_vid_{uuid.uuid4().hex[:6]}@pwd301.local",
+        f"instructor_vid_{uuid.uuid4().hex[:6]}@backend.local",
         "Password@123",
         "TS. Video Tester",
     )
@@ -45,7 +45,7 @@ def instructor_user(app: Flask) -> User:
 def student_user(app: Flask) -> User:
     sess: Session = db.session
     u = register_user(
-        f"student_vid_{uuid.uuid4().hex[:6]}@pwd301.local",
+        f"student_vid_{uuid.uuid4().hex[:6]}@backend.local",
         "Password@123",
         "Sinh viên Video",
     )
@@ -151,7 +151,7 @@ def test_lesson_video_lifecycle_instructor_and_student(
     assert course_obj is not None
     course_obj.status = "PUBLISHED"
 
-    from pwd301.services.lesson_service import _resolve_lesson
+    from backend.services.lesson_service import _resolve_lesson
 
     lesson_obj = _resolve_lesson(lesson_id, session=sess)
     assert lesson_obj is not None

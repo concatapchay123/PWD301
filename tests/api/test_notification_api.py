@@ -19,13 +19,13 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import Notification, NotificationEvent
-from pwd301.services.email_service import enqueue_email
-from pwd301.services.jwt_auth_service import create_token_pair
-from pwd301.services.notification_service import dispatch_notification
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.extensions import db
+from backend.models.identity import Role, User
+from backend.models.notification_audit import Notification, NotificationEvent
+from backend.services.email_service import enqueue_email
+from backend.services.jwt_auth_service import create_token_pair
+from backend.services.notification_service import dispatch_notification
+from backend.services.user_service import assign_role_to_user, register_user
 from tests.conftest import login_web_user
 
 
@@ -485,8 +485,8 @@ def test_notification_distinct_copy_remains_visible(
     app: Flask, client: FlaskClient, student_user: User
 ) -> None:
     """Verify that multiple distinct events with identical copy remain visible."""
-    from pwd301.models.notification_audit import Notification
-    from pwd301.services.notification_service import list_user_notifications
+    from backend.models.notification_audit import Notification
+    from backend.services.notification_service import list_user_notifications
 
     # Dispatch 3 duplicate notifications to the same student
     for _ in range(3):
@@ -527,7 +527,7 @@ def test_distinct_notification_events_with_same_copy_remain_visible(
     app: Flask, client: FlaskClient, student_user: User
 ) -> None:
     """Distinct business events must not be hidden by a title/body heuristic."""
-    from pwd301.services.notification_service import list_user_notifications
+    from backend.services.notification_service import list_user_notifications
 
     for event_type in ("SYSTEM_NOTICE", "COURSE_ANNOUNCEMENT"):
         dispatch_notification(

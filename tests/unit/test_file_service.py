@@ -22,16 +22,16 @@ import pytest
 import sqlalchemy as sa
 from flask import Flask
 
-from pwd301.extensions import db
-from pwd301.models.course import Course
-from pwd301.models.file_import import FileAsset, FileBlob, FileRevision
-from pwd301.models.identity import Role, User
-from pwd301.services.course_service import create_course
-from pwd301.services.exceptions import (
+from backend.extensions import db
+from backend.models.course import Course
+from backend.models.file_import import FileAsset, FileBlob, FileRevision
+from backend.models.identity import Role, User
+from backend.services.course_service import create_course
+from backend.services.exceptions import (
     FileSizeLimitExceededError,
     FileValidationError,
 )
-from pwd301.services.file_service import (
+from backend.services.file_service import (
     _serialize_file_asset,
     add_file_revision,
     attach_resource_to_lesson,
@@ -45,9 +45,9 @@ from pwd301.services.file_service import (
     trash_file_asset,
     validate_file_metadata,
 )
-from pwd301.services.lesson_service import create_learning_unit, create_lesson
-from pwd301.services.scanner_service import ScanVerdict
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.lesson_service import create_learning_unit, create_lesson
+from backend.services.scanner_service import ScanVerdict
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -113,13 +113,13 @@ def test_rescan_failed_commit_preserves_quarantined_bytes_for_retry(
     verdict = ScanVerdict(status="FAIL", engine_name="fixture") if outcome == "infected" else clean
     if outcome == "deduplicated_blob":
         with (
-            patch("pwd301.services.file_service.scan_file_all_engines", return_value=[clean]),
-            patch("pwd301.services.file_service.scan_blob_file", return_value=clean),
+            patch("backend.services.file_service.scan_file_all_engines", return_value=[clean]),
+            patch("backend.services.file_service.scan_blob_file", return_value=clean),
         ):
             store_file_stream(instructor, course.id, io.BytesIO(payload), "existing.txt")
     with (
-        patch("pwd301.services.file_service.scan_file_all_engines", return_value=[unavailable]),
-        patch("pwd301.services.file_service.scan_blob_file", return_value=unavailable),
+        patch("backend.services.file_service.scan_file_all_engines", return_value=[unavailable]),
+        patch("backend.services.file_service.scan_blob_file", return_value=unavailable),
     ):
         asset = store_file_stream(instructor, course.id, io.BytesIO(payload), "pending.txt")
     asset_id = asset.id
@@ -134,8 +134,8 @@ def test_rescan_failed_commit_preserves_quarantined_bytes_for_retry(
     sa.event.listen(session, "before_commit", reject_commit)
     try:
         with (
-            patch("pwd301.services.file_service.scan_file_all_engines", return_value=[verdict]),
-            patch("pwd301.services.file_service.scan_blob_file", return_value=verdict),
+            patch("backend.services.file_service.scan_file_all_engines", return_value=[verdict]),
+            patch("backend.services.file_service.scan_blob_file", return_value=verdict),
             pytest.raises(RuntimeError, match="Claim lost"),
         ):
             rescan_file_asset(instructor, asset_id, session=session)
@@ -147,8 +147,8 @@ def test_rescan_failed_commit_preserves_quarantined_bytes_for_retry(
         session.query(FileRevision).filter_by(file_asset_id=asset_id).one().status == "QUARANTINED"
     )
     with (
-        patch("pwd301.services.file_service.scan_file_all_engines", return_value=[verdict]),
-        patch("pwd301.services.file_service.scan_blob_file", return_value=verdict),
+        patch("backend.services.file_service.scan_file_all_engines", return_value=[verdict]),
+        patch("backend.services.file_service.scan_blob_file", return_value=verdict),
     ):
         rescan_file_asset(instructor, asset_id, session=session)
     assert not source.exists()
@@ -418,7 +418,7 @@ def test_safe_rollback_on_db_failure(app: Flask, instructor: User, course: Cours
 
     crash_err = RuntimeError("Simulated DB Crash")
     with (
-        patch("pwd301.extensions.db.session.commit", side_effect=crash_err),
+        patch("backend.extensions.db.session.commit", side_effect=crash_err),
         pytest.raises(RuntimeError, match="Simulated DB Crash"),
     ):
         store_file_stream(

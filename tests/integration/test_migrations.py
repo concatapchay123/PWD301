@@ -13,10 +13,10 @@ import pytest
 import sqlalchemy as sa
 from flask_migrate import downgrade, upgrade
 
-from pwd301 import create_app
-from pwd301.extensions import db
-from pwd301.models.course import Course
-from pwd301.models.question_bank import Question, QuestionRevision
+from backend import create_app
+from backend.extensions import db
+from backend.models.course import Course
+from backend.models.question_bank import Question, QuestionRevision
 
 
 def test_migration_upgrade_and_downgrade(monkeypatch):

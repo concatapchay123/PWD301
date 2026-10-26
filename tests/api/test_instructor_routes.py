@@ -21,12 +21,12 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import Lesson
-from pwd301.seeds.baseline import seed_baseline
-from pwd301.services.course_service import create_course
-from pwd301.services.lesson_service import create_lesson
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.extensions import db
+from backend.models.course import Lesson
+from backend.seeds.baseline import seed_baseline
+from backend.services.course_service import create_course
+from backend.services.lesson_service import create_lesson
+from backend.services.user_service import assign_role_to_user, register_user
 
 FORBIDDEN_ARCHIVE_MESSAGE = (
     "Hệ thống không hỗ trợ tệp nén (.zip, .rar, .7z...). Vui lòng tải trực tiếp tài liệu học tập (PDF, Word, Excel, CAD, 3D...)"
@@ -40,7 +40,7 @@ def instructor_env(app: Flask) -> dict[str, Any]:
     seed_baseline(sess)
 
     inst_user = register_user(
-        email=f"inst_upload_{uuid.uuid4().hex[:8]}@pwd301.local",
+        email=f"inst_upload_{uuid.uuid4().hex[:8]}@backend.local",
         password="Password@123",
         display_name="Giảng Viên Kiểm Thử",
         session=sess,

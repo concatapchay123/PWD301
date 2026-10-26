@@ -15,23 +15,23 @@ import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 
-from pwd301.extensions import db
-from pwd301.models.assessment import AssessmentQuestionAssignment
-from pwd301.models.attempt_regrade import (
+from backend.extensions import db
+from backend.models.assessment import AssessmentQuestionAssignment
+from backend.models.attempt_regrade import (
     AssessmentResult,
 )
-from pwd301.seeds.baseline import seed_baseline
-from pwd301.services.assessment_service import create_assessment
-from pwd301.services.attempt_service import (
+from backend.seeds.baseline import seed_baseline
+from backend.services.assessment_service import create_assessment
+from backend.services.attempt_service import (
     get_attempt_result_for_student,
     save_attempt_answer,
     start_assessment_attempt,
     submit_assessment_attempt,
 )
-from pwd301.services.course_service import create_course
-from pwd301.services.lesson_service import create_lesson
-from pwd301.services.result_pdf_service import build_attempt_result_pdf
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.course_service import create_course
+from backend.services.lesson_service import create_lesson
+from backend.services.result_pdf_service import build_attempt_result_pdf
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -41,7 +41,7 @@ def remediation_env(app: Flask) -> dict[str, Any]:
     seed_baseline(sess)
 
     inst_user = register_user(
-        email="instructor_remed093@pwd301.local",
+        email="instructor_remed093@backend.local",
         password="Password@123",
         display_name="ThS. Remediation 093",
         session=sess,
@@ -49,7 +49,7 @@ def remediation_env(app: Flask) -> dict[str, Any]:
     assign_role_to_user(inst_user.id, "INSTRUCTOR", session=sess)
 
     student_user = register_user(
-        email="student_remed093@pwd301.local",
+        email="student_remed093@backend.local",
         password="Password@123",
         display_name="Nguyen Van Sinh Vien 093",
         session=sess,
@@ -127,7 +127,7 @@ def test_assessment_passing_percent_in_attempt_service(remediation_env: dict[str
     assert float(asm.passing_percent) == 70.0
 
     # 2. Add 2 single-choice questions (each 5 points, total 10 points)
-    from pwd301.services.question_bank_service import create_question
+    from backend.services.question_bank_service import create_question
 
     q1 = create_question(
         actor=instructor,
@@ -175,14 +175,14 @@ def test_assessment_passing_percent_in_attempt_service(remediation_env: dict[str
     sess.commit()
 
     # Publish assessment
-    from pwd301.services.assessment_service import publish_assessment
+    from backend.services.assessment_service import publish_assessment
 
     publish_assessment(actor=instructor, assessment_id=asm.id, session=sess)
     asm.status = "PUBLISHED"
     sess.commit()
 
     # Enroll student in course
-    from pwd301.services.enrollment_service import enroll_student
+    from backend.services.enrollment_service import enroll_student
 
     enroll_student(actor=student, course_id=course.id, session=sess)
     sess.commit()

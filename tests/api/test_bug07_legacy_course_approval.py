@@ -20,11 +20,11 @@ from typing import Any
 import pytest
 from flask.testing import FlaskClient
 
-from pwd301.extensions import db
-from pwd301.models.course import Course, CourseChangeRequest, CourseCompletionRule, Lesson
-from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import AuditEvent, Notification, NotificationEvent
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.extensions import db
+from backend.models.course import Course, CourseChangeRequest, CourseCompletionRule, Lesson
+from backend.models.identity import Role, User
+from backend.models.notification_audit import AuditEvent, Notification, NotificationEvent
+from backend.services.user_service import assign_role_to_user, register_user
 from tests.conftest import login_web_user
 
 
@@ -312,8 +312,8 @@ def test_publish_approved_legacy_course_with_lessons(
     instructor_user: User,
 ) -> None:
     """Directly publishing an approved legacy course auto-publishes its draft lessons."""
-    from pwd301.models.course import LearningUnit
-    from pwd301.services.course_service import change_course_status
+    from backend.models.course import LearningUnit
+    from backend.services.course_service import change_course_status
 
     sess = db.session
     course = Course(

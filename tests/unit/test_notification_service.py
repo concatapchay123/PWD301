@@ -21,16 +21,16 @@ import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.identity import Role, User, UserRole
-from pwd301.models.notification_audit import EmailDelivery, Notification, NotificationEvent
-from pwd301.services.exceptions import (
+from backend.extensions import db
+from backend.models.identity import Role, User, UserRole
+from backend.models.notification_audit import EmailDelivery, Notification, NotificationEvent
+from backend.services.exceptions import (
     ConflictError,
     ForbiddenError,
     MandatoryNotificationOptOutError,
     NotificationPreferenceError,
 )
-from pwd301.services.notification_service import (
+from backend.services.notification_service import (
     broadcast_system_notification,
     dismiss_notification,
     dispatch_notification,
@@ -41,7 +41,7 @@ from pwd301.services.notification_service import (
     mark_notification_as_read,
     update_user_preferences,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 def test_repeated_lesson_review_notices_remain_visible_for_recipient(

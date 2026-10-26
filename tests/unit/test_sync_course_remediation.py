@@ -6,20 +6,20 @@ from datetime import timedelta
 
 import pytest
 
-from pwd301.extensions import db
-from pwd301.models.course import (
+from backend.extensions import db
+from backend.models.course import (
     CourseChangeRequest,
     Enrollment,
     EnrollmentPeriod,
     Lesson,
     LessonProgress,
 )
-from pwd301.models.file_import import ImportQuestion, LessonResource
-from pwd301.models.question_bank import Question
-from pwd301.models.types import utc_now
-from pwd301.services import import_service
-from pwd301.services import lesson_service as service
-from pwd301.services.file_service import store_file_stream
+from backend.models.file_import import ImportQuestion, LessonResource
+from backend.models.question_bank import Question
+from backend.models.types import utc_now
+from backend.services import import_service
+from backend.services import lesson_service as service
+from backend.services.file_service import store_file_stream
 from tests.unit.test_import_service import create_sample_docx
 
 pytest_plugins = ["tests.test_lesson_revision_lifecycle"]
@@ -30,7 +30,7 @@ pytest_plugins = ["tests.test_lesson_revision_lifecycle"]
 def test_student_delivery_preserves_both_authored_quiz_threshold_spellings(
     app, published_course, marker, threshold
 ):
-    from pwd301.blueprints.student.routes import _serialize_student_lesson
+    from backend.blueprints.student.routes import _serialize_student_lesson
 
     _, lesson = published_course
     lesson.markdown_content = (
@@ -46,7 +46,7 @@ def test_student_delivery_preserves_both_authored_quiz_threshold_spellings(
 def test_quiz_acknowledgement_is_exposed_for_fresh_student_delivery(
     app, published_course, student_user
 ):
-    from pwd301.blueprints.student.routes import _serialize_student_lesson
+    from backend.blueprints.student.routes import _serialize_student_lesson
 
     course, lesson = published_course
     progress = enrolled_progress(course, lesson, student_user)
@@ -118,7 +118,7 @@ def test_approval_preserves_detached_resources(
 def test_student_delivery_does_not_resurrect_removed_historical_resource(
     app, instructor_user, admin_user, published_course
 ):
-    from pwd301.blueprints.student.routes import _serialize_student_lesson
+    from backend.blueprints.student.routes import _serialize_student_lesson
 
     course, original = published_course
     asset = store_file_stream(
@@ -346,7 +346,7 @@ def test_import_commit_respects_caller_transaction(app, published_course, instru
 def test_cloud_import_materializes_pruned_source(
     app, published_course, instructor_user, monkeypatch
 ):
-    from pwd301.services import file_service
+    from backend.services import file_service
 
     course, _ = published_course
     job, content = import_job(course, instructor_user)
@@ -375,9 +375,9 @@ def test_cloud_import_uses_local_s3_http_after_pruning(
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     from threading import Thread
 
-    from pwd301.services import file_service
-    from pwd301.services.exceptions import FileAccessDeniedError
-    from pwd301.services.import_service import DocumentParsingError
+    from backend.services import file_service
+    from backend.services.exceptions import FileAccessDeniedError
+    from backend.services.import_service import DocumentParsingError
 
     course, _ = published_course
     job, content = import_job(course, instructor_user)
@@ -522,7 +522,7 @@ def test_staged_edit_retains_original_revision_identity(app, published_course, i
 
 
 def test_change_request_rejects_missing_target(app, published_course, instructor_user):
-    from pwd301.services.exceptions import LessonValidationError
+    from backend.services.exceptions import LessonValidationError
 
     course, lesson = published_course
     with pytest.raises(LessonValidationError):
@@ -543,7 +543,7 @@ def test_change_request_rejects_missing_target(app, published_course, instructor
 def test_added_lesson_rejects_invalid_unit(
     app, published_course, instructor_user, admin_user, alternate
 ):
-    from pwd301.services.exceptions import LessonValidationError
+    from backend.services.exceptions import LessonValidationError
 
     course, _ = published_course
     payload = {

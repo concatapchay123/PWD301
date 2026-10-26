@@ -17,13 +17,13 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.assessment import Assessment
-from pwd301.models.attempt_regrade import AssessmentAttempt
-from pwd301.models.course import Course, Enrollment
-from pwd301.models.identity import Role, User
-from pwd301.services.jwt_auth_service import create_token_pair
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.extensions import db
+from backend.models.assessment import Assessment
+from backend.models.attempt_regrade import AssessmentAttempt
+from backend.models.course import Course, Enrollment
+from backend.models.identity import Role, User
+from backend.services.jwt_auth_service import create_token_pair
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -517,7 +517,7 @@ def test_web_session_cookie_cannot_access_api_bare_route(
     student_user: User,
 ) -> None:
     """CSRF invariant: Web session cookies alone must NOT authenticate bare /api route."""
-    from pwd301.services.authorization_service import get_authenticated_actor
+    from backend.services.authorization_service import get_authenticated_actor
 
     login_as(client, student_user.email)
 
@@ -555,8 +555,8 @@ def test_demoted_former_instructor_cannot_access_or_grade_attempts(
     student_user: User,
 ) -> None:
     """Layer 1 RBAC + Layer 2: Demoted instructor without role cannot view or grade attempts."""
-    from pwd301.services.authorization_service import can_access_attempt, can_grade_attempt
-    from pwd301.services.user_service import remove_role_from_user
+    from backend.services.authorization_service import can_access_attempt, can_grade_attempt
+    from backend.services.user_service import remove_role_from_user
 
     sess: Session = db.session
     assessment = Assessment(
@@ -596,8 +596,8 @@ def test_role_changes_dispatch_in_app_notification(
     admin_user: User,
 ) -> None:
     """Requirement 4.1: assign and remove role must dispatch notifications."""
-    from pwd301.models.notification_audit import Notification
-    from pwd301.services.user_service import assign_role_to_user, remove_role_from_user
+    from backend.models.notification_audit import Notification
+    from backend.services.user_service import assign_role_to_user, remove_role_from_user
 
     sess: Session = db.session
     initial_count = sess.query(Notification).filter_by(recipient_user_id=student_user.id).count()

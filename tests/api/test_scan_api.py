@@ -25,14 +25,14 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import Course
-from pwd301.models.file_import import FileAsset
-from pwd301.models.identity import Role, User
-from pwd301.services.course_service import create_course
-from pwd301.services.file_service import store_file_stream
-from pwd301.services.jwt_auth_service import create_token_pair
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.extensions import db
+from backend.models.course import Course
+from backend.models.file_import import FileAsset
+from backend.models.identity import Role, User
+from backend.services.course_service import create_course
+from backend.services.file_service import store_file_stream
+from backend.services.jwt_auth_service import create_token_pair
+from backend.services.user_service import assign_role_to_user, register_user
 from tests.conftest import login_web_user
 
 

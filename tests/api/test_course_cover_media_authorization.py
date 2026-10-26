@@ -4,10 +4,10 @@ import io
 
 import pytest
 
-from pwd301.extensions import db
-from pwd301.models.file_import import FileScanResult
-from pwd301.services.course_service import change_course_status, create_course, update_course
-from pwd301.services.file_service import store_file_stream
+from backend.extensions import db
+from backend.models.file_import import FileScanResult
+from backend.services.course_service import change_course_status, create_course, update_course
+from backend.services.file_service import store_file_stream
 
 pytest_plugins = ["tests.api.test_course_api"]
 

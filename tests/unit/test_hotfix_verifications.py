@@ -16,24 +16,24 @@ import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 
-from pwd301.extensions import db
-from pwd301.models.course import Course
-from pwd301.models.identity import Role, User
-from pwd301.services.course_service import change_course_status, create_course
-from pwd301.services.enrollment_service import enroll_student
-from pwd301.services.exceptions import FileSizeLimitExceededError
-from pwd301.services.file_service import (
+from backend.extensions import db
+from backend.models.course import Course
+from backend.models.identity import Role, User
+from backend.services.course_service import change_course_status, create_course
+from backend.services.enrollment_service import enroll_student
+from backend.services.exceptions import FileSizeLimitExceededError
+from backend.services.file_service import (
     LimitingStream,
     get_file_quarantine_root,
     store_file_stream,
 )
-from pwd301.services.jwt_auth_service import create_token_pair
-from pwd301.services.operations_service import (
+from backend.services.jwt_auth_service import create_token_pair
+from backend.services.operations_service import (
     _restore_lock,
     is_database_restore_in_progress,
     is_maintenance_active_cached,
 )
-from pwd301.services.user_service import (
+from backend.services.user_service import (
     assign_role_to_user,
     generate_email_verification_token,
     generate_password_reset_token,
@@ -235,7 +235,7 @@ class TestWebAuthRoutesAndTokens:
 
     def test_change_password_web_flow(self, client: FlaskClient, student_user: User) -> None:
         """GET and POST /auth/change-password."""
-        from pwd301.services.session_auth_service import create_auth_session
+        from backend.services.session_auth_service import create_auth_session
 
         _, raw_key = create_auth_session(student_user, session=db.session)
         db.session.commit()
@@ -338,7 +338,7 @@ class TestWebAuthRoutesAndTokens:
 
     def test_logout_route_get_and_post(self, client: FlaskClient, student_user: User) -> None:
         """GET and POST /auth/logout revoke DB session and clear session cookie."""
-        from pwd301.services.session_auth_service import create_auth_session
+        from backend.services.session_auth_service import create_auth_session
 
         auth_s, raw_key = create_auth_session(student_user, session=db.session)
         db.session.commit()
@@ -365,7 +365,7 @@ class TestBeforeRequestMiddlewareOptimizations:
 
     def test_early_bypass_paths_do_not_resolve_actor(self, client: FlaskClient) -> None:
         """Static, health, and login paths return without resolving session actor."""
-        with patch("pwd301.services.authorization_service.get_authenticated_actor") as mock_actor:
+        with patch("backend.services.authorization_service.get_authenticated_actor") as mock_actor:
             resp_health = client.get("/health")
             assert resp_health.status_code == 200
             mock_actor.assert_not_called()
@@ -383,7 +383,7 @@ class TestBeforeRequestMiddlewareOptimizations:
 
             # The next call must consult authority rather than admit cached inactivity.
             with patch(
-                "pwd301.services.operations_service.is_maintenance_active",
+                "backend.services.operations_service.is_maintenance_active",
                 side_effect=RuntimeError("DB query"),
             ) as authority:
                 with pytest.raises(RuntimeError, match="DB query"):
@@ -411,7 +411,7 @@ class TestClamAVOversizedStreamHandling:
     """Verify ClamAV scanner handles oversized files (e.g. videos up to 1GB) gracefully."""
 
     def test_oversized_file_remains_unscanned(self, tmp_path: pytest.TempPathFactory) -> None:
-        from pwd301.services.scanner_service import ClamAVScanner
+        from backend.services.scanner_service import ClamAVScanner
 
         test_file = Path(str(tmp_path)) / "large_video.mp4"
         test_file.write_bytes(b"\x00" * 1024)
@@ -422,7 +422,7 @@ class TestClamAVOversizedStreamHandling:
         assert "exceeds ClamAV stream limit" in verdict.details
 
     def test_normal_file_uses_instream(self, tmp_path: pytest.TempPathFactory) -> None:
-        from pwd301.services.scanner_service import ClamAVScanner
+        from backend.services.scanner_service import ClamAVScanner
 
         test_file = Path(str(tmp_path)) / "small_text.txt"
         test_file.write_bytes(b"hello world")

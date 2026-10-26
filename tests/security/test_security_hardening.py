@@ -24,32 +24,32 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import Course, Lesson
-from pwd301.models.identity import Role, User
-from pwd301.services.course_service import (
+from backend.extensions import db
+from backend.models.course import Course, Lesson
+from backend.models.identity import Role, User
+from backend.services.course_service import (
     change_course_status,
     create_course,
 )
-from pwd301.services.email_service import enqueue_email
-from pwd301.services.enrollment_service import (
+from backend.services.email_service import enqueue_email
+from backend.services.enrollment_service import (
     add_course_prerequisite,
     enroll_student,
 )
-from pwd301.services.exceptions import ConflictError, EmailRateLimitExceededError
-from pwd301.services.file_service import store_file_stream
-from pwd301.services.jwt_auth_service import create_token_pair
-from pwd301.services.lesson_service import (
+from backend.services.exceptions import ConflictError, EmailRateLimitExceededError
+from backend.services.file_service import store_file_stream
+from backend.services.jwt_auth_service import create_token_pair
+from backend.services.lesson_service import (
     change_lesson_status,
     create_lesson,
 )
-from pwd301.services.operations_service import (
+from backend.services.operations_service import (
     _restore_lock,
     is_database_restore_in_progress,
     restore_database_snapshot,
 )
-from pwd301.services.rate_limit_service import reset_all_rate_limits
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.rate_limit_service import reset_all_rate_limits
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture(autouse=True)
@@ -387,7 +387,7 @@ def test_progress_percent_null_safety(
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
 
     with patch(
-        "pwd301.blueprints.api_student.routes.get_student_enrollments",
+        "backend.blueprints.api_student.routes.get_student_enrollments",
         return_value=[mock_enrollment],
     ):
         resp = client.get("/api/student/enrollments", headers=headers)
@@ -407,7 +407,7 @@ def test_database_restore_blocks_non_admin_with_503(
     client: FlaskClient, student_user: User
 ) -> None:
     """When a database restore is in progress, non-admin requests receive 503."""
-    from pwd301.services import operations_service
+    from backend.services import operations_service
 
     operations_service._is_restore_in_progress = True
     try:

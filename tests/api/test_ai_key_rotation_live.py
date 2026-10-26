@@ -10,7 +10,7 @@ Validates that:
 
 from __future__ import annotations
 
-from pwd301.services.gemini_service import (
+from backend.services.gemini_service import (
     GeminiKeyPool,
     GeminiKeyStatus,
     RealGeminiClient,
@@ -52,7 +52,7 @@ def test_live_gemini_call_with_automatic_dead_key_fallback() -> None:
     prompt = "Bạn hãy giải thích ngắn gọn trong 1 câu: HTML là gì?"
     system_inst = "Bạn là Bạch Tuộc Trợ lý AI trên nền tảng học tập LMS PWD301."
 
-    from pwd301.services.exceptions import AIQuotaExceededError, AIServiceUnavailableError
+    from backend.services.exceptions import AIQuotaExceededError, AIServiceUnavailableError
 
     try:
         response_text = client.generate_text(prompt, system_instruction=system_inst)

@@ -26,50 +26,50 @@ from flask import Flask
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.ai_rag import KnowledgeDocument, KnowledgeVersion
-from pwd301.models.attempt_regrade import (
+from backend.extensions import db
+from backend.models.ai_rag import KnowledgeDocument, KnowledgeVersion
+from backend.models.attempt_regrade import (
     AssessmentAttempt,
     AttemptAnswer,
     AttemptAnswerEvent,
     AttemptChoiceSnapshot,
 )
-from pwd301.models.course import Course, Lesson
-from pwd301.models.file_import import FileAsset, FileRevision
-from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import AuditEvent
-from pwd301.models.question_bank import Question, QuestionRevision
-from pwd301.services.assessment_service import (
+from backend.models.course import Course, Lesson
+from backend.models.file_import import FileAsset, FileRevision
+from backend.models.identity import Role, User
+from backend.models.notification_audit import AuditEvent
+from backend.models.question_bank import Question, QuestionRevision
+from backend.services.assessment_service import (
     assign_question,
     create_assessment,
     create_section,
     publish_assessment,
     update_assessment,
 )
-from pwd301.services.attempt_service import (
+from backend.services.attempt_service import (
     save_attempt_answer,
     start_assessment_attempt,
     takeover_attempt_lease,
 )
-from pwd301.services.course_service import change_course_status, create_course
-from pwd301.services.enrollment_service import enroll_student
-from pwd301.services.exceptions import (
+from backend.services.course_service import change_course_status, create_course
+from backend.services.enrollment_service import enroll_student
+from backend.services.exceptions import (
     AssessmentLockedError,
     StaleAnswerSequenceError,
     StaleLeaseEpochError,
 )
-from pwd301.services.lesson_service import (
+from backend.services.lesson_service import (
     approve_course_change_request,
     create_lesson,
     create_lesson_change_request,
 )
-from pwd301.services.question_bank_service import (
+from backend.services.question_bank_service import (
     create_question,
     create_question_revision,
 )
-from pwd301.services.regrade_worker import regrade_attempt
-from pwd301.services.retention_service import purge_attempt_details_skeleton_tombstone
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.regrade_worker import regrade_attempt
+from backend.services.retention_service import purge_attempt_details_skeleton_tombstone
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -809,7 +809,7 @@ def test_defect_6_relational_staging_lesson_change_request_and_approval(
     assert len(lessons_at_pos_1) == 2
 
     # 3. Submit and Approve course change request
-    from pwd301.services.lesson_service import submit_course_changeset
+    from backend.services.lesson_service import submit_course_changeset
     pending = submit_course_changeset(instructor_user, published_course.id, {}, session=sess)
     sess.commit()
     assert pending.status == "PENDING"

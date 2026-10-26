@@ -23,49 +23,49 @@ import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import CourseCompletionSummary
-from pwd301.models.identity import Role, User
-from pwd301.services.assessment_service import (
+from backend.extensions import db
+from backend.models.course import CourseCompletionSummary
+from backend.models.identity import Role, User
+from backend.services.assessment_service import (
     assign_question,
     create_assessment,
     create_section,
     publish_assessment,
 )
-from pwd301.services.attempt_service import (
+from backend.services.attempt_service import (
     get_attempt_result_for_student,
     save_attempt_answer,
     start_assessment_attempt,
     submit_assessment_attempt,
 )
-from pwd301.services.auth_token_service import (
+from backend.services.auth_token_service import (
     create_security_token,
     verify_email_with_token,
 )
-from pwd301.services.completion_service import (
+from backend.services.completion_service import (
     calculate_course_progress,
     evaluate_course_completion,
     set_course_completion_rule,
 )
-from pwd301.services.course_service import change_course_status, create_course
-from pwd301.services.enrollment_service import (
+from backend.services.course_service import change_course_status, create_course
+from backend.services.enrollment_service import (
     add_course_prerequisite,
     enroll_student,
 )
-from pwd301.services.exceptions import (
+from backend.services.exceptions import (
     EnrollmentPrerequisiteError,
     StaleAnswerSequenceError,
 )
-from pwd301.services.jwt_auth_service import create_token_pair
-from pwd301.services.lesson_service import (
+from backend.services.jwt_auth_service import create_token_pair
+from backend.services.lesson_service import (
     change_lesson_status,
     create_lesson,
     record_lesson_progress,
 )
-from pwd301.services.question_bank_service import create_question
-from pwd301.services.recommendation_service import generate_course_recommendations
-from pwd301.services.session_auth_service import create_auth_session
-from pwd301.services.user_service import (
+from backend.services.question_bank_service import create_question
+from backend.services.recommendation_service import generate_course_recommendations
+from backend.services.session_auth_service import create_auth_session
+from backend.services.user_service import (
     assign_role_to_user,
     register_user,
 )
@@ -251,7 +251,7 @@ def test_student_complete_lifecycle_e2e(
     # -------------------------------------------------------------------------
     # 2. Prerequisite Barrier: Attempt to enroll in Course B without Course A
     # -------------------------------------------------------------------------
-    with pytest.raises(EnrollmentPrerequisiteError, match="Prerequisite courses not completed"):
+    with pytest.raises(EnrollmentPrerequisiteError, match="chưa hoàn thành môn học tiên quyết"):
         enroll_student(actor=verified_user, course_id=course_b.id, session=sess)
 
     # -------------------------------------------------------------------------

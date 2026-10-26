@@ -6,36 +6,36 @@ import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 
-from pwd301.extensions import db
-from pwd301.models.course import (
+from backend.extensions import db
+from backend.models.course import (
     Course,
     CourseCompletionSummary,
     EnrollmentEvent,
     Lesson,
 )
-from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import AuditEvent
-from pwd301.services.completion_service import (
+from backend.models.identity import Role, User
+from backend.models.notification_audit import AuditEvent
+from backend.services.completion_service import (
     calculate_course_progress,
     evaluate_course_completion,
     get_or_create_default_completion_rule,
     set_course_completion_rule,
 )
-from pwd301.services.course_service import change_course_status, create_course
-from pwd301.services.enrollment_service import (
+from backend.services.course_service import change_course_status, create_course
+from backend.services.enrollment_service import (
     add_course_prerequisite,
     check_prerequisites_met,
     enroll_student,
     leave_course,
 )
-from pwd301.services.exceptions import CompletionRuleValidationError
-from pwd301.services.lesson_service import (
+from backend.services.exceptions import CompletionRuleValidationError
+from backend.services.lesson_service import (
     approve_course_change_request,
     create_lesson,
     record_lesson_progress,
     submit_course_changeset,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 from tests.conftest import login_web_user
 
 
@@ -302,7 +302,7 @@ def test_calculate_course_progress_ignores_other_periods(
     leave_course(student_user, course.id)
     db.session.commit()
 
-    from pwd301.services.enrollment_service import re_enroll_student
+    from backend.services.enrollment_service import re_enroll_student
 
     enrollment = re_enroll_student(student_user, course.id)
     db.session.commit()

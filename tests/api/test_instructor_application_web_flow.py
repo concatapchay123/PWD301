@@ -20,9 +20,9 @@ import re
 
 import pytest
 
-from pwd301.extensions import db
-from pwd301.models.identity import InstructorApplication, User
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.extensions import db
+from backend.models.identity import InstructorApplication, User
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -30,17 +30,17 @@ def test_users(app):
     """Seed test users: student, another student, admin."""
     with app.app_context():
         student1 = register_user(
-            "student1.apply@pwd301.edu.vn", "Password123!", "Student One", session=db.session
+            "student1.apply@backend.edu.vn", "Password123!", "Student One", session=db.session
         )
         assign_role_to_user(student1.id, "STUDENT", session=db.session)
 
         student2 = register_user(
-            "student2.apply@pwd301.edu.vn", "Password123!", "Student Two", session=db.session
+            "student2.apply@backend.edu.vn", "Password123!", "Student Two", session=db.session
         )
         assign_role_to_user(student2.id, "STUDENT", session=db.session)
 
         admin = register_user(
-            "admin.approver@pwd301.edu.vn", "AdminPassword123!", "System Admin", session=db.session
+            "admin.approver@backend.edu.vn", "AdminPassword123!", "System Admin", session=db.session
         )
         assign_role_to_user(admin.id, "ADMIN", session=db.session)
 
@@ -292,7 +292,7 @@ def test_security_access_control_admin_queue(client, test_users):
 
 def test_rest_api_instructor_application_flow(client, test_users):
     """REST API endpoints for student self-nomination and admin review."""
-    from pwd301.services.jwt_auth_service import create_token_pair
+    from backend.services.jwt_auth_service import create_token_pair
 
     # Create tokens for student and admin
     with client.application.app_context():

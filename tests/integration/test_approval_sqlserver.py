@@ -6,12 +6,12 @@ from threading import Barrier
 import pytest
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import CourseChangeRequest, Lesson
-from pwd301.models.identity import User
-from pwd301.models.notification_audit import AuditEvent
-from pwd301.services.exceptions import LessonStateViolationError
-from pwd301.services.lesson_service import approve_course_change_request
+from backend.extensions import db
+from backend.models.course import CourseChangeRequest, Lesson
+from backend.models.identity import User
+from backend.models.notification_audit import AuditEvent
+from backend.services.exceptions import LessonStateViolationError
+from backend.services.lesson_service import approve_course_change_request
 from tests.api.test_admin_change_requests_review import approval_env as approval_fixture
 from tests.api.test_video_preview_stream import video_env as video_fixture
 
@@ -25,8 +25,8 @@ def test_review_policy_downgrade_preserves_restricted_assessments(app, video_env
     import sqlalchemy as sa
     from flask_migrate import downgrade
 
-    from pwd301.models.assessment import Assessment
-    from pwd301.services.assessment_service import create_assessment
+    from backend.models.assessment import Assessment
+    from backend.services.assessment_service import create_assessment
 
     users, asset, _, _, _ = video_env
     assessment = create_assessment(
@@ -121,8 +121,8 @@ def test_two_reviewers_apply_one_revision_and_one_audit(approval_env):
 def test_concurrent_course_approval_emits_one_lifecycle_audit(approval_env, monkeypatch):
     if db.engine.dialect.name != "mssql":
         pytest.skip("Requires disposable SQL Server to prove lifecycle serialization.")
-    from pwd301.models.course import Course
-    from pwd301.services import course_service
+    from backend.models.course import Course
+    from backend.services import course_service
 
     users, course, _, _ = approval_env
     course.status = "SUBMITTED_FOR_REVIEW"

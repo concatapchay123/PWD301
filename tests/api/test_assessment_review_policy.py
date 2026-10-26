@@ -7,27 +7,27 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from pwd301.extensions import db
-from pwd301.models.identity import Role
-from pwd301.models.types import utc_now
-from pwd301.services.assessment_service import (
+from backend.extensions import db
+from backend.models.identity import Role
+from backend.models.types import utc_now
+from backend.services.assessment_service import (
     ALLOWED_ANSWER_VISIBILITY_POLICIES,
     assign_question,
     create_assessment,
     create_section,
     publish_assessment,
 )
-from pwd301.services.attempt_service import (
+from backend.services.attempt_service import (
     get_attempt_result_for_student,
     save_attempt_answer,
     start_assessment_attempt,
     submit_assessment_attempt,
 )
-from pwd301.services.course_service import change_course_status, create_course
-from pwd301.services.enrollment_service import enroll_student
-from pwd301.services.jwt_auth_service import create_token_pair
-from pwd301.services.question_bank_service import create_question
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.course_service import change_course_status, create_course
+from backend.services.enrollment_service import enroll_student
+from backend.services.jwt_auth_service import create_token_pair
+from backend.services.question_bank_service import create_question
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 def test_allowed_answer_visibility_policies_contains_correct_wrong_only():
@@ -172,7 +172,7 @@ def test_full_review_uses_historical_revision_when_choice_link_is_missing(review
 
 
 def _login_review_student(client, student):
-    from pwd301.services.session_auth_service import create_auth_session
+    from backend.services.session_auth_service import create_auth_session
 
     _, raw_key = create_auth_session(student, session=db.session)
     db.session.commit()
@@ -233,8 +233,8 @@ def test_disabled_review_preserves_never_and_unreleased_policies(review_attempt)
 
 
 def test_disabled_review_masks_question_grade_history(review_attempt):
-    from pwd301.models.attempt_regrade import AttemptQuestionGradeHistory
-    from pwd301.services.attempt_service import get_attempt_grade_history
+    from backend.models.attempt_regrade import AttemptQuestionGradeHistory
+    from backend.services.attempt_service import get_attempt_grade_history
 
     student, instructor, assessment, attempt = review_attempt
     db.session.add(
@@ -319,7 +319,7 @@ def test_review_policy_matrix_on_session_and_jwt_apis(client, review_attempt):
 
 
 def test_summary_resume_at_limit_and_pending_are_not_completed(client, review_attempt):
-    from pwd301.services.assessment_student_service import student_assessment_summary
+    from backend.services.assessment_student_service import student_assessment_summary
 
     student, _, assessment, attempt = review_attempt
     assessment.attempt_limit = 1
@@ -382,8 +382,8 @@ def test_assessment_surfaces_share_count_attempts_and_released_score(client, rev
 def test_assessment_surfaces_use_assigned_snapshot_instead_of_configured_totals(
     client, review_attempt
 ):
-    from pwd301.models.attempt_regrade import AttemptQuestion
-    from pwd301.models.identity import User
+    from backend.models.attempt_regrade import AttemptQuestion
+    from backend.models.identity import User
 
     student, _, assessment, attempt = review_attempt
     admin = db.session.query(User).filter_by(email="review-admin@example.com").one()
@@ -430,8 +430,8 @@ def test_assessment_surfaces_use_assigned_snapshot_instead_of_configured_totals(
     "policy,expected", [("FIRST", 2), ("LATEST", 4), ("HIGHEST", 8), ("AVERAGE", 14 / 3)]
 )
 def test_student_summary_obeys_scoring_policy(review_attempt, policy, expected):
-    from pwd301.models.attempt_regrade import AssessmentAttempt, AssessmentResult
-    from pwd301.services.assessment_student_service import student_assessment_summary
+    from backend.models.attempt_regrade import AssessmentAttempt, AssessmentResult
+    from backend.services.assessment_student_service import student_assessment_summary
 
     student, _, assessment, first = review_attempt
     first.result.raw_score = 2

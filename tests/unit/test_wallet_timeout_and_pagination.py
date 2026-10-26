@@ -6,11 +6,11 @@ import json
 import pytest
 from werkzeug.security import generate_password_hash
 
-from pwd301.extensions import db
-from pwd301.models.identity import User
-from pwd301.models.types import utc_now
-from pwd301.models.wallet import UserBalance, WalletTransaction
-from pwd301.services.wallet_service import (
+from backend.extensions import db
+from backend.models.identity import User
+from backend.models.types import utc_now
+from backend.models.wallet import UserBalance, WalletTransaction
+from backend.services.wallet_service import (
     expire_stale_pending_transactions,
     get_or_create_balance,
     list_transactions_paginated,
@@ -22,7 +22,7 @@ def test_expire_stale_pending_transactions(app):
     with app.app_context():
         now = utc_now()
         user = User(
-            email="test_timeout_user@pwd301.local",
+            email="test_timeout_user@backend.local",
             display_name="Test Timeout User",
             password_hash=generate_password_hash("Secret123456!"),
             status="ACTIVE",
@@ -94,7 +94,7 @@ def test_list_transactions_paginated(app):
     with app.app_context():
         now = utc_now()
         user = User(
-            email="test_paginated_user@pwd301.local",
+            email="test_paginated_user@backend.local",
             display_name="Test Paginated User",
             password_hash=generate_password_hash("Secret123456!"),
             status="ACTIVE",
@@ -142,7 +142,7 @@ def test_list_transactions_paginated(app):
 
 def test_get_my_wallet_route(app, client):
     """Verify GET /api/payments/wallet/me returns pagination envelope and sweeps stale txs."""
-    email = "test_route_user@pwd301.local"
+    email = "test_route_user@backend.local"
     password = "StudentPass1234!"
 
     with app.app_context():
@@ -154,6 +154,15 @@ def test_get_my_wallet_route(app, client):
             status="ACTIVE",
         )
         db.session.add(user)
+        db.session.flush()
+
+        from backend.models.identity import Role, UserRole
+        role_student = db.session.query(Role).filter_by(code="STUDENT").first()
+        if not role_student:
+            role_student = Role(code="STUDENT", name="Student")
+            db.session.add(role_student)
+            db.session.flush()
+        db.session.add(UserRole(user_id=user.id, role_id=role_student.id))
         db.session.flush()
 
         # Stale transaction
@@ -172,9 +181,8 @@ def test_get_my_wallet_route(app, client):
         db.session.add(tx_stale)
         db.session.commit()
 
-    # Login student via /auth/login
-    login_res = client.post("/auth/login", json={"email": email, "password": password})
-    assert login_res.status_code == 200
+        from tests.conftest import login_web_user
+        login_web_user(client, user)
 
     res = client.get("/api/payments/wallet/me?page=1&page_size=5")
     assert res.status_code == 200

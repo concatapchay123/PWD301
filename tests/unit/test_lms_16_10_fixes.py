@@ -18,22 +18,22 @@ import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
-from pwd301.blueprints.instructor.routes import validate_course_publish_readiness
-from pwd301.extensions import db
-from pwd301.models.course import Course, _parse_string_list
-from pwd301.models.identity import Role, User
-from pwd301.services.course_service import create_course
-from pwd301.services.course_workflow_service import AuthoringProjection
-from pwd301.services.file_service import (
+from backend.blueprints.instructor.routes import validate_course_publish_readiness
+from backend.extensions import db
+from backend.models.course import Course, _parse_string_list
+from backend.models.identity import Role, User
+from backend.services.course_service import create_course
+from backend.services.course_workflow_service import AuthoringProjection
+from backend.services.file_service import (
     attach_resource_to_lesson,
     detach_resource_from_lesson,
     store_file_stream,
 )
-from pwd301.services.lesson_service import (
+from backend.services.lesson_service import (
     create_lesson,
     get_course_changeset_status,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture

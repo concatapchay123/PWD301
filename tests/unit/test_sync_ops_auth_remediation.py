@@ -5,14 +5,14 @@ from unittest.mock import Mock
 
 import pytest
 
-from pwd301.extensions import db
-from pwd301.models.ai_rag import AIConversation, AIMessage
-from pwd301.models.identity import User
-from pwd301.models.types import utc_now
-from pwd301.services import auth_token_service as tokens
-from pwd301.services import background_job_service as jobs
-from pwd301.services.operations_service import is_maintenance_active
-from pwd301.services.user_service import register_user
+from backend.extensions import db
+from backend.models.ai_rag import AIConversation, AIMessage
+from backend.models.identity import User
+from backend.models.types import utc_now
+from backend.services import auth_token_service as tokens
+from backend.services import background_job_service as jobs
+from backend.services.operations_service import is_maintenance_active
+from backend.services.user_service import register_user
 
 
 def test_consumption_can_be_rolled_back_with_caller(app):
@@ -30,7 +30,7 @@ def test_reset_notification_failure_rolls_back_password_and_token(app, monkeypat
         user = register_user("rollback@example.com", "StrongPassword123!", "Rollback")
         old_hash = user.password_hash
         record, raw = tokens.create_security_token(user.id, "PASSWORD_RESET")
-        from pwd301.services import notification_service
+        from backend.services import notification_service
 
         monkeypatch.setattr(
             notification_service,
@@ -71,7 +71,7 @@ def test_maintenance_database_failure_is_closed():
 
 @pytest.mark.parametrize("failure", ["unknown_window", "exception"])
 def test_sync057_http_admission_denies_unverifiable_maintenance(app, client, monkeypatch, failure):
-    from pwd301.services import operations_service
+    from backend.services import operations_service
 
     check = Mock(return_value=(True, None))
     if failure == "exception":
@@ -89,7 +89,7 @@ def test_stale_worker_cannot_finish_new_owner_claim(app, monkeypatch):
         job = jobs.enqueue_background_job("EMAIL", run_async=False)
         db.session.commit()
         claimed = jobs.claim_next_background_job()
-        from pwd301.services import email_service
+        from backend.services import email_service
 
         def take_over(**kwargs):
             claimed.attempt_count += 1
@@ -104,7 +104,7 @@ def test_stale_worker_cannot_finish_new_owner_claim(app, monkeypatch):
 
 
 def test_retention_batch_advances_past_empty_expired_parents(app):
-    from pwd301.services.retention_service import purge_expired_ai_messages
+    from backend.services.retention_service import purge_expired_ai_messages
 
     with app.app_context():
         user = register_user("retention@example.com", "StrongPassword123!", "Retention")
@@ -145,7 +145,7 @@ def test_lease_renewal_rejects_replaced_owner(app):
 
 
 def test_ai_send_lock_refreshes_stale_messages_before_allocation(app):
-    from pwd301.services.ai_service import _lock_conversation_for_send
+    from backend.services.ai_service import _lock_conversation_for_send
 
     with app.app_context():
         user = register_user("sequence@example.com", "StrongPassword123!", "Sequence")
@@ -182,8 +182,8 @@ def test_worker_schedules_ai_retention_on_first_iteration(app, monkeypatch):
 
 
 def test_stale_verified_token_cannot_be_consumed_twice(app, monkeypatch):
-    from pwd301.models.identity import UserSecurityToken
-    from pwd301.services.exceptions import TokenAlreadyConsumedError
+    from backend.models.identity import UserSecurityToken
+    from backend.services.exceptions import TokenAlreadyConsumedError
 
     with app.app_context():
         user = register_user("consume@example.com", "StrongPassword123!", "Consume")
@@ -203,9 +203,9 @@ def test_stale_verified_token_cannot_be_consumed_twice(app, monkeypatch):
 
 
 def test_refresh_loses_conditional_rotation_without_new_pair(app, monkeypatch):
-    from pwd301.models.identity import JwtTokenGrant
-    from pwd301.services import jwt_auth_service as jwt_service
-    from pwd301.services.exceptions import JwtTokenRevokedError
+    from backend.models.identity import JwtTokenGrant
+    from backend.services import jwt_auth_service as jwt_service
+    from backend.services.exceptions import JwtTokenRevokedError
 
     with app.app_context():
         user = register_user("rotation@example.com", "StrongPassword123!", "Rotation")
@@ -232,9 +232,9 @@ def test_both_suspend_routes_reject_missing_phrase(app, monkeypatch, module_name
     import importlib
     from inspect import unwrap
 
-    from pwd301.services.exceptions import ValidationError
+    from backend.services.exceptions import ValidationError
 
-    module = importlib.import_module(f"pwd301.blueprints.{module_name}.routes")
+    module = importlib.import_module(f"backend.blueprints.{module_name}.routes")
     actor = Mock()
     actor.verify_password.return_value = True
     monkeypatch.setattr(module, "require_authenticated_actor", lambda: actor)
@@ -247,7 +247,7 @@ def test_both_suspend_routes_reject_missing_phrase(app, monkeypatch, module_name
 
 def test_replaced_cached_claim_never_dispatches_domain_work(app, monkeypatch):
     """A replaced database claim must fence side effects before dispatch."""
-    from pwd301.services import email_service
+    from backend.services import email_service
 
     with app.app_context():
         jobs.enqueue_background_job("EMAIL", run_async=False)
@@ -267,7 +267,7 @@ def test_replaced_cached_claim_never_dispatches_domain_work(app, monkeypatch):
 def test_claim_replaced_during_handler_cannot_commit_domain_mutation(app, monkeypatch):
     from sqlalchemy import text
 
-    from pwd301.services import email_service
+    from backend.services import email_service
 
     with app.app_context():
         user = register_user("fenced@example.com", "StrongPassword123!", "Before")

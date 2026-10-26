@@ -24,28 +24,28 @@ import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 
-from pwd301.extensions import db
-from pwd301.models.course import Course
-from pwd301.models.file_import import FileScanResult
-from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import AuditEvent
-from pwd301.services.course_service import create_course
-from pwd301.services.enrollment_service import enroll_student
-from pwd301.services.exceptions import (
+from backend.extensions import db
+from backend.models.course import Course
+from backend.models.file_import import FileScanResult
+from backend.models.identity import Role, User
+from backend.models.notification_audit import AuditEvent
+from backend.services.course_service import create_course
+from backend.services.enrollment_service import enroll_student
+from backend.services.exceptions import (
     FileAccessDeniedError,
     FileInfectedError,
     FileSecurityQuarantineError,
     ForbiddenError,
     ValidationError,
 )
-from pwd301.services.file_service import (
+from backend.services.file_service import (
     get_file_for_download,
     get_file_infected_root,
     quarantine_override,
     store_file_stream,
 )
-from pwd301.services.scanner_service import EICAR_SIGNATURE_BYTES
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.scanner_service import EICAR_SIGNATURE_BYTES
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture

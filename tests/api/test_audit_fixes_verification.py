@@ -7,11 +7,11 @@ from unittest.mock import MagicMock, patch
 from flask import Flask
 from flask.testing import FlaskClient
 
-from pwd301.extensions import db
-from pwd301.models.assessment import Assessment
-from pwd301.models.course import Course, Enrollment
-from pwd301.models.identity import Role, User
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.extensions import db
+from backend.models.assessment import Assessment
+from backend.models.course import Course, Enrollment
+from backend.models.identity import Role, User
+from backend.services.user_service import assign_role_to_user, register_user
 from tests.conftest import login_web_user
 
 
@@ -33,7 +33,7 @@ def _get_csrf_token(client: FlaskClient) -> str:
 
 
 def _create_user(
-    email: str = "testuser@pwd301.local",
+    email: str = "testuser@backend.local",
     role: str = "STUDENT",
 ) -> User:
     _ensure_roles()
@@ -61,8 +61,8 @@ def _create_course(instructor: User, status: str = "PUBLISHED") -> Course:
 def test_student_course_detail_max_points(client: FlaskClient, app: Flask) -> None:
     """Verify GET /student/courses/<id> handles assessments without AttributeError."""
     with app.app_context():
-        instructor = _create_user("inst_audit@pwd301.local", "INSTRUCTOR")
-        student = _create_user("stud_audit@pwd301.local", "STUDENT")
+        instructor = _create_user("inst_audit@backend.local", "INSTRUCTOR")
+        student = _create_user("stud_audit@backend.local", "STUDENT")
         course = _create_course(instructor, status="PUBLISHED")
 
         # Enroll student
@@ -99,7 +99,7 @@ def test_student_course_detail_max_points(client: FlaskClient, app: Flask) -> No
 def test_student_become_instructor_adaptation(client: FlaskClient, app: Flask) -> None:
     """Verify POST /student/become-instructor adaptively maps alternate form fields."""
     with app.app_context():
-        student = _create_user("stud_nominate@pwd301.local", "STUDENT")
+        student = _create_user("stud_nominate@backend.local", "STUDENT")
         login_web_user(client, student)
         csrf = _get_csrf_token(client)
 
@@ -123,7 +123,7 @@ def test_student_become_instructor_adaptation(client: FlaskClient, app: Flask) -
 def test_operations_telemetry_host_object(client: FlaskClient, app: Flask) -> None:
     """Verify /admin/telemetry returns node_label, network, and host for complete UI."""
     with app.app_context():
-        admin = _create_user("admin_telem@pwd301.local", "ADMIN")
+        admin = _create_user("admin_telem@backend.local", "ADMIN")
         login_web_user(client, admin)
 
         resp = client.get("/admin/telemetry")
@@ -140,7 +140,7 @@ def test_operations_telemetry_host_object(client: FlaskClient, app: Flask) -> No
 def test_instructor_ai_draft_route(client: FlaskClient, app: Flask) -> None:
     """Verify POST /instructor/ai/questions/draft accepts session authentication."""
     with app.app_context():
-        instructor = _create_user("inst_ai_draft@pwd301.local", "INSTRUCTOR")
+        instructor = _create_user("inst_ai_draft@backend.local", "INSTRUCTOR")
         course = _create_course(instructor, status="DRAFT")
         login_web_user(client, instructor)
         with client.session_transaction() as sess:
@@ -155,9 +155,9 @@ def test_instructor_ai_draft_route(client: FlaskClient, app: Flask) -> None:
         }
 
         with (
-            patch("pwd301.services.rate_limit_service.check_ai_rate_limit"),
+            patch("backend.services.rate_limit_service.check_ai_rate_limit"),
             patch(
-                "pwd301.services.ai_service.draft_course_questions",
+                "backend.services.ai_service.draft_course_questions",
                 return_value=[mock_draft],
             ),
         ):

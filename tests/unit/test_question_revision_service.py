@@ -7,25 +7,25 @@ import sqlalchemy as sa
 from flask import Flask
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.assessment import Assessment, AssessmentQuestionAssignment
-from pwd301.models.attempt_regrade import AttemptQuestion, QuestionCorrection
-from pwd301.models.course import Course, Lesson
-from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import AuditEvent
-from pwd301.models.question_bank import (
+from backend.extensions import db
+from backend.models.assessment import Assessment, AssessmentQuestionAssignment
+from backend.models.attempt_regrade import AttemptQuestion, QuestionCorrection
+from backend.models.course import Course, Lesson
+from backend.models.identity import Role, User
+from backend.models.notification_audit import AuditEvent
+from backend.models.question_bank import (
     Question,
     QuestionRevisionChoice,
 )
-from pwd301.models.types import utc_now
-from pwd301.services.course_service import create_course
-from pwd301.services.exceptions import (
+from backend.models.types import utc_now
+from backend.services.course_service import create_course
+from backend.services.exceptions import (
     QuestionImmutableError,
     QuestionRevisionNotFoundError,
     QuestionValidationError,
 )
-from pwd301.services.lesson_service import create_lesson
-from pwd301.services.question_bank_service import (
+from backend.services.lesson_service import create_lesson
+from backend.services.question_bank_service import (
     _serialize_question_revision,
     create_question,
     create_question_revision,
@@ -35,7 +35,7 @@ from pwd301.services.question_bank_service import (
     list_question_revisions,
     update_question,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture

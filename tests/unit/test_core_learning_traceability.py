@@ -16,32 +16,32 @@ import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import (
+from backend.extensions import db
+from backend.models.course import (
     Course,
     CourseCompletionSummary,
     Enrollment,
     EnrollmentPeriod,
     LessonProgress,
 )
-from pwd301.models.identity import Role, User
-from pwd301.models.types import utc_now
-from pwd301.services.completion_service import (
+from backend.models.identity import Role, User
+from backend.models.types import utc_now
+from backend.services.completion_service import (
     calculate_course_progress,
 )
-from pwd301.services.course_service import (
+from backend.services.course_service import (
     change_course_status,
     create_course,
     reassign_course_owner,
     trash_course,
 )
-from pwd301.services.enrollment_service import (
+from backend.services.enrollment_service import (
     add_course_prerequisite,
     enroll_student,
     leave_course,
     re_enroll_student,
 )
-from pwd301.services.exceptions import (
+from backend.services.exceptions import (
     CourseAlreadyExistsError,
     CourseDependencyError,
     CourseStateViolationError,
@@ -53,7 +53,7 @@ from pwd301.services.exceptions import (
     QuestionStateViolationError,
     QuestionValidationError,
 )
-from pwd301.services.lesson_service import (
+from backend.services.lesson_service import (
     create_lesson,
     record_lesson_progress,
     reorder_lessons,
@@ -61,17 +61,17 @@ from pwd301.services.lesson_service import (
     trash_lesson,
     update_lesson,
 )
-from pwd301.services.question_bank_service import (
+from backend.services.question_bank_service import (
     create_question,
     create_question_revision,
     trash_question,
     update_question,
 )
-from pwd301.services.retention_service import (
+from backend.services.retention_service import (
     prune_trash_entities,
     purge_expired_enrollment_details,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -254,7 +254,7 @@ def test_t_course_07_prerequisite_not_met_blocks_enrollment(
     db.session.commit()
 
     # Student attempts to enroll in B without completing A
-    with pytest.raises(EnrollmentPrerequisiteError, match="Prerequisite courses not completed"):
+    with pytest.raises(EnrollmentPrerequisiteError, match="chưa hoàn thành môn học tiên quyết"):
         enroll_student(student_user, course_b.id)
 
 

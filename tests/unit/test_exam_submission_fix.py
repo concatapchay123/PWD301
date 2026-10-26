@@ -5,20 +5,20 @@ from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 import pytest
 
-from pwd301.extensions import db
-from pwd301.models.identity import User
-from pwd301.models.course import Course, Enrollment, EnrollmentPeriod
-from pwd301.models.assessment import Assessment, AssessmentQuestionAssignment
-from pwd301.models.question_bank import Question, QuestionRevision, QuestionRevisionChoice
-from pwd301.models.attempt_regrade import (
+from backend.extensions import db
+from backend.models.identity import User
+from backend.models.course import Course, Enrollment, EnrollmentPeriod
+from backend.models.assessment import Assessment, AssessmentQuestionAssignment
+from backend.models.question_bank import Question, QuestionRevision, QuestionRevisionChoice
+from backend.models.attempt_regrade import (
     AssessmentAttempt,
     AttemptQuestion,
     AttemptChoiceSnapshot,
     AttemptAnswer,
     AttemptAnswerChoice,
 )
-from pwd301.services.attempt_service import submit_assessment_attempt
-from pwd301.services.session_auth_service import create_auth_session
+from backend.services.attempt_service import submit_assessment_attempt
+from backend.services.session_auth_service import create_auth_session
 
 
 def test_assessment_attempt_has_user_id_property(app: Flask) -> None:

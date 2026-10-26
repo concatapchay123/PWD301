@@ -17,13 +17,13 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import CourseChangeRequest
-from pwd301.models.identity import UserRole
-from pwd301.seeds.baseline import seed_baseline
-from pwd301.services.course_service import create_course
-from pwd301.services.lesson_service import create_lesson
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.extensions import db
+from backend.models.course import CourseChangeRequest
+from backend.models.identity import UserRole
+from backend.seeds.baseline import seed_baseline
+from backend.services.course_service import create_course
+from backend.services.lesson_service import create_lesson
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -32,7 +32,7 @@ def cr_disappear_env(app: Flask) -> dict[str, Any]:
     seed_baseline(sess)
 
     inst_user = register_user(
-        email="inst_disappear@pwd301.local",
+        email="inst_disappear@backend.local",
         password="Password@123",
         display_name="ThS. Giang Vien Test",
         session=sess,
@@ -40,7 +40,7 @@ def cr_disappear_env(app: Flask) -> dict[str, Any]:
     assign_role_to_user(inst_user.id, "INSTRUCTOR", session=sess)
 
     admin_user = register_user(
-        email="admin_disappear@pwd301.local",
+        email="admin_disappear@backend.local",
         password="Password@123",
         display_name="Admin Phe Duyet Test",
         session=sess,

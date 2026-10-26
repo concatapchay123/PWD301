@@ -20,20 +20,20 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import Enrollment, EnrollmentPeriod
-from pwd301.models.types import utc_now
-from pwd301.seeds.baseline import seed_baseline
-from pwd301.services.analytics_service import get_student_learning_overview
-from pwd301.services.assessment_service import (
+from backend.extensions import db
+from backend.models.course import Enrollment, EnrollmentPeriod
+from backend.models.types import utc_now
+from backend.seeds.baseline import seed_baseline
+from backend.services.analytics_service import get_student_learning_overview
+from backend.services.assessment_service import (
     assign_question,
     create_assessment,
     publish_assessment,
 )
-from pwd301.services.attempt_service import start_assessment_attempt, submit_assessment_attempt
-from pwd301.services.course_service import create_course
-from pwd301.services.question_bank_service import create_question
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.attempt_service import start_assessment_attempt, submit_assessment_attempt
+from backend.services.course_service import create_course
+from backend.services.question_bank_service import create_question
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -43,7 +43,7 @@ def waiting_room_env(app: Flask) -> dict[str, Any]:
     seed_baseline(sess)
 
     inst_user = register_user(
-        email="instructor_wr@pwd301.local",
+        email="instructor_wr@backend.local",
         password="Password@123",
         display_name="TS. WR Instructor",
         session=sess,
@@ -51,7 +51,7 @@ def waiting_room_env(app: Flask) -> dict[str, Any]:
     assign_role_to_user(inst_user.id, "INSTRUCTOR", session=sess)
 
     student_user = register_user(
-        email="student_wr@pwd301.local",
+        email="student_wr@backend.local",
         password="Password@123",
         display_name="Le WR Student",
         session=sess,
@@ -155,7 +155,7 @@ def test_assessment_detail_provides_attempt_limit_metadata_initially(
 ) -> None:
     """Before taking any attempt, detail endpoint returns 0 attempts and can_start True."""
     assess = waiting_room_env["assessment"]
-    login_client(client, "student_wr@pwd301.local")
+    login_client(client, "student_wr@backend.local")
 
     resp = client.get(f"/student/assessments/{assess.public_id}")
     assert resp.status_code == 200
@@ -184,7 +184,7 @@ def test_assessment_detail_and_dashboard_when_attempt_limit_exhausted(
     assess = waiting_room_env["assessment"]
     sess = db.session
 
-    login_client(client, "student_wr@pwd301.local")
+    login_client(client, "student_wr@backend.local")
 
     # Attempt 1: Start and submit
     att1, lease1 = start_assessment_attempt(
@@ -243,7 +243,7 @@ def test_student_assessments_list_contains_attempt_limit_metadata(
 ) -> None:
     """GET /student/assessments should include attempt limit metadata for each item."""
     assess = waiting_room_env["assessment"]
-    login_client(client, "student_wr@pwd301.local")
+    login_client(client, "student_wr@backend.local")
 
     resp = client.get("/student/assessments")
     assert resp.status_code == 200

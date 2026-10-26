@@ -1,0 +1,619 @@
+"""Notification and security audit models for PWD301.
+
+Implements canonical schema tables from sql/008_notification_audit.sql:
+- notification_events
+- notifications
+- notification_preferences
+- email_deliveries
+- audit_events
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import uuid
+from typing import Any
+
+import sqlalchemy as sa
+from sqlalchemy.orm import relationship
+
+from backend.extensions import Base, db
+from backend.models.types import (
+    GUID,
+    BigIntPK,
+    NVarCharMax,
+    RowVersion,
+    UTCDateTime,
+    utc_now,
+)
+
+
+_AUDIT_REASON_VI_MAPPING: dict[str, str] = {
+    "Client attempted to forge 100% completion via zero-time reconcile bypass without required dwell time or video watch.": (
+        "Phát hiện hành vi gian lận tiến độ học: Bỏ qua thời lượng học thực tế hoặc xem video bằng yêu cầu đồng bộ tức thì."
+    ),
+    "Course completion criteria satisfied": "Đã thỏa mãn đầy đủ điều kiện hoàn thành khóa học",
+    "Updated course completion criteria": "Cập nhật điều kiện hoàn thành khóa học",
+    "Updated lesson metadata": "Cập nhật thông tin bài học",
+    "Created new lesson in published course": "Tạo bài học mới trong khóa học đã xuất bản",
+    "Assessment authoring save": "Lưu cập nhật nội dung bài thi",
+    "Initial question creation": "Khởi tạo câu hỏi ban đầu",
+    "Initial question authoring": "Biên soạn câu hỏi ban đầu",
+    "Instructor published midterm exam": "Giảng viên đã xuất bản bài thi giữa kỳ",
+    "Admin approved and published course CS101": "Quản trị viên đã phê duyệt và xuất bản khóa học CS101",
+    "Assigned INSTRUCTOR role to instructor1": "Đã gán vai trò GIẢNG VIÊN cho instructor1",
+    "Retired because question has historical grading records": "Lưu trữ câu hỏi do đã có dữ liệu chấm điểm lịch sử",
+    "Moved to trash": "Đã chuyển vào thùng rác",
+    "Restored from trash": "Đã khôi phục từ thùng rác",
+    "Question correction": "Chỉnh sửa đính chính câu hỏi",
+    "Question revised": "Tạo phiên bản sửa đổi câu hỏi",
+    "Regrade execution": "Thực thi tái chấm điểm bài thi",
+}
+
+
+def _localize_audit_reason(reason: str | None) -> str | None:
+    """Translate legacy English audit reason strings to localized Vietnamese."""
+    if not reason:
+        return reason
+    raw = reason.strip()
+    if raw in _AUDIT_REASON_VI_MAPPING:
+        return _AUDIT_REASON_VI_MAPPING[raw]
+
+    if (
+        "Client attempted to forge 100% completion" in raw
+        or "zero-time reconcile bypass" in raw
+        or "attempted to forge 100% completion" in raw
+    ):
+        return "Phát hiện hành vi gian lận tiến độ học: Bỏ qua thời lượng học thực tế hoặc xem video bằng yêu cầu đồng bộ tức thì."
+
+    m_start = re.match(r"^Student started attempt #(\d+)", raw, re.IGNORECASE)
+    if m_start:
+        return f"Học viên bắt đầu làm bài thi (lần thi #{m_start.group(1)})"
+
+    m_sub = re.match(r"^Student submitted attempt #(\d+)", raw, re.IGNORECASE)
+    if m_sub:
+        return f"Học viên đã nộp bài thi (lần thi #{m_sub.group(1)})"
+
+    m_reorder = re.match(r"^Reordered (\d+) questions", raw, re.IGNORECASE)
+    if m_reorder:
+        return f"Đã sắp xếp lại thứ tự {m_reorder.group(1)} câu hỏi"
+
+    m_prereq = re.match(r"^Added prerequisite (.*) to (.*)", raw, re.IGNORECASE)
+    if m_prereq:
+        return f"Đã thêm môn tiên quyết {m_prereq.group(1)} cho {m_prereq.group(2)}"
+
+    return reason
+
+
+def to_utc_iso_string(dt: Any) -> str | None:
+    """Format datetime or string into UTC ISO-8601 string with 'Z' suffix."""
+    if not dt:
+        return None
+    if isinstance(dt, str):
+        if not dt.endswith("Z") and "+" not in dt:
+            return f"{dt}Z"
+        return dt
+    s = dt.isoformat()
+    if not s.endswith("Z") and "+" not in s:
+        return f"{s}Z"
+    return s
+
+
+class NotificationEvent(Base):
+    """Business event triggering notification fans mapping to 'notification_events'."""
+
+    __tablename__ = "notification_events"
+
+    id = db.Column(BigIntPK, primary_key=True, autoincrement=True)
+    event_key = db.Column(
+        GUID,
+        nullable=False,
+        unique=True,
+        default=uuid.uuid4,
+        server_default=sa.text("NEWID()"),
+    )
+    event_type = db.Column(sa.String(64), nullable=False)
+    actor_user_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey(
+            "users.id",
+            name="fk_notification_events_actor_user_id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+    target_type = db.Column(sa.String(32), nullable=True)
+    target_id = db.Column(sa.BigInteger, nullable=True)
+    correlation_id = db.Column(GUID, nullable=True)
+    payload_json = db.Column(NVarCharMax, nullable=True)
+    created_at = db.Column(
+        UTCDateTime,
+        nullable=False,
+        default=utc_now,
+        server_default=sa.text("SYSUTCDATETIME()"),
+    )
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "payload_json IS NULL OR ISJSON(payload_json)=1",
+            name="ck_notification_events_1",
+        ),
+        sa.Index("ix_notification_events_type", "event_type", "created_at"),
+        sa.Index("ix_notification_events_target", "target_type", "target_id", "created_at"),
+    )
+
+    actor = relationship("User", foreign_keys=[actor_user_id])
+    notifications = relationship(
+        "Notification",
+        back_populates="event",
+        cascade="all, delete-orphan",
+    )
+
+    @property
+    def public_id(self) -> str:
+        """Public identifier matching event_key per ADR-002."""
+        return str(self.event_key)
+
+
+class Notification(Base):
+    """User in-app notification mapping to canonical 'notifications' table."""
+
+    __tablename__ = "notifications"
+
+    id = db.Column(BigIntPK, primary_key=True, autoincrement=True)
+    public_id = db.Column(
+        GUID,
+        nullable=False,
+        unique=True,
+        default=uuid.uuid4,
+        server_default=sa.text("NEWSEQUENTIALID()"),
+    )
+    notification_event_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey(
+            "notification_events.id",
+            name="fk_notifications_notification_event_id",
+        ),
+        nullable=False,
+    )
+    recipient_user_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("users.id", name="fk_notifications_recipient_user_id"),
+        nullable=False,
+    )
+    target_role = db.Column(sa.String(20), nullable=True)
+    category = db.Column(sa.String(32), nullable=False)
+    title = db.Column(sa.Unicode(250), nullable=False)
+    body = db.Column(sa.Unicode(2000), nullable=False)
+    read_at = db.Column(UTCDateTime, nullable=True)
+    expires_at = db.Column(UTCDateTime, nullable=True)
+    created_at = db.Column(
+        UTCDateTime,
+        nullable=False,
+        default=utc_now,
+        server_default=sa.text("SYSUTCDATETIME()"),
+    )
+    row_version = db.Column(RowVersion, nullable=True)
+
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "notification_event_id",
+            "recipient_user_id",
+            name="uq_notifications_notification_event_id_recipient_user_id_1",
+        ),
+        sa.CheckConstraint(
+            "category IN ('SECURITY','COURSE','ASSESSMENT','GRADE','SYSTEM')",
+            name="ck_notifications_1",
+        ),
+        sa.CheckConstraint(
+            "target_role IS NULL OR target_role IN ('STUDENT','INSTRUCTOR','ADMIN')",
+            name="ck_notifications_target_role",
+        ),
+        sa.Index(
+            "ix_notifications_recipient",
+            "recipient_user_id",
+            "read_at",
+            "created_at",
+        ),
+        sa.Index(
+            "ix_notifications_user_role_unread",
+            "recipient_user_id",
+            "target_role",
+            "read_at",
+        ),
+        sa.Index(
+            "ix_notifications_user_unread",
+            "recipient_user_id",
+            "created_at",
+            mssql_where=sa.text("read_at IS NULL"),
+            sqlite_where=sa.text("read_at IS NULL"),
+        ),
+        sa.Index(
+            "ix_notifications_expiry",
+            "expires_at",
+            "id",
+            mssql_where=sa.text("expires_at IS NOT NULL"),
+            sqlite_where=sa.text("expires_at IS NOT NULL"),
+        ),
+    )
+
+    event = relationship("NotificationEvent", back_populates="notifications")
+    recipient = relationship("User", foreign_keys=[recipient_user_id])
+
+    @property
+    def is_read(self) -> bool:
+        """Return True if notification has been read."""
+        return self.read_at is not None
+
+    @property
+    def user_id(self) -> int:
+        """Alias for recipient_user_id conforming to task description."""
+        return self.recipient_user_id
+
+    @user_id.setter
+    def user_id(self, value: int) -> None:
+        self.recipient_user_id = value
+
+    @property
+    def event_id(self) -> int:
+        """Alias for notification_event_id conforming to task description."""
+        return self.notification_event_id
+
+    @event_id.setter
+    def event_id(self, value: int) -> None:
+        self.notification_event_id = value
+
+    @property
+    def message(self) -> str:
+        """Alias for body conforming to task description."""
+        return self.body
+
+    @message.setter
+    def message(self, value: str) -> None:
+        self.body = value
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert notification to dictionary conforming strictly to ADR-002 Zero PK Leakage."""
+        action_url = None
+        if self.event and self.event.payload_json:
+            try:
+                payload = json.loads(self.event.payload_json)
+                action_url = payload.get("action_url") or payload.get("target_url")
+            except Exception:
+                pass
+
+        event_type = self.event.event_type if self.event else None
+
+        return {
+            "id": str(self.public_id),
+            "target_role": self.target_role,
+            "category": self.category,
+            "title": self.title,
+            "body": self.body,
+            "event_type": event_type,
+            "read": self.is_read,
+            "is_read": self.is_read,
+            "read_at": to_utc_iso_string(self.read_at),
+            "expires_at": to_utc_iso_string(self.expires_at),
+            "deleted_at": None,
+            "created_at": to_utc_iso_string(self.created_at),
+            "action_url": action_url,
+            "target_url": action_url,
+        }
+
+
+class NotificationPreference(Base):
+    """User notification opt-in preferences mapping to 'notification_preferences'."""
+
+    __tablename__ = "notification_preferences"
+
+    user_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("users.id", name="fk_notification_preferences_user_id"),
+        primary_key=True,
+    )
+    category = db.Column(sa.String(32), primary_key=True)
+    email_enabled = db.Column(sa.Boolean, nullable=False)
+    updated_at = db.Column(
+        UTCDateTime,
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
+        server_default=sa.text("SYSUTCDATETIME()"),
+    )
+    row_version = db.Column(RowVersion, nullable=True)
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "category IN ('COURSE','ASSESSMENT','GRADE','MARKETING','SECURITY','SYSTEM')",
+            name="ck_notification_preferences_1",
+        ),
+        sa.CheckConstraint(
+            "category <> 'SECURITY' OR email_enabled = 1",
+            name="ck_notification_preferences_2",
+        ),
+    )
+
+    user = relationship("User", foreign_keys=[user_id])
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert preference to dictionary conforming strictly to ADR-002 Zero PK Leakage."""
+        return {
+            "category": self.category,
+            "email_enabled": bool(self.email_enabled),
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class EmailDelivery(Base):
+    """Outbound email delivery attempt mapping to 'email_deliveries' table."""
+
+    __tablename__ = "email_deliveries"
+
+    id = db.Column(BigIntPK, primary_key=True, autoincrement=True)
+    notification_event_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey(
+            "notification_events.id",
+            name="fk_email_deliveries_notification_event_id",
+        ),
+        nullable=False,
+    )
+    recipient_user_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey(
+            "users.id",
+            name="fk_email_deliveries_recipient_user_id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+    recipient_email_snapshot = db.Column(sa.Unicode(320), nullable=False)
+    template_code = db.Column(sa.String(64), nullable=False)
+    dedupe_key = db.Column(GUID, nullable=False, unique=True, default=uuid.uuid4)
+    status = db.Column(
+        sa.String(20),
+        nullable=False,
+        default="PENDING",
+        server_default=sa.text("'PENDING'"),
+    )
+    subject = db.Column(sa.Unicode(250), nullable=True)
+    body_text = db.Column(sa.UnicodeText, nullable=True)
+    attempt_count = db.Column(
+        sa.Integer,
+        nullable=False,
+        default=0,
+        server_default=sa.text("0"),
+    )
+    next_attempt_at = db.Column(UTCDateTime, nullable=True)
+    sent_at = db.Column(UTCDateTime, nullable=True)
+    last_error = db.Column(sa.Unicode(2000), nullable=True)
+    created_at = db.Column(
+        UTCDateTime,
+        nullable=False,
+        default=utc_now,
+        server_default=sa.text("SYSUTCDATETIME()"),
+    )
+    row_version = db.Column(RowVersion, nullable=True)
+
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "notification_event_id",
+            "recipient_email_snapshot",
+            "template_code",
+            name="uq_email_deliveries_notification_event_id_recipient_email_snapshot_template_code_2",
+        ),
+        sa.CheckConstraint(
+            "status IN ('PENDING','SENDING','SENT','FAILED','CANCELLED')",
+            name="ck_email_deliveries_1",
+        ),
+        sa.CheckConstraint("attempt_count >= 0", name="ck_email_deliveries_2"),
+        sa.Index(
+            "ix_email_deliveries_queue",
+            "status",
+            "next_attempt_at",
+            mssql_where=sa.text("status IN ('PENDING','SENDING')"),
+            sqlite_where=sa.text("status IN ('PENDING','SENDING')"),
+        ),
+    )
+
+    event = relationship("NotificationEvent", foreign_keys=[notification_event_id])
+    recipient = relationship("User", foreign_keys=[recipient_user_id])
+
+    @property
+    def public_id(self) -> str:
+        """Public identifier matching dedupe_key per ADR-002."""
+        return str(self.dedupe_key)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert email delivery to dictionary conforming strictly to ADR-002 Zero PK Leakage."""
+        return {
+            "id": str(self.public_id),
+            "recipient_email": self.recipient_email_snapshot,
+            "template_code": self.template_code,
+            "subject": self.subject,
+            "body_text": self.body_text,
+            "status": self.status,
+            "attempt_count": self.attempt_count,
+            "next_attempt_at": to_utc_iso_string(self.next_attempt_at),
+            "sent_at": to_utc_iso_string(self.sent_at),
+            "last_error": self.last_error,
+            "created_at": to_utc_iso_string(self.created_at),
+        }
+
+
+class AuditEvent(Base):
+    """Append-only critical administrative and security audit record mapping to 'audit_events'."""
+
+    __tablename__ = "audit_events"
+
+    id = db.Column(BigIntPK, primary_key=True, autoincrement=True)
+    event_id = db.Column(
+        GUID,
+        nullable=False,
+        unique=True,
+        default=uuid.uuid4,
+        server_default=sa.text("NEWID()"),
+    )
+    actor_user_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("users.id", name="fk_audit_events_actor_user_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    actor_roles_snapshot = db.Column(sa.Unicode(200), nullable=False)
+    action = db.Column(sa.String(80), nullable=False)
+    target_type = db.Column(sa.String(40), nullable=False)
+    target_id = db.Column(sa.BigInteger, nullable=True)
+    reason = db.Column(sa.Unicode(1000), nullable=True)
+    before_json = db.Column(NVarCharMax, nullable=True)
+    after_json = db.Column(NVarCharMax, nullable=True)
+    request_id = db.Column(GUID, nullable=True)
+    ip_address = db.Column(sa.String(45), nullable=True)
+    performed_as_admin = db.Column(
+        sa.Boolean,
+        nullable=False,
+        default=False,
+        server_default=sa.text("0"),
+    )
+    created_at = db.Column(
+        UTCDateTime,
+        nullable=False,
+        default=utc_now,
+        server_default=sa.text("SYSUTCDATETIME()"),
+    )
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "before_json IS NULL OR ISJSON(before_json)=1", name="ck_audit_events_1"
+        ),
+        sa.CheckConstraint("after_json IS NULL OR ISJSON(after_json)=1", name="ck_audit_events_2"),
+        sa.Index("ix_audit_events_action_time", "action", "created_at"),
+        sa.Index("ix_audit_events_actor", "actor_user_id", "created_at"),
+        sa.Index("ix_audit_events_target", "target_type", "target_id", "created_at"),
+    )
+
+    actor = relationship("User", foreign_keys=[actor_user_id], lazy="joined")
+
+    @property
+    def public_id(self) -> str:
+        """Public identifier matching event_id per ADR-002."""
+        return str(self.event_id)
+
+    @property
+    def actor_id(self) -> int | None:
+        """Alias for actor_user_id conforming to task description."""
+        return self.actor_user_id
+
+    @actor_id.setter
+    def actor_id(self, value: int | None) -> None:
+        self.actor_user_id = value
+
+    @property
+    def before_state_json(self) -> str | None:
+        """Alias for before_json conforming to task description."""
+        return self.before_json
+
+    @before_state_json.setter
+    def before_state_json(self, value: str | None) -> None:
+        self.before_json = value
+
+    @property
+    def after_state_json(self) -> str | None:
+        """Alias for after_json conforming to task description."""
+        return self.after_json
+
+    @after_state_json.setter
+    def after_state_json(self, value: str | None) -> None:
+        self.after_json = value
+
+    @property
+    def before_state(self) -> dict[str, Any] | None:
+        """Parsed before_json payload as a dict."""
+        if not self.before_json:
+            return None
+        try:
+            return json.loads(self.before_json)
+        except Exception:
+            return None
+
+    @property
+    def after_state(self) -> dict[str, Any] | None:
+        """Parsed after_json payload as a dict."""
+        if not self.after_json:
+            return None
+        try:
+            return json.loads(self.after_json)
+        except Exception:
+            return None
+
+    @property
+    def correlation_id(self) -> uuid.UUID | None:
+        """Alias for request_id conforming to task description."""
+        return self.request_id
+
+    @correlation_id.setter
+    def correlation_id(self, value: uuid.UUID | None) -> None:
+        self.request_id = value
+
+    def to_dict(self, target_public_id: str | None = None) -> dict[str, Any]:
+        """Convert audit event to dictionary strictly conforming to ADR-002 Zero PK Leakage."""
+        before_data = None
+        if self.before_json:
+            try:
+                before_data = json.loads(self.before_json)
+            except Exception:
+                before_data = self.before_json
+
+        after_data = None
+        if self.after_json:
+            try:
+                after_data = json.loads(self.after_json)
+            except Exception:
+                after_data = self.after_json
+
+        def _sanitize_ad002(data: Any) -> Any:
+            if not isinstance(data, dict):
+                return data
+            clean = dict(data)
+            if "owner_instructor_public_id" in clean:
+                clean["owner_instructor_id"] = clean.pop("owner_instructor_public_id")
+            return clean
+
+        before_data = _sanitize_ad002(before_data)
+        after_data = _sanitize_ad002(after_data)
+
+        actor_public_id = str(self.actor.public_id) if self.actor is not None else None
+        actor_name = self.actor.display_name if self.actor is not None else None
+        actor_email = self.actor.email if self.actor is not None else None
+
+        # Resolve target public identifier per ADR-002 Zero PK Leakage
+        resolved_target_id = target_public_id
+        if resolved_target_id is None and after_data and isinstance(after_data, dict):
+            # Check if target public id is explicitly recorded in details/after_data
+            for key in ("target_public_id", "target_id", "user_id", "course_id", "file_asset_id"):
+                candidate = after_data.get(key)
+                if candidate is not None:
+                    resolved_target_id = str(candidate)
+                    break
+
+        correlation_id_str = str(self.request_id) if self.request_id else None
+
+        return {
+            "id": str(self.public_id),
+            "event_id": str(self.public_id),
+            "action": self.action,
+            "actor_id": actor_public_id,
+            "actor_name": actor_name,
+            "actor_email": actor_email,
+            "actor_roles": self.actor_roles_snapshot,
+            "target_type": self.target_type,
+            "target_id": resolved_target_id,
+            "reason": _localize_audit_reason(self.reason),
+            "before": before_data,
+            "after": after_data,
+            "correlation_id": correlation_id_str,
+            "ip_address": self.ip_address,
+            "performed_as_admin": bool(self.performed_as_admin),
+            "created_at": to_utc_iso_string(self.created_at),
+        }

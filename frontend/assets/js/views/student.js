@@ -28,7 +28,7 @@ function parseGroupedAttemptChoices(question) {
   if (!interactionKind && choices.length) {
     if (choices.some(c => c.interaction_kind === 'DRAG' || /\[\[PWD301:G:DRAG:/i.test(c.content || c.text || ''))) {
       interactionKind = 'DRAG';
-    } else if (choices.some(c => c.interaction_kind === 'MATCH' || /\[\[PWD301:G:MATCH:/i.test(c.content || c.text || ''))) {
+    } else if (choices.some(c => c.interaction_kind === 'MATCH' || /\[\[PWD301:G:MATCH:/i.test(c.content || c.text || '') || (c.content || c.text || '').includes('|||') || (c.content || c.text || '').includes(' ➔ '))) {
       interactionKind = 'MATCH';
     }
   }
@@ -43,9 +43,9 @@ function parseGroupedAttemptChoices(question) {
     let cleanText = rawContent;
     let interactionLeft = choice.interaction_left;
 
-    const markerMatch = rawContent.match(/^\[\[PWD301:G:(DRAG|MATCH):([1-9]\d*)\]\]/i);
+    const markerMatch = rawContent.match(/^\[\[PWD301:G:(?:(DRAG|MATCH):)?([1-9]\d*)\]\]/i);
     if (markerMatch) {
-      markerKind = markerMatch[1].toUpperCase();
+      markerKind = (markerMatch[1] || (rawContent.includes('|||') ? 'MATCH' : 'DRAG')).toUpperCase();
       groupIndex = Number(markerMatch[2]);
       cleanText = rawContent.slice(markerMatch[0].length).trim();
     }
@@ -99,6 +99,262 @@ class StudentView {
     return score.is_released ? 'Chưa có điểm' : 'Chưa công bố';
   }
 
+  static renderMatchingBoardReview(q, idx, answersVisible, answerVisibilityPolicy) {
+    const esc = UI.escapeHtml;
+    const grouped = parseGroupedAttemptChoices(q);
+    if (!grouped || grouped.kind !== 'MATCH') return '';
+
+    const selectedKeys = new Set(q.selected_choice_keys || q.selected_choice_ids || []);
+    q.choices?.forEach(c => {
+      if (c.is_selected) selectedKeys.add(String(c.choice_key || c.choice_id || c.id));
+    });
+
+    const pairs = grouped.groups.map(group => {
+      const leftText = group.choices[0]?.interaction_left || `Mục ${group.index}`;
+      const selectedChoice = group.choices.find(c => selectedKeys.has(String(c.choice_key || c.choice_id || c.id)));
+      const correctChoice = group.choices.find(c => c.is_correct === true);
+      const isCorrect = Boolean(selectedChoice && (selectedChoice.is_correct === true || (correctChoice && selectedChoice.answerText === correctChoice.answerText)));
+      return {
+        groupIndex: group.index,
+        left: leftText,
+        selectedChoice,
+        correctChoice,
+        isCorrect,
+        studentAnswerText: selectedChoice ? selectedChoice.answerText : null,
+        correctAnswerText: correctChoice ? correctChoice.answerText : null
+      };
+    });
+
+    const totalPairs = pairs.length;
+    const correctCount = pairs.filter(p => p.isCorrect).length;
+    const isFullCredit = totalPairs > 0 && correctCount === totalPairs;
+
+    const allRightOptions = [];
+    const seenRight = new Set();
+    grouped.groups.forEach(group => {
+      group.choices.forEach(c => {
+        if (!seenRight.has(c.answerText)) {
+          seenRight.add(c.answerText);
+          allRightOptions.push({
+            text: c.answerText,
+            key: String(c.choice_key || c.choice_id || c.id)
+          });
+        }
+      });
+    });
+
+    const boardId = `matching-review-board-${idx}`;
+
+    return `
+      <div id="${boardId}" class="matching-review-board relative rounded-3xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900/90 p-5 sm:p-6 text-slate-800 dark:text-slate-100 my-4 shadow-sm font-sans" data-review-board-id="${boardId}">
+        <div class="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100 dark:border-slate-800">
+          <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
+              <span class="material-symbols-outlined text-[20px]">hub</span>
+            </div>
+            <div>
+              <span class="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white">Sơ đồ ghép nối đáp án</span>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400">Đối soát trực quan kết quả ghép cặp tương ứng</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="px-3 py-1 rounded-full text-xs font-black tracking-wide ${isFullCredit ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30' : (correctCount > 0 ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30' : 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/30')}">
+              ${correctCount}/${totalPairs} cặp chính xác
+            </span>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-4 py-3 text-[11px] text-slate-600 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800/80">
+          <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-emerald-500 inline-block shadow-xs"></span><span class="font-semibold text-emerald-700 dark:text-emerald-400">Ghép đúng</span></span>
+          <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-rose-500 inline-block shadow-xs"></span><span class="font-semibold text-rose-700 dark:text-rose-400">Ghép sai</span></span>
+          <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-amber-400 border border-amber-500 inline-block shadow-xs"></span><span class="font-semibold text-amber-700 dark:text-amber-400">Chưa nối</span></span>
+          ${answersVisible ? '<span class="flex items-center gap-1.5"><span class="w-4 h-0.5 border-t-2 border-dashed border-emerald-500 inline-block"></span><span class="font-semibold text-slate-600 dark:text-slate-300">Đáp án chuẩn</span></span>' : ''}
+        </div>
+
+        <div class="matching-board-canvas relative py-4 sm:py-6" style="position: relative;">
+          <svg class="matching-review-svg absolute inset-0 w-full h-full pointer-events-none overflow-visible z-10" style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none;" aria-hidden="true"></svg>
+          <div class="grid grid-cols-2 gap-8 sm:gap-16 lg:gap-24 relative z-0">
+            <div class="space-y-3.5">
+              ${pairs.map((p, pIdx) => {
+                const isUnanswered = !p.selectedChoice;
+                let borderClass = 'border-amber-400/90 bg-amber-50/50 dark:bg-amber-950/20 text-amber-950 dark:text-amber-200 ring-1 ring-amber-400/40';
+                let dotClass = 'border-amber-400 bg-amber-400 ring-4 ring-amber-400/20';
+                let statusBadge = '<span class="text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-100/80 dark:bg-amber-900/40 px-2 py-0.5 rounded-md border border-amber-300/60 dark:border-amber-800">⚠ Chưa nối</span>';
+
+                if (p.isCorrect) {
+                  borderClass = 'border-emerald-500/80 bg-emerald-50/70 dark:bg-emerald-950/30 text-emerald-950 dark:text-emerald-100 shadow-2xs';
+                  dotClass = 'border-emerald-500 bg-emerald-500 ring-4 ring-emerald-500/20';
+                  statusBadge = '<span class="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100/80 dark:bg-emerald-900/50 px-2 py-0.5 rounded-md border border-emerald-300/60 dark:border-emerald-800">✓ Đúng</span>';
+                } else if (!isUnanswered) {
+                  borderClass = 'border-rose-500/80 bg-rose-50/70 dark:bg-rose-950/30 text-rose-950 dark:text-rose-100 shadow-2xs';
+                  dotClass = 'border-rose-500 bg-rose-500 ring-4 ring-rose-500/20';
+                  statusBadge = '<span class="text-[10px] font-bold text-rose-700 dark:text-rose-300 bg-rose-100/80 dark:bg-rose-900/50 px-2 py-0.5 rounded-md border border-rose-300/60 dark:border-rose-800">✗ Sai</span>';
+                }
+
+                return `
+                  <div class="review-card-left rounded-2xl border ${borderClass} p-3.5 text-left flex items-center justify-between gap-3 min-h-[54px] transition-all" data-left-idx="${pIdx}" data-left-key="${p.groupIndex}">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <span class="w-6 h-6 rounded-lg bg-slate-200/60 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold flex items-center justify-center shrink-0">${pIdx + 1}</span>
+                      <span class="text-xs sm:text-sm font-semibold truncate text-slate-900 dark:text-white">${esc(p.left)}</span>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                      ${statusBadge}
+                      <span class="port-dot-review w-4 h-4 rounded-full border-2 ${dotClass} shrink-0 transition-all" data-review-port="left-${pIdx}"></span>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+
+            <div class="space-y-3.5">
+              ${allRightOptions.map((r, rIdx) => {
+                return `
+                  <div class="review-card-right rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/80 p-3.5 text-right flex items-center justify-between gap-3 min-h-[54px] transition-all" data-right-idx="${rIdx}" data-right-text="${esc(r.text)}">
+                    <span class="port-dot-review w-4 h-4 rounded-full border-2 border-slate-400 dark:border-slate-600 bg-slate-300 dark:bg-slate-700 shrink-0 transition-all" data-review-port="right-${rIdx}"></span>
+                    <span class="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white truncate">${esc(r.text)}</span>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">Chi tiết đối soát kết quả từng cặp:</span>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+            ${pairs.map((p, pIdx) => {
+              const isUnanswered = !p.selectedChoice;
+              let rowBorder = 'border-amber-300 dark:border-amber-800 bg-amber-50/40 dark:bg-amber-950/20';
+              if (p.isCorrect) rowBorder = 'border-emerald-300 dark:border-emerald-800/80 bg-emerald-50/40 dark:bg-emerald-950/20';
+              else if (!isUnanswered) rowBorder = 'border-rose-300 dark:border-rose-800/80 bg-rose-50/40 dark:bg-rose-950/20';
+
+              return `
+                <div class="review-detail-row p-3 rounded-xl border ${rowBorder} flex items-center justify-between gap-2 text-xs" data-detail-idx="${pIdx}">
+                  <div class="flex items-center gap-2 min-w-0 truncate">
+                    <span class="font-bold text-slate-800 dark:text-slate-200">${esc(p.left)}</span>
+                    <span class="text-slate-400">&rarr;</span>
+                    <span class="font-semibold student-ans-text ${p.isCorrect ? 'text-emerald-600 dark:text-emerald-400' : (isUnanswered ? 'text-amber-600 dark:text-amber-400 italic' : 'text-rose-600 dark:text-rose-400')}">
+                      ${p.studentAnswerText ? esc(p.studentAnswerText) : '(Chưa nối)'}
+                    </span>
+                  </div>
+                  <div class="shrink-0 flex items-center gap-1.5">
+                    ${p.isCorrect ? `
+                      <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 flex items-center gap-1">
+                        <span class="material-symbols-outlined text-[13px]">check</span> Đúng
+                      </span>
+                    ` : (isUnanswered ? `
+                      <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 flex items-center gap-1">
+                        Chưa nối
+                      </span>
+                      ${(answersVisible && p.correctAnswerText) ? `
+                        <span class="text-[10px] text-slate-500 font-mono">(Đúng: <strong class="text-emerald-600 dark:text-emerald-400 correct-ans-text">${esc(p.correctAnswerText)}</strong>)</span>
+                      ` : ''}
+                    ` : `
+                      <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 dark:bg-rose-900/60 text-rose-800 dark:text-rose-300 flex items-center gap-1">
+                        <span class="material-symbols-outlined text-[13px]">close</span> Sai
+                      </span>
+                      ${(answersVisible && p.correctAnswerText) ? `
+                        <span class="text-[10px] text-slate-500 font-mono">(Đúng: <strong class="text-emerald-600 dark:text-emerald-400 correct-ans-text">${esc(p.correctAnswerText)}</strong>)</span>
+                      ` : ''}
+                    `)}
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  static initMatchingBoardReviews(container) {
+    if (!container) return;
+    const boards = container.querySelectorAll('.matching-review-board');
+    boards.forEach(board => {
+      const canvas = board.querySelector('.matching-board-canvas');
+      const svg = board.querySelector('.matching-review-svg');
+      if (!canvas || !svg) return;
+      const cRect = canvas.getBoundingClientRect();
+      svg.innerHTML = '';
+      const leftCards = board.querySelectorAll('.review-card-left');
+      const rightCards = Array.from(board.querySelectorAll('.review-card-right'));
+
+      leftCards.forEach(lCard => {
+        const lIdx = lCard.dataset.leftIdx;
+        const lPort = board.querySelector(`[data-review-port="left-${lIdx}"]`);
+        if (!lPort) return;
+        const lpRect = lPort.getBoundingClientRect();
+        const x1 = lpRect.left + lpRect.width / 2 - cRect.left;
+        const y1 = lpRect.top + lpRect.height / 2 - cRect.top;
+
+        const breakdownRow = board.querySelector(`.review-detail-row[data-detail-idx="${lIdx}"]`);
+        const isCorrect = lCard.querySelector('.port-dot-review')?.classList.contains('bg-emerald-500');
+        const isWrong = lCard.querySelector('.port-dot-review')?.classList.contains('bg-rose-500');
+        const isUnanswered = lCard.querySelector('.port-dot-review')?.classList.contains('bg-amber-400');
+
+        const studentRightText = breakdownRow?.querySelector('.student-ans-text')?.textContent?.trim();
+        if (studentRightText && studentRightText !== '(Chưa nối)') {
+          const rCard = rightCards.find(rc => (rc.dataset.rightText || '').trim().toLowerCase() === studentRightText.toLowerCase());
+          if (rCard) {
+            const rIdx = rCard.dataset.rightIdx;
+            const rPort = board.querySelector(`[data-review-port="right-${rIdx}"]`);
+            if (rPort) {
+              const rpRect = rPort.getBoundingClientRect();
+              const x2 = rpRect.left + rpRect.width / 2 - cRect.left;
+              const y2 = rpRect.top + rpRect.height / 2 - cRect.top;
+              const dx = Math.max(35, Math.abs(x2 - x1) * 0.45);
+              const d = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+
+              const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+              path.setAttribute('d', d);
+              path.setAttribute('fill', 'none');
+              path.setAttribute('stroke', isCorrect ? '#10b981' : '#f43f5e');
+              path.setAttribute('stroke-width', '3.5');
+              path.setAttribute('stroke-linecap', 'round');
+              svg.appendChild(path);
+
+              const rightDot = rPort;
+              if (rightDot) {
+                rightDot.className = `port-dot-review w-4 h-4 rounded-full border-2 shrink-0 ${isCorrect ? 'border-emerald-500 bg-emerald-500 ring-4 ring-emerald-500/20' : 'border-rose-500 bg-rose-500 ring-4 ring-rose-500/20'}`;
+              }
+            }
+          }
+        }
+
+        if (isWrong || isUnanswered) {
+          const correctTextEl = breakdownRow?.querySelector('.correct-ans-text');
+          const correctText = correctTextEl?.textContent?.trim();
+          if (correctText) {
+            const rCard = rightCards.find(rc => (rc.dataset.rightText || '').trim().toLowerCase() === correctText.toLowerCase());
+            if (rCard) {
+              const rIdx = rCard.dataset.rightIdx;
+              const rPort = board.querySelector(`[data-review-port="right-${rIdx}"]`);
+              if (rPort) {
+                const rpRect = rPort.getBoundingClientRect();
+                const x2 = rpRect.left + rpRect.width / 2 - cRect.left;
+                const y2 = rpRect.top + rpRect.height / 2 - cRect.top;
+                const dx = Math.max(35, Math.abs(x2 - x1) * 0.45);
+                const d = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('d', d);
+                path.setAttribute('fill', 'none');
+                path.setAttribute('stroke', '#10b981');
+                path.setAttribute('stroke-width', '2.5');
+                path.setAttribute('stroke-dasharray', '6,4');
+                path.setAttribute('stroke-linecap', 'round');
+                path.setAttribute('opacity', '0.85');
+                svg.appendChild(path);
+              }
+            }
+          }
+        }
+      });
+    });
+  }
+
   static renderMatchingBoard({ pairs, rights, attributes = '', selectClass = 'interactive-slot-select', questionIndex = '' }) {
     const esc = UI.escapeHtml;
     return `<div class="matching-challenge-board cisco-quiz-matching-board relative rounded-2xl border border-slate-700 bg-slate-900 p-4 text-slate-100 my-3" ${attributes}>
@@ -113,7 +369,7 @@ class StudentView {
       </select>`).join('')}</div>
       <div class="grid grid-cols-2 gap-4 sm:gap-8 relative">
         <div class="space-y-3">${pairs.map((pair, index) => `<button type="button" class="matching-card-left w-full min-h-12 rounded-xl border border-slate-700/80 bg-slate-800 p-3 text-left flex items-center justify-between gap-2" data-left-key="${esc(pair.key)}" aria-pressed="false">
-          <span class="text-xs">${index + 1}. ${esc(pair.left)}</span><span class="port-dot w-4 h-4 rounded-full border-2 border-slate-500 shrink-0" data-port="left-${esc(pair.key)}"></span>
+          <span class="text-xs">${esc(pair.left)}</span><span class="port-dot w-4 h-4 rounded-full border-2 border-slate-500 shrink-0" data-port="left-${esc(pair.key)}"></span>
         </button>`).join('')}</div>
         <div class="space-y-3">${rights.map((right, index) => `<button type="button" class="matching-card-right w-full min-h-12 rounded-xl border border-slate-700/80 bg-slate-800 p-3 text-right flex items-center justify-between gap-2" data-right-pos="${index}" data-right-text="${esc(right.text)}" data-right-key="${esc(right.key || right.text)}" data-right-id="${esc(right.id || index)}" aria-pressed="false">
           <span class="port-dot w-4 h-4 rounded-full border-2 border-slate-500 shrink-0" data-port="right-${index}"></span><span class="text-xs">${esc(right.text)}</span>
@@ -139,10 +395,10 @@ class StudentView {
       const val = sel.value;
       if (val) {
         const option = Array.from(sel.options || []).find(item => item.value === val);
-        const text = option?.dataset.answerText || option?.textContent || val;
+        const text = (option?.dataset.answerText || option?.textContent || val).trim().toLowerCase();
         const rCard = Array.from(board.querySelectorAll('.matching-card-right')).find(c =>
           !Array.from(activeMatches.values()).includes(String(c.dataset.rightPos)) &&
-          (c.dataset.rightKey === val || c.dataset.rightText === text)
+          (c.dataset.rightKey === val || (c.dataset.rightText || '').trim().toLowerCase() === text)
         );
         if (rCard) {
           activeMatches.set(String(lKey), String(rCard.dataset.rightPos));
@@ -248,23 +504,24 @@ class StudentView {
     board.querySelectorAll('.matching-card-right').forEach(card => {
       card.onclick = () => {
         const rPos = String(card.dataset.rightPos);
+        const rText = card.dataset.rightText || card.getAttribute('data-right-text') || '';
         const rVal = card.dataset.rightKey || card.dataset.rightText;
         if (selectedLeftKey !== null) {
           for (const [k, v] of activeMatches.entries()) {
             if (v === rPos) {
               activeMatches.delete(k);
-              if (typeof onChange === 'function') onChange(k, '');
+              if (typeof onChange === 'function') onChange(k, '', v, '');
             }
           }
           activeMatches.set(selectedLeftKey, rPos);
-          if (typeof onChange === 'function') onChange(selectedLeftKey, rVal, rPos);
+          if (typeof onChange === 'function') onChange(selectedLeftKey, rVal, rPos, rText);
           selectedLeftKey = null;
           redraw();
         } else {
           for (const [k, v] of activeMatches.entries()) {
             if (v === rPos) {
               activeMatches.delete(k);
-              if (typeof onChange === 'function') onChange(k, '');
+              if (typeof onChange === 'function') onChange(k, '', v, '');
             }
           }
           redraw();
@@ -276,7 +533,7 @@ class StudentView {
     if (resetBtn) {
       resetBtn.onclick = () => {
         for (const [k, v] of activeMatches.entries()) {
-          if (typeof onChange === 'function') onChange(k, '');
+          if (typeof onChange === 'function') onChange(k, '', v, '');
         }
         activeMatches.clear();
         selectedLeftKey = null;
@@ -285,7 +542,10 @@ class StudentView {
     }
 
     if (!StudentView._matchingResizeBound) {
-      window.addEventListener('resize', () => document.querySelectorAll('.matching-challenge-board').forEach(item => item._redrawMatches?.()));
+      window.addEventListener('resize', () => {
+        document.querySelectorAll('.matching-challenge-board').forEach(item => item._redrawMatches?.());
+        StudentView.initMatchingBoardReviews(document);
+      });
       StudentView._matchingResizeBound = true;
     }
     requestAnimationFrame(redraw);
@@ -424,8 +684,6 @@ class StudentView {
       const idStr = String(identity).trim();
       const val = window.localStorage?.getItem(`pwd301:random-avatar:${idStr}`);
       if (val && StudentView.isSupportedAvatarUrl(val)) return val;
-      const legacy = window.localStorage?.getItem('pwd301_avatar');
-      if (legacy && StudentView.isSupportedAvatarUrl(legacy)) return legacy;
     } catch (_error) {
       return '';
     }
@@ -624,29 +882,7 @@ class StudentView {
               </div>
             </div>
 
-            <!-- AI Course Recommendations Section (Algorithm 14) -->
-            <div class="space-y-4 pt-2" id="dashboard-recommendations-section">
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                  <span class="w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center material-symbols-outlined text-[18px]">auto_awesome</span>
-                  <div>
-                    <h2 class="text-lg font-bold text-slate-900 dark:text-white leading-tight">Gợi ý khóa học tiếp theo</h2>
-                    <p class="text-xs text-slate-400">Được phân tích bởi Bạch tuộc AI theo tiến độ và điều kiện tiên quyết</p>
-                  </div>
-                </div>
-                <a href="#/student/courses/catalog" class="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-0.5">
-                  <span>Khám phá thêm</span>
-                  <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
-                </a>
-              </div>
 
-              <div id="dashboard-recommendations-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="col-span-full text-center py-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-400 text-xs">
-                  <span class="inline-block animate-spin text-base mb-1">⏳</span>
-                  <p>Bạch tuộc AI đang tính toán lộ trình tối ưu cho bạn...</p>
-                </div>
-              </div>
-            </div>
 
           </div>
 
@@ -919,55 +1155,7 @@ class StudentView {
         }
       }
 
-      // Load AI Course Recommendations (Algorithm 14) asynchronously
-      const recListEl = document.getElementById('dashboard-recommendations-list');
-      const recSection = document.getElementById('dashboard-recommendations-section');
-      if (recListEl) {
-        ApiClient.getRecommendations(2).then(recs => {
-          if (!document.getElementById('dashboard-recommendations-list')) return;
-          if (recs && recs.length > 0) {
-            recListEl.innerHTML = recs.map(r => `
-              <div class="bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-900/40 hover:border-indigo-300 dark:hover:border-indigo-700 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-3.5">
-                <div class="space-y-2">
-                  <div class="flex items-center justify-between">
-                    <span class="text-[11px] font-mono font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-md border border-indigo-200/60 dark:border-indigo-800/60">
-                      ${UI.escapeHtml(r.course_code)}
-                    </span>
-                    <span class="px-2 py-0.5 rounded text-[10px] font-bold ${r.difficulty === 'ADVANCED' ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300' : (r.difficulty === 'INTERMEDIATE' ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300')}">
-                      ${r.difficulty || 'Mới bắt đầu'}
-                    </span>
-                  </div>
-                  <h3 class="font-extrabold text-slate-900 dark:text-white text-sm leading-snug hover:text-indigo-600 transition-colors">
-                    ${UI.escapeHtml(r.title)}
-                  </h3>
-                  <p class="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
-                    ${UI.escapeHtml(r.description || '')}
-                  </p>
-                </div>
-
-                <div class="p-2.5 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-100/80 dark:border-indigo-900/40 text-[11px] text-indigo-800 dark:text-indigo-300 flex items-start gap-2">
-                  <span class="material-symbols-outlined text-[15px] text-indigo-500 shrink-0 mt-0.5">psychology</span>
-                  <span class="leading-relaxed line-clamp-2">${UI.escapeHtml(r.explanation || 'Phù hợp với mục tiêu và tiến độ học tập hiện tại của bạn.')}</span>
-                </div>
-
-                <div class="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                  <span class="text-[11px] text-slate-400 font-medium">${UI.escapeHtml(r.category || 'Công nghệ thông tin')}</span>
-                  <a href="#/student/courses/detail?id=${r.course_id}" class="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors inline-flex items-center gap-1 shadow-xs">
-                    <span>Xem khóa học</span>
-                    <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
-                  </a>
-                </div>
-              </div>
-            `).join('');
-          } else {
-            const s = document.getElementById('dashboard-recommendations-section');
-            if (s) s.classList.add('hidden');
-          }
-        }).catch(() => {
-          const s = document.getElementById('dashboard-recommendations-section');
-          if (s) s.classList.add('hidden');
-        });
-      }
+// [TASK-128] Student Dashboard recommendation section permanently purged per invariant 10.27
     } catch (err) {
       console.warn('Dashboard load error:', err);
       UI.showToast('Không thể tải toàn bộ dữ liệu Dashboard.', 'warning');
@@ -1063,12 +1251,15 @@ class StudentView {
         ];
         const hashSeed = String(c.course_code || cid || '').split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
         const preset = colorPresets[hashSeed % colorPresets.length];
+        const priceNum = Math.max(0, parseInt(c.price, 10) || 0);
+        const priceDisplay = priceNum > 0 ? (priceNum.toLocaleString('vi-VN') + 'đ') : 'Miễn phí';
+        const isFree = priceNum === 0;
 
         return `
           <div class="c-card c-card-hover p-5 flex flex-col justify-between space-y-4 relative ${isRec ? 'border-2 border-emerald-500/70 shadow-[0_0_20px_rgba(16,185,129,0.18)] dark:bg-gradient-to-b dark:from-slate-900 dark:to-emerald-950/20 ring-1 ring-emerald-500/30' : ''}">
             <div class="space-y-3">
-              <!-- Standardized Aspect-Video Thumbnail Cover -->
-              <div class="aspect-video w-full rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 cursor-pointer" onclick="window.location.hash = '${targetUrl}'">
+              <!-- Standardized Aspect-Video Thumbnail Cover with Top-Right Price Tag (TASK-128) -->
+              <div class="aspect-video w-full rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 cursor-pointer relative" onclick="window.location.hash = '${targetUrl}'">
                 ${c.thumbnail_url ? `
                   <img src="${UI.escapeHtml(c.thumbnail_url)}" alt="${UI.escapeHtml(c.title)}" class="w-full h-full object-cover object-center hover:scale-105 transition-transform duration-300" onerror="this.remove()" />
                 ` : `
@@ -1078,6 +1269,11 @@ class StudentView {
                     <span class="text-xs font-mono font-bold tracking-wider uppercase bg-black/25 px-2.5 py-0.5 rounded-full border border-white/20">${UI.escapeHtml(c.course_code || 'Khóa học')}</span>
                   </div>
                 `}
+                <!-- Eye-Catching Hanging Price Tag (TASK-120) -->
+                <div class="absolute top-2.5 right-2.5 z-20 px-3 py-1 rounded-full text-xs font-black tracking-wide ${priceNum > 0 ? 'bg-gradient-to-r from-amber-500 via-rose-500 to-pink-500 text-white shadow-md shadow-rose-500/20 border border-white/30 ring-1 ring-black/10' : 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-md shadow-emerald-500/20 border border-white/30 ring-1 ring-black/10'} flex items-center gap-1 backdrop-blur-md pointer-events-none">
+                  <span class="material-symbols-outlined text-[14px]">${priceNum > 0 ? 'payments' : 'verified'}</span>
+                  <span class="course-price-tag">${priceNum > 0 ? (UI.formatMoney ? UI.formatMoney(priceNum) : priceNum.toLocaleString('vi-VN') + ' đ') : 'Miễn phí'}</span>
+                </div>
               </div>
 
               <div class="flex items-center justify-between flex-wrap gap-1.5">
@@ -1088,7 +1284,7 @@ class StudentView {
                   ${isEnrolled ? `
                     <span class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 flex items-center gap-1">
                       <span class="material-symbols-outlined text-[13px]">check_circle</span>
-                      <span>Đã ghi danh</span>
+                      <span>Đã sở hữu</span>
                     </span>
                   ` : ''}
                   ${isRec ? `
@@ -1108,11 +1304,9 @@ class StudentView {
               </h3>
 
               <p class="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
-                ${UI.escapeHtml(c.description || c.summary || 'Khóa học đào tạo chính quy theo chuẩn đầu ra ABET.')}
+                ${UI.escapeHtml(UI.cleanCourseDescription(c.description || c.summary) || 'Khóa học đào tạo chính quy theo chuẩn đầu ra ABET.')}
               </p>
-            </div>
-
-            <div class="pt-3 border-t border-slate-100 dark:border-slate-800">
+            </div>            <div class="pt-3 border-t border-slate-100 dark:border-slate-800">
               <div class="flex items-center gap-2">
                 ${isEnrolled ? `
                   <a
@@ -1123,20 +1317,15 @@ class StudentView {
                     <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
                   </a>
                 ` : `
-                  <a
-                    href="#/student/courses/intro?id=${cid}"
-                    class="flex-1 c-btn c-btn-secondary c-btn-sm text-center"
-                    title="Xem trang giới thiệu khóa học"
-                  >
-                    <span>Giới thiệu</span>
-                  </a>
                   <button
                     type="button"
-                    class="flex-1 c-btn c-btn-primary c-btn-sm enroll-action-btn"
+                    class="w-full c-btn c-btn-primary c-btn-sm enroll-action-btn buy-course-btn flex items-center justify-center gap-1.5 shadow-sm bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold cursor-pointer transition-transform hover:scale-[1.01]"
                     data-course-id="${cid}"
                     data-course-title="${UI.escapeHtml(c.title)}"
+                    data-course-price="${priceNum}"
                   >
-                    <span>Ghi danh</span>
+                    <span class="material-symbols-outlined text-[17px]">${priceNum > 0 ? 'shopping_cart_checkout' : 'how_to_reg'}</span>
+                    <span>${priceNum > 0 ? 'Mua ngay' : 'Đăng ký ngay'}</span>
                   </button>
                 `}
               </div>
@@ -1145,11 +1334,13 @@ class StudentView {
         `;
       }).join('');
 
-      // Attach button clicks for enrolling -> Open large dedicated Enrollment Modal
-      grid.querySelectorAll('.enroll-action-btn').forEach(btn => {
+      // Attach button clicks for purchasing -> Open dedicated Purchase Modal (TASK-120)
+      grid.querySelectorAll('.enroll-action-btn, .buy-course-btn').forEach(btn => {
         btn.onclick = () => {
           const cid = btn.dataset.courseId;
-          StudentView.openEnrollmentModal(cid, (enrolledId) => {
+          const cTitle = btn.dataset.courseTitle;
+          const cPrice = Number(btn.dataset.coursePrice || 0);
+          StudentView.openPurchaseModal(cid, cTitle, cPrice, (enrolledId) => {
             const targetId = enrolledId || cid;
             if (targetId) enrolledCourseIds.add(String(targetId));
             if (cid) enrolledCourseIds.add(String(cid));
@@ -1252,7 +1443,7 @@ class StudentView {
           <div class="space-y-2">
             <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500">Mô tả khóa học</h4>
             <p class="text-sm leading-relaxed text-slate-700 dark:text-slate-300">
-              ${UI.escapeHtml(course.description || course.summary || 'Khóa học cung cấp hệ thống kiến thức toàn diện, bám sát thực tế cùng các bài tập thực hành chuyên sâu.')}
+              ${UI.escapeHtml(UI.cleanCourseDescription(course.description || course.summary) || 'Khóa học cung cấp hệ thống kiến thức toàn diện, bám sát thực tế cùng các bài tập thực hành chuyên sâu.')}
             </p>
           </div>
 
@@ -1366,6 +1557,119 @@ class StudentView {
     await StudentView.openEnrollmentModal(courseId);
   }
 
+  static async showCourseCompletionCelebrationModal(course, courseId) {
+    if (typeof UI !== 'undefined' && UI.showToast) {
+      UI.showToast('Chúc mừng bạn đã hoàn thành tất cả nội dung khóa học!', 'success');
+    }
+    // 1. Trigger backend completion evaluation
+    try {
+      await ApiClient.getStudentCourseCompletion(courseId);
+      if (course) {
+        if (!course.enrollment) course.enrollment = {};
+        course.enrollment.status = 'COMPLETED';
+      }
+    } catch (err) {
+      console.warn('[Completion] Error evaluating course completion:', err);
+    }
+
+    // 2. Refresh outline certificate download button in sidebar if present
+    const certBox = document.getElementById('outline-certificate-container');
+    if (certBox) {
+      certBox.innerHTML = `
+        <div class="p-4 border-t border-slate-200 dark:border-slate-800 bg-emerald-50/50 dark:bg-emerald-950/20">
+          <button type="button" id="btn-download-course-certificate" class="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer" title="Tải Chứng chỉ PDF chính thức">
+            <span class="material-symbols-outlined text-[18px]">workspace_premium</span>
+            <span>Tải Chứng chỉ PDF</span>
+          </button>
+        </div>
+      `;
+      const cBtn = document.getElementById('btn-download-course-certificate');
+      if (cBtn) {
+        cBtn.onclick = (e) => {
+          e?.stopPropagation?.();
+          e?.preventDefault?.();
+          ApiClient.downloadCertificate(courseId, course?.course_code || 'PPTQ');
+        };
+      }
+    }
+
+    // 3. Render Celebration Modal
+    const modalId = 'modal-course-completion-celebration';
+    let modal = document.getElementById(modalId);
+    if (modal) modal.remove();
+
+    const courseTitle = course?.title || 'Khóa học';
+    const courseCode = course?.course_code || 'PPTQ';
+
+    modal = document.createElement('div');
+    modal.id = modalId;
+    modal.className = 'fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-fade-in';
+    modal.innerHTML = `
+      <div class="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden text-center p-8 space-y-6 animate-scale-up">
+        <div class="mx-auto w-20 h-20 rounded-full bg-emerald-100 dark:bg-emerald-950/60 border-2 border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shadow-lg shadow-emerald-500/10">
+          <span class="material-symbols-outlined text-4xl animate-bounce">workspace_premium</span>
+        </div>
+
+        <div class="space-y-2">
+          <span class="inline-block px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 font-mono">
+            🎉 XUẤT SẮC HOÀN THÀNH
+          </span>
+          <h2 class="text-xl sm:text-2xl font-black text-slate-900 dark:text-white leading-tight">
+            Chúc mừng bạn đã hoàn thành khóa học!
+          </h2>
+          <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-300 line-clamp-2 px-4">
+            ${UI.escapeHtml(courseTitle)}
+          </p>
+        </div>
+
+        <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 space-y-2 text-left">
+          <div class="flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-slate-400">
+            <span>Tiến độ chương trình</span>
+            <span class="text-emerald-600 dark:text-emerald-400 font-mono font-bold">100%</span>
+          </div>
+          <div class="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+            <div class="h-full bg-emerald-500 rounded-full w-full transition-all duration-500"></div>
+          </div>
+          <p class="text-[11px] text-slate-500 dark:text-slate-400 pt-1">
+            Chứng chỉ tốt nghiệp chính thức định dạng PDF chất lượng cao đã sẵn sàng cấp phát.
+          </p>
+        </div>
+
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+          <button type="button" id="btn-modal-download-cert" class="w-full sm:w-auto flex-1 py-3 px-5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 cursor-pointer">
+            <span class="material-symbols-outlined text-[20px]">download</span>
+            <span>Tải Chứng Chỉ PDF</span>
+          </button>
+          <a href="#/student/courses" id="btn-modal-to-my-courses" class="w-full sm:w-auto py-3 px-5 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 cursor-pointer">
+            <span class="material-symbols-outlined text-[18px]">school</span>
+            <span>Khóa học của tôi</span>
+          </a>
+        </div>
+
+        <button type="button" id="btn-modal-close-celebration" class="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+          <span class="material-symbols-outlined text-lg">close</span>
+        </button>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    const closeBtn = document.getElementById('btn-modal-close-celebration');
+    if (closeBtn) closeBtn.onclick = () => modal.remove();
+
+    const downloadBtn = document.getElementById('btn-modal-download-cert');
+    if (downloadBtn) {
+      downloadBtn.onclick = () => {
+        ApiClient.downloadCertificate(courseId, courseCode);
+      };
+    }
+
+    const toCoursesBtn = document.getElementById('btn-modal-to-my-courses');
+    if (toCoursesBtn) {
+      toCoursesBtn.onclick = () => modal.remove();
+    }
+  }
+
   // =========================================================================
   // 3. Enrolled Courses Hub (My Learning)
   // =========================================================================
@@ -1466,6 +1770,7 @@ class StudentView {
 
         grid.innerHTML = filtered.map(e => {
           const progress = Math.round(e.current_progress_percent ?? e.progress_percent ?? 0);
+          const isTrulyCompleted = (e.status === 'COMPLETED' || e.is_completed) && progress >= 100;
           return `
             <div class="c-card c-card-hover p-5 flex flex-col justify-between space-y-4">
               <div class="space-y-2.5">
@@ -1481,7 +1786,7 @@ class StudentView {
                 </div>
                 <div class="flex items-center justify-between">
                   <span class="text-xs font-bold font-mono text-primary bg-primary-subtle px-2.5 py-0.5 rounded-full">${UI.escapeHtml(e.course_code)}</span>
-                  ${e.status && e.status !== 'ACTIVE' ? UI.statusBadge(e.status) : ''}
+                  ${isTrulyCompleted ? UI.statusBadge('COMPLETED') : (e.status && e.status !== 'ACTIVE' && e.status !== 'COMPLETED' ? UI.statusBadge(e.status) : '')}
                 </div>
                 <h3
                   class="font-extrabold text-slate-900 dark:text-white text-base leading-snug hover:text-primary transition-colors cursor-pointer"
@@ -1508,11 +1813,17 @@ class StudentView {
                   </div>
                 </div>
 
-                <div class="pt-1">
-                  <a href="#/student/courses/detail?id=${e.course_id}" class="w-full c-btn c-btn-primary c-btn-sm shadow-xs flex items-center justify-center gap-1.5">
-                    <span>Vào học tiếp tục</span>
+                <div class="pt-1 flex items-center gap-2">
+                  <a href="#/student/courses/detail?id=${e.course_id}" class="flex-1 c-btn c-btn-primary c-btn-sm shadow-xs flex items-center justify-center gap-1.5">
+                    <span>${isTrulyCompleted ? 'Xem lại khóa học' : 'Vào học tiếp tục'}</span>
                     <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
                   </a>
+                  ${isTrulyCompleted ? `
+                    <button type="button" onclick="ApiClient.downloadCertificate('${UI.escapeHtml(e.course_id)}', '${UI.escapeHtml(e.course_code || 'PPTQ')}')" class="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all flex items-center gap-1 shrink-0 shadow-xs cursor-pointer" title="Tải chứng chỉ hoàn thành khóa học (PDF)">
+                      <span class="material-symbols-outlined text-[16px]">workspace_premium</span>
+                      <span>Chứng chỉ</span>
+                    </button>
+                  ` : ''}
                 </div>
               </div>
             </div>
@@ -1562,7 +1873,11 @@ class StudentView {
     try {
       const courseRes = await ApiClient.getCourse(courseId);
       const course = courseRes?.course || courseRes?.data || courseRes;
-      if (!course || !course.id) {
+      if (!course) {
+        throw new Error('Không tìm thấy thông tin khóa học.');
+      }
+      course.id = course.id || course.course_id || course.public_id || courseId;
+      if (!course.id) {
         throw new Error('Không tìm thấy thông tin khóa học.');
       }
 
@@ -1570,10 +1885,20 @@ class StudentView {
       let isEnrolled = false;
       try {
         const enrollmentsData = await ApiClient.getStudentEnrollments();
-        const enrollments = enrollmentsData?.enrollments || [];
-        isEnrolled = enrollments.some(e => String(e.course_id || e.id) === String(course.id));
+        const enrollments = enrollmentsData?.enrollments || enrollmentsData?.courses || [];
+        const targetId = String(course.id || course.public_id || courseId).toLowerCase();
+        isEnrolled = enrollments.some(e => {
+          const eid = String(e.course_id || e.id || '').toLowerCase();
+          return eid === targetId;
+        });
       } catch (e) {
         isEnrolled = false;
+      }
+
+      // If student is already enrolled in this course, immediately transition to classroom
+      if (isEnrolled && !previewMode && !window.location.hash.includes('preview=')) {
+        window.location.hash = `#/student/courses/detail?id=${encodeURIComponent(course.id || courseId)}`;
+        return;
       }
 
       // Fetch syllabus and detailed course metadata
@@ -1591,7 +1916,11 @@ class StudentView {
       const totalLessons = modules.reduce((acc, m) => acc + (m.lessons || []).length, 0);
 
       // 1. Video Trailer URL & Clean Description extraction
-      let videoUrl = course.trailer_url || course.video_url || sylRes?.course?.trailer_url || sylRes?.course?.video_url || '';
+      let videoUrl = course.trailer_stream_url || course.trailer_url || course.video_url || sylRes?.course?.trailer_stream_url || sylRes?.course?.trailer_url || sylRes?.course?.video_url || '';
+      if (!videoUrl && (course.trailer_file_asset_id || sylRes?.course?.trailer_file_asset_id)) {
+        videoUrl = `/student/courses/${encodeURIComponent(course.id || courseId)}/trailer/stream`;
+      }
+      // Direct session cookie auth for /api/files/:id/stream
       let rawDesc = course.description || sylRes?.course?.description || '';
       let contactInfo = course.contact_info || sylRes?.course?.contact_info || {
         email: course.instructor_email || sylRes?.course?.instructor_email || '',
@@ -1748,9 +2077,9 @@ class StudentView {
                       <span>Vào học bài ngay</span>
                     </a>
                   ` : `
-                    <button type="button" class="btn-enroll-action px-7 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm transition-all shadow-lg shadow-emerald-600/25 inline-flex items-center gap-2 cursor-pointer" data-id="${course.id}">
-                      <span class="material-symbols-outlined text-[20px]">how_to_reg</span>
-                      <span>Ghi danh khóa học</span>
+                    <button type="button" class="btn-enroll-action px-7 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-sm transition-all shadow-lg shadow-emerald-600/25 inline-flex items-center gap-2 cursor-pointer" data-id="${course.id}" data-title="${UI.escapeHtml(course.title)}" data-price="${course.price || 0}">
+                      <span class="material-symbols-outlined text-[20px]">${(course.price || 0) > 0 ? 'shopping_cart_checkout' : 'how_to_reg'}</span>
+                      <span>${(course.price || 0) > 0 ? 'Mua ngay (' + (UI.formatMoney ? UI.formatMoney(course.price) : course.price.toLocaleString('vi-VN') + ' đ') + ')' : 'Đăng ký ngay'}</span>
                     </button>
                   `}
                   <button type="button" id="btn-scroll-to-syllabus" class="px-6 py-3.5 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800/80 dark:hover:bg-slate-700/80 text-slate-800 dark:text-white font-bold text-sm transition-all border border-slate-200 dark:border-slate-700/80 inline-flex items-center gap-2 cursor-pointer">
@@ -2031,9 +2360,9 @@ class StudentView {
                   <span>Vào phòng học ngay</span>
                 </a>
               ` : `
-                <button type="button" class="btn-enroll-action px-8 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm transition-all shadow-lg shadow-emerald-500/25 inline-flex items-center gap-2 cursor-pointer" data-id="${course.id}">
-                  <span class="material-symbols-outlined text-[20px]">how_to_reg</span>
-                  <span>Ghi danh ngay</span>
+                <button type="button" class="btn-enroll-action px-8 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black text-sm transition-all shadow-lg shadow-emerald-500/25 inline-flex items-center gap-2 cursor-pointer" data-id="${course.id}" data-title="${UI.escapeHtml(course.title)}" data-price="${course.price || 0}">
+                  <span class="material-symbols-outlined text-[20px]">${(course.price || 0) > 0 ? 'shopping_cart_checkout' : 'how_to_reg'}</span>
+                  <span>${(course.price || 0) > 0 ? 'Mua ngay' : 'Đăng ký ngay'}</span>
                 </button>
               `}
             </div>
@@ -2085,24 +2414,15 @@ class StudentView {
         };
       }
 
-      // Wire Enrollment Action Buttons
+      // Wire Enrollment / Purchase Action Buttons (TASK-120)
       container.querySelectorAll('.btn-enroll-action').forEach(btn => {
-        btn.onclick = async () => {
-          const cId = btn.dataset.id;
-          btn.disabled = true;
-          const origHtml = btn.innerHTML;
-          btn.innerHTML = `<span class="inline-block animate-spin text-[16px]">⏳</span> <span>Đang xử lý...</span>`;
-          try {
-            await ApiClient.enrollCourse(cId);
-            UI.showToast('Ghi danh thành công! Đang chuyển đến phòng học...', 'success');
-            setTimeout(() => {
-              window.location.hash = `#/student/courses/detail?id=${cId}`;
-            }, 800);
-          } catch (err) {
-            btn.disabled = false;
-            btn.innerHTML = origHtml;
-            UI.showToast(err.message || 'Ghi danh không thành công. Vui lòng thử lại.', 'error');
-          }
+        btn.onclick = () => {
+          const cId = btn.dataset.id || course.id;
+          const cPrice = Number(btn.dataset.price || course.price || 0);
+          const cTitle = btn.dataset.title || course.title || '';
+          StudentView.openPurchaseModal(cId, cTitle, cPrice, () => {
+            window.location.hash = `#/student/courses/detail?id=${encodeURIComponent(cId || courseId)}`;
+          });
         };
       });
 
@@ -2186,7 +2506,13 @@ class StudentView {
           const uLessons = (u.lessons && u.lessons.length > 0)
             ? [...u.lessons].sort((a, b) => (a.position || 0) - (b.position || 0))
             : allLessons.filter(l => String(l.learning_unit_id) === String(u.learning_unit_id || u.id));
-          const uAssessments = allAssessments.filter(a => String(a.learning_unit_id) === String(u.learning_unit_id || u.id));
+          const uAssessments = allAssessments.filter(a => {
+            const asmUnitId = (a.learning_unit_id || (a.description?.match(/unit_id:\s*([a-zA-Z0-9_-]+)/)?.[1]) || '').toLowerCase();
+            const targetUnitId = String(u.learning_unit_id || u.id || '').toLowerCase();
+            if (asmUnitId && targetUnitId && asmUnitId === targetUnitId) return true;
+            if (!asmUnitId && a.title && a.title.toLowerCase().includes('chương ' + (uIdx + 1)) && a.assessment_type !== 'FINAL_EXAM' && a.assessment_type !== 'FINAL') return true;
+            return false;
+          });
           return {
             id: String(u.learning_unit_id || u.id || `unit-${uIdx}`),
             title: u.title || `Module ${uIdx + 1}`,
@@ -2207,10 +2533,16 @@ class StudentView {
         });
         modules = Array.from(map.values());
         if (modules.length === 0) {
-          modules = [{ id: 'module-1', title: 'Module 1: Nội dung khóa học', position: 1, lessons: [], assessments: allAssessments }];
+          modules = [{ id: 'module-1', title: 'Module 1: Nội dung khóa học', position: 1, lessons: [], assessments: allAssessments.filter(a => a.assessment_type !== 'FINAL_EXAM' && a.assessment_type !== 'FINAL') }];
         } else {
           allAssessments.forEach(a => {
-            if (!a.learning_unit_id && modules.length > 0) {
+            const aType = (a.assessment_type || '').toUpperCase();
+            if (aType === 'FINAL_EXAM' || aType === 'FINAL') return;
+            const asmUnitId = (a.learning_unit_id || (a.description?.match(/unit_id:\s*([a-zA-Z0-9_-]+)/)?.[1]) || '').toLowerCase();
+            const matchedMod = modules.find(m => asmUnitId && String(m.id || '').toLowerCase() === asmUnitId);
+            if (matchedMod) {
+              if (!matchedMod.assessments.includes(a)) matchedMod.assessments.push(a);
+            } else if (!a.learning_unit_id && !(a.description && a.description.includes('unit_id:'))) {
               modules[modules.length - 1].assessments.push(a);
             }
           });
@@ -2279,7 +2611,7 @@ class StudentView {
         mod._isCompleted = mod.lessons.length > 0 && modCompletedLessons === mod.lessons.length;
       });
 
-      // Add standalone course-level assessments (Dedicated Final Test Block)
+      // Add standalone course-level assessments (Dedicated Assessments & Final Test Block)
       const attachedExamIds = new Set(modules.flatMap(m => m.assessments.map(a => String(a.assessment_id || a.id))));
       const rootExams = allAssessments.filter(a => !attachedExamIds.has(String(a.assessment_id || a.id)));
       if (rootExams.length > 0) {
@@ -2289,6 +2621,8 @@ class StudentView {
         const now = new Date();
 
         rootExams.forEach((asm, rIdx) => {
+          const aType = (asm.assessment_type || '').toUpperCase();
+          const isFinal = (aType === 'FINAL_EXAM' || aType === 'FINAL');
           const isAsmDone = asm.is_completed === true || asm.completion_status === 'COMPLETED';
           asm._isCompleted = isAsmDone;
 
@@ -2306,27 +2640,27 @@ class StudentView {
           }
 
           let lockReason = '';
-          if (!allCourseLessonsCompleted) {
+          if (isFinal && !allCourseLessonsCompleted) {
             lockReason = `Bạn cần hoàn thành tất cả các bài học trong toàn bộ khóa học (${totalCompletedLessons}/${totalCourseLessons} bài) trước khi làm Final Test.`;
           } else if (!isWithinWindow) {
             lockReason = timeWindowMsg;
           }
 
-          asm._isUnlocked = canBypassLock || (allCourseLessonsCompleted && isWithinWindow);
+          asm._isUnlocked = canBypassLock || (!isFinal && isWithinWindow) || (allCourseLessonsCompleted && isWithinWindow);
           asm._lockReason = lockReason;
-          asm._isFinalTest = true;
+          asm._isFinalTest = isFinal;
 
           flatNavList.push({
             type: 'exam',
             id: String(asm.assessment_id || asm.id),
             title: asm.title,
-            displayCode: `Final Test`,
+            displayCode: isFinal ? `Final Test` : (aType === 'QUIZ' ? `Quiz ${rIdx + 1}` : `Bài thi ${rIdx + 1}`),
             moduleId: 'root-exams',
-            moduleTitle: 'Khảo thí & Đánh giá Cuối khóa',
+            moduleTitle: 'Khảo thí & Đánh giá Khóa học',
             isUnlocked: asm._isUnlocked,
             lockReason: asm._lockReason,
             isCompleted: isAsmDone,
-            isFinalTest: true,
+            isFinalTest: isFinal,
             data: asm
           });
         });
@@ -2405,9 +2739,11 @@ class StudentView {
           const allCourseLessonsCompleted = totalCourseLessons === 0 || totalCompletedLessons >= totalCourseLessons;
 
           rootExams.forEach((asm) => {
+            const aType = (asm.assessment_type || '').toUpperCase();
+            const isFinal = (aType === 'FINAL_EXAM' || aType === 'FINAL');
             const isAsmDone = Boolean(asm.is_completed === true || asm.completion_status === 'COMPLETED' || asm._isCompleted);
             asm._isCompleted = isAsmDone;
-            asm._isUnlocked = canBypassLock || allCourseLessonsCompleted;
+            asm._isUnlocked = canBypassLock || (!isFinal) || allCourseLessonsCompleted;
             asm._lockReason = asm._isUnlocked ? '' : `Bạn cần hoàn thành tất cả các bài học trong toàn bộ khóa học (${totalCompletedLessons}/${totalCourseLessons} bài) trước khi làm Final Test.`;
 
             const navItem = flatNavList.find(i => i.type === 'exam' && String(i.id) === String(asm.assessment_id || asm.id));
@@ -3299,22 +3635,24 @@ class StudentView {
             <div class="mt-4 pt-3 border-t-2 border-dashed border-slate-200 dark:border-slate-800 space-y-2 relative">
               <div class="px-1 flex items-center justify-between">
                 <span class="text-[11px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400 flex items-center gap-1 font-mono">
-                  <span class="material-symbols-outlined text-[15px]">military_tech</span>
-                  Final Test
+                  <span class="material-symbols-outlined text-[15px]">assignment_turned_in</span>
+                  Bài kiểm tra & Đánh giá
                 </span>
-                <span class="text-[10px] text-slate-400">Đánh giá cuối khóa</span>
+                <span class="text-[10px] text-slate-400">Khảo thí khóa học</span>
               </div>
               ${rootExams.map(fe => {
                 const feId = String(fe.assessment_id || fe.id);
                 const isCur = activeItem && activeItem.type === 'exam' && String(activeItem.id) === feId;
-                const isDone = fe._isCompleted;
+                const isPassed = Boolean(fe.is_passed === true || fe.passed === true || (fe.display_score && fe.display_score.passed === true));
+                const hasAttempted = Boolean(fe.attempts_count > 0 || fe.attempt_id || fe.is_completed || fe.completion_status === 'COMPLETED');
                 const isUnlocked = fe._isUnlocked;
+                const isFinal = Boolean(fe._isFinalTest);
 
                 if (!isUnlocked) {
                   return `
                     <div
                       class="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/40 opacity-70 flex items-center justify-between gap-2 text-xs cursor-not-allowed select-none shadow-2xs"
-                      onclick="UI.showToast('${UI.escapeHtml(fe._lockReason || 'Final Test chưa mở khóa.')}', 'warning')"
+                      onclick="UI.showToast('${UI.escapeHtml(fe._lockReason || 'Bài thi chưa mở khóa.')}', 'warning')"
                       title="${UI.escapeHtml(fe._lockReason || 'Đang khóa')}"
                     >
                       <div class="flex items-center gap-2.5 min-w-0">
@@ -3322,7 +3660,10 @@ class StudentView {
                           <span class="material-symbols-outlined text-[16px]">lock</span>
                         </span>
                         <div class="min-w-0">
-                          <h4 class="text-xs font-bold text-slate-500 dark:text-slate-400 truncate">${UI.escapeHtml(fe.title)}</h4>
+                          <div class="flex items-center gap-1.5">
+                            <span class="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase ${isFinal ? 'bg-purple-100 text-purple-700 dark:bg-purple-950/80 dark:text-purple-300' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}">${isFinal ? 'Final Test' : 'Quiz/Exam'}</span>
+                            <h4 class="text-xs font-bold text-slate-500 dark:text-slate-400 truncate">${UI.escapeHtml(fe.title)}</h4>
+                          </div>
                           <p class="text-[10px] text-slate-400 truncate">${UI.escapeHtml(fe._lockReason || 'Hoàn thành các bài học trước khi thi')}</p>
                         </div>
                       </div>
@@ -3339,16 +3680,19 @@ class StudentView {
                     onclick="window._ciscoSelectItem('exam', '${feId}')"
                   >
                     <div class="flex items-center gap-2.5 min-w-0">
-                      <span class="w-7 h-7 rounded-lg ${isDone ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950/80' : 'bg-purple-100 text-purple-600 dark:bg-purple-900/60'} flex items-center justify-center shrink-0">
-                        <span class="material-symbols-outlined text-[16px]">${isDone ? 'task_alt' : 'assignment_turned_in'}</span>
+                      <span class="w-7 h-7 rounded-lg ${isPassed ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950/80' : 'bg-purple-100 text-purple-600 dark:bg-purple-900/60'} flex items-center justify-center shrink-0">
+                        <span class="material-symbols-outlined text-[16px]">${isPassed ? 'task_alt' : 'assignment_turned_in'}</span>
                       </span>
                       <div class="min-w-0">
-                        <h4 class="text-xs font-bold text-slate-900 dark:text-white truncate">${UI.escapeHtml(fe.title)}</h4>
+                        <div class="flex items-center gap-1.5">
+                          <span class="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase ${isFinal ? 'bg-purple-100 text-purple-700 dark:bg-purple-950/80 dark:text-purple-300' : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-300'}">${isFinal ? 'Final Test' : 'Quiz/Exam'}</span>
+                          <h4 class="text-xs font-bold text-slate-900 dark:text-white truncate">${UI.escapeHtml(fe.title)}</h4>
+                        </div>
                         <p class="text-[10px] text-purple-600 dark:text-purple-400">${fe.duration_minutes || 45} phút • ${fe.questions_count ?? fe.question_count ?? 'Chưa tải'} câu hỏi</p>
                       </div>
                     </div>
-                    <span class="px-2 py-0.5 rounded ${isDone ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/60 dark:text-purple-300'} text-[10px] font-bold shrink-0">
-                      ${isDone ? 'Đã hoàn thành' : 'Sẵn sàng thi'}
+                    <span class="px-2 py-0.5 rounded ${isPassed ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300' : (hasAttempted ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/60 dark:text-purple-300')} text-[10px] font-bold shrink-0">
+                      ${isPassed ? 'Đã đạt' : (hasAttempted ? 'Chưa đạt' : 'Sẵn sàng thi')}
                     </span>
                   </div>
                 `;
@@ -3364,19 +3708,58 @@ class StudentView {
           </div>
         `;
 
-        // Render Certificate Download Action (Strictly PDF only - HTML preview purged)
+        // Render Certificate Download Action (Strictly PDF only - Realtime Completion Gate)
         const certBox = document.getElementById('outline-certificate-container');
         if (certBox) {
-          const isCourseCompleted = Boolean(
-            (course.enrollment && (course.enrollment.status === 'COMPLETED' || course.enrollment.progress_percent >= 100 || course.enrollment.current_progress_percent >= 100)) ||
-            (courseData?.enrollment && (courseData.enrollment.status === 'COMPLETED' || courseData.enrollment.progress_percent >= 100 || courseData.enrollment.current_progress_percent >= 100)) ||
-            (progressData && (progressData.status === 'COMPLETED' || progressData.progress_percent >= 100 || progressData.current_progress_percent >= 100)) ||
-            (flatNavList.length > 0 && flatNavList.every(i => i.isCompleted))
-          );
-          if (isCourseCompleted) {
+          const enrollment = course.enrollment || courseData?.enrollment;
+
+          const requiredLessons = flatNavList.filter(item => item.type === 'lesson');
+          const allRequiredLessonsCompleted = requiredLessons.length > 0
+            ? requiredLessons.every(i => Boolean(i.isCompleted))
+            : true;
+
+          const requiredExams = flatNavList.filter(item => {
+            if (item.type !== 'exam') return false;
+            const aType = (item.data?.assessment_type || item.data?.type || '').toUpperCase();
+            return aType !== 'PRACTICE' && aType !== 'PLACEMENT';
+          });
+
+          // Invariant: All required published assessments must have been attempted and PASSED (passed === true)
+          const allRequiredExamsPassed = requiredExams.length > 0
+            ? requiredExams.every(i => {
+                const d = i.data || {};
+                return Boolean(
+                  d.is_passed === true ||
+                  d.passed === true ||
+                  (d.display_score && d.display_score.passed === true)
+                );
+              })
+            : true;
+
+          const meetsAllRequirements = allRequiredLessonsCompleted && allRequiredExamsPassed;
+          let isCourseCompleted = Boolean(enrollment && enrollment.status === 'COMPLETED') && meetsAllRequirements;
+
+          // If enrollment was prematurely marked COMPLETED but requirements are not met, reconcile back to ACTIVE
+          if (!meetsAllRequirements && enrollment && enrollment.status === 'COMPLETED') {
+            enrollment.status = 'ACTIVE';
+            if (course.enrollment) course.enrollment.status = 'ACTIVE';
+            if (courseData?.enrollment) courseData.enrollment.status = 'ACTIVE';
+          }
+
+          // Auto-trigger completion check in background ONLY if all requirements are genuinely met
+          if (meetsAllRequirements && !isCourseCompleted) {
+            isCourseCompleted = true;
+            if (course.enrollment) course.enrollment.status = 'COMPLETED';
+            if (courseData?.enrollment) courseData.enrollment.status = 'COMPLETED';
+            ApiClient.getStudentCourseCompletion(courseId).catch(() => {});
+          }
+
+          const canDownloadCert = isCourseCompleted && meetsAllRequirements;
+
+          if (canDownloadCert) {
             certBox.innerHTML = `
-              <div class="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
-                <button type="button" id="btn-download-course-certificate" class="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer" title="Tải Chứng chỉ PDF chính thức">
+              <div class="p-4 border-t border-slate-200 dark:border-slate-800 bg-emerald-50/50 dark:bg-emerald-950/20">
+                <button type="button" id="btn-download-course-certificate" class="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer animate-fade-in" title="Tải Chứng chỉ PDF chính thức">
                   <span class="material-symbols-outlined text-[18px]">workspace_premium</span>
                   <span>Tải Chứng chỉ PDF</span>
                 </button>
@@ -3387,14 +3770,7 @@ class StudentView {
               certBtn.onclick = (e) => {
                 e?.stopPropagation?.();
                 e?.preventDefault?.();
-                UI.showToast('Đang tạo và tải chứng chỉ khóa học PDF...', 'info');
-                const link = document.createElement('a');
-                link.href = `/student/courses/${courseId}/certificate`;
-                link.download = `Chung_chi_${course.course_code || 'PPTQ'}.pdf`;
-                link.target = '_blank';
-                document.body.appendChild(link);
-                link.click();
-                link.remove();
+                ApiClient.downloadCertificate(courseId, course.course_code || 'PPTQ');
               };
             }
           } else {
@@ -3779,7 +4155,7 @@ class StudentView {
                       Mục tiêu & Đề cương bài giảng:
                     </p>
                     <p class="text-slate-500 dark:text-slate-400">
-                      ${UI.escapeHtml(activeItem.data?.summary || activeItem.data?.description || course.description || 'Bài học trang bị các kiến thức nền tảng và kỹ năng thực hành theo chuẩn ABET.')}
+                      ${UI.escapeHtml(UI.cleanCourseDescription(activeItem.data?.summary || activeItem.data?.description || course.description) || 'Bài học trang bị các kiến thức nền tảng và kỹ năng thực hành theo chuẩn ABET.')}
                     </p>
                   </div>
 
@@ -3808,7 +4184,7 @@ class StudentView {
                   <div class="space-y-2">
                     <h2 class="text-xl font-black text-slate-900 dark:text-white">Ghi danh để Bắt đầu Học tập</h2>
                     <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-                      ${UI.escapeHtml(course.description || 'Tham gia khóa học để mở khóa toàn bộ lộ trình bài giảng, video hướng dẫn và các bài kiểm tra thực hành.')}
+                      ${UI.escapeHtml(UI.cleanCourseDescription(course.description) || 'Tham gia khóa học để mở khóa toàn bộ lộ trình bài giảng, video hướng dẫn và các bài kiểm tra thực hành.')}
                     </p>
                   </div>
                   <div class="pt-2">
@@ -3854,6 +4230,37 @@ class StudentView {
 
         // If no active item
         if (!activeItem) {
+          const isCourseCompleted = Boolean(enrollment && enrollment.status === 'COMPLETED');
+          if (isCourseCompleted) {
+            contentContainer.innerHTML = `
+              <div class="py-10 px-4 text-center space-y-6 animate-fade-in max-w-2xl mx-auto">
+                <div class="bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-transparent border border-emerald-500/30 rounded-3xl p-8 sm:p-12 text-center space-y-5 shadow-lg">
+                  <div class="w-20 h-20 rounded-3xl bg-emerald-600 text-white flex items-center justify-center mx-auto shadow-md">
+                    <span class="material-symbols-outlined text-[44px]">workspace_premium</span>
+                  </div>
+                  <div class="space-y-2">
+                    <span class="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">Hoàn thành khóa học</span>
+                    <h2 class="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white leading-tight">Chúc mừng bạn đã hoàn thành xuất sắc khóa học!</h2>
+                    <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-300 max-w-lg mx-auto leading-relaxed">
+                      Bạn đã hoàn thành 100% thời lượng bài giảng và vượt qua tất cả bài kiểm tra chuẩn đầu ra của khóa học <strong>${UI.escapeHtml(course.title)}</strong>.
+                    </p>
+                  </div>
+                  <div class="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
+                    <a
+                      href="/student/courses/${courseId}/certificate"
+                      target="_blank"
+                      download="Chung_chi_${UI.escapeHtml(course.course_code || 'PPTQ')}.pdf"
+                      class="w-full sm:w-auto px-6 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold transition-all shadow-md inline-flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <span class="material-symbols-outlined text-[20px]">download</span>
+                      <span>Tải Chứng Chỉ Tốt Nghiệp (PDF)</span>
+                    </a>
+                  </div>
+                </div>
+              </div>
+            `;
+            return;
+          }
           contentContainer.innerHTML = `
             <div class="py-20 text-center text-slate-400 space-y-2">
               <span class="material-symbols-outlined text-4xl text-slate-300">menu_book</span>
@@ -4571,11 +4978,14 @@ class StudentView {
             } else {
               if (meetsAll) {
                 box.innerHTML = `
-                  <a href="#/student/courses" id="cisco-next-btn" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white transition-colors flex items-center gap-1.5 shadow-md cursor-pointer">
+                  <button type="button" id="cisco-next-btn" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white transition-all flex items-center gap-1.5 shadow-md cursor-pointer animate-fade-in">
                     <span>Hoàn thành khóa học</span>
                     <span class="material-symbols-outlined text-[16px]">celebration</span>
-                  </a>
+                  </button>
                 `;
+                box.firstElementChild.onclick = async () => {
+                  await StudentView.showCourseCompletionCelebrationModal(course, courseId);
+                };
               } else {
                 box.innerHTML = `
                   <button type="button" id="cisco-next-btn" disabled class="px-5 py-2.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-300/80 dark:border-slate-700 cursor-not-allowed select-none">
@@ -5367,7 +5777,7 @@ class StudentView {
                       }
                     } else if (qType === 'TRUE_FALSE') {
                       const selectedRadio = card.querySelector(`input[name="cisco-modal-tf-${qIdx}"]:checked`);
-                      const rawVal = qData.correct_value !== undefined ? qData.correct_value : qData.correct_answer;
+                      const rawVal = qData.correct_value !== undefined ? qData.correct_value : (qData.correct_answer !== undefined ? qData.correct_answer : (qData.correct_index === 0));
                       const expectedVal = rawVal === true || String(rawVal).trim().toLowerCase() === 'true';
                       const labels = card.querySelectorAll('.cisco-modal-tf-label');
                       labels.forEach(lbl => {
@@ -5444,7 +5854,88 @@ class StudentView {
                   checkAndUnlockLesson();
 
                 } else {
-                  // FAIL: ANTI-LEAK PROTECTION — DO NOT reveal correct answers or explanations!
+                  // In preview mode (instructor testing), reveal answers so the instructor can check right/wrong!
+                  if (isPreview) {
+                    questionResults.forEach(({ card, qData, qType, qIdx, isCorrect, feedbackDetail }) => {
+                      const explDiv = card.querySelector('.cisco-modal-explanation');
+
+                      if (qType === 'MULTIPLE_CHOICE') {
+                        const expectedSet = new Set(
+                          Array.isArray(qData.correct_answers)
+                            ? qData.correct_answers
+                            : (typeof qData.correct_index === 'number' ? [qData.correct_index] : [0])
+                        );
+                        const selectedInputs = card.querySelectorAll('input:checked');
+                        const selectedSet = new Set(Array.from(selectedInputs).map(inp => parseInt(inp.value, 10)));
+                        const choiceLabels = card.querySelectorAll('.cisco-modal-choice-label');
+                        choiceLabels.forEach(lbl => {
+                          const chIdx = parseInt(lbl.dataset.chidx, 10);
+                          const badge = lbl.querySelector('.choice-badge');
+                          lbl.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+                          if (expectedSet.has(chIdx)) {
+                            lbl.classList.add('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40');
+                            if (badge) badge.className = 'w-6 h-6 rounded-lg bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0';
+                          } else if (selectedSet.has(chIdx)) {
+                            lbl.classList.add('border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+                            if (badge) badge.className = 'w-6 h-6 rounded-lg bg-rose-600 text-white font-bold text-xs flex items-center justify-center shrink-0';
+                          }
+                        });
+                      } else if (qType === 'FILL_BLANK') {
+                        const blankInputs = card.querySelectorAll('.cisco-modal-blank-input');
+                        const blanks = qData.blanks || [];
+                        blankInputs.forEach(inp => {
+                          const bIdx = parseInt(inp.dataset.bidx, 10);
+                          const userVal = (inp.value || '').trim().toLowerCase();
+                          const blankDef = blanks[bIdx] || {};
+                          const rawAccepted = Array.isArray(blankDef.accepted_answers) ? blankDef.accepted_answers : (blankDef.accepted_answers ? [blankDef.accepted_answers] : []);
+                          const acceptedList = rawAccepted.map(a => String(a).trim().toLowerCase()).filter(Boolean);
+                          const blankMatches = userVal.length > 0 && acceptedList.includes(userVal);
+                          inp.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+                          inp.classList.add(blankMatches ? 'border-emerald-500' : 'border-rose-500', blankMatches ? 'bg-emerald-50' : 'bg-rose-50');
+                        });
+                      } else if (qType === 'MATCHING') {
+                        const selectInputs = card.querySelectorAll('.cisco-quiz-matching-select');
+                        const pairs = qData.pairs || [];
+                        const resultsMap = {};
+                        selectInputs.forEach(sel => {
+                          const pIdx = parseInt(sel.dataset.pidx, 10);
+                          const userVal = sel.value;
+                          const expectedRight = pairs[pIdx]?.right;
+                          const isMatch = Boolean(userVal && expectedRight && String(userVal).trim().toLowerCase() === String(expectedRight).trim().toLowerCase());
+                          resultsMap[pIdx] = isMatch;
+                        });
+                        const matchingBoard = card.querySelector('.cisco-quiz-matching-board');
+                        if (matchingBoard && typeof matchingBoard._setMatchResults === 'function') {
+                          matchingBoard._setMatchResults(resultsMap);
+                        }
+                      } else if (qType === 'TRUE_FALSE') {
+                        const selectedRadio = card.querySelector(`input[name="cisco-modal-tf-${qIdx}"]:checked`);
+                        const rawVal = qData.correct_value !== undefined ? qData.correct_value : (qData.correct_answer !== undefined ? qData.correct_answer : (qData.correct_index === 0));
+                        const expectedVal = rawVal === true || String(rawVal).trim().toLowerCase() === 'true';
+                        const labels = card.querySelectorAll('.cisco-modal-tf-label');
+                        labels.forEach(lbl => {
+                          const lblVal = lbl.dataset.val === 'true';
+                          lbl.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+                          if (lblVal === expectedVal) lbl.classList.add('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40');
+                          else if (selectedRadio && (selectedRadio.value === 'true') === lblVal) lbl.classList.add('border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+                        });
+                      }
+
+                      if (explDiv) {
+                        explDiv.classList.remove('hidden', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'text-emerald-800', 'dark:text-emerald-200', 'border-emerald-200', 'bg-rose-50', 'dark:bg-rose-950/40', 'text-rose-800', 'dark:text-rose-200', 'border-rose-200');
+                        explDiv.classList.add('border', isCorrect ? 'bg-emerald-50' : 'bg-rose-50', isCorrect ? 'dark:bg-emerald-950/40' : 'dark:bg-rose-950/40', isCorrect ? 'text-emerald-900' : 'text-rose-900', isCorrect ? 'dark:text-emerald-200' : 'dark:text-rose-200', isCorrect ? 'border-emerald-200' : 'border-rose-200');
+                        explDiv.innerHTML = `
+                          <div class="font-bold flex items-center gap-1">
+                            <span class="material-symbols-outlined text-[16px]">${isCorrect ? 'check_circle' : 'cancel'}</span>
+                            <span>${isCorrect ? 'Chính xác!' : 'Chưa chính xác.'}</span>
+                          </div>
+                          <div class="mt-1 leading-relaxed">${feedbackDetail}</div>
+                        `;
+                      }
+                    });
+                  }
+
+                  // FAIL: ANTI-LEAK PROTECTION — DO NOT reveal correct answers or explanations for students!
                   if (banner) {
                     banner.innerHTML = `
                       <div class="flex items-center gap-2.5 p-3 rounded-xl bg-slate-900/95 border border-slate-800 text-slate-200 shadow-sm">
@@ -6157,9 +6648,33 @@ class StudentView {
         else applyVolume(nextVol, false);
       }
     });
-    container._customPlayer = { pause, play: toggle };
-    const hidden = () => { if (document.visibilityState === 'hidden') { pause(); transition('paused'); } };
-    listen(document, 'visibilitychange', hidden);
+    container._customPlayer = {
+      pause,
+      play: toggle,
+      resume: () => {
+        if (!playing && document.visibilityState !== 'hidden' && (!armor || !armor.isBlackedOut)) {
+          toggle();
+        }
+      },
+      driver,
+      isYouTube: Boolean(youtube)
+    };
+    const onFocusLost = () => {
+      pause();
+      transition('paused');
+    };
+    const onFocusRegained = () => {
+      if (document.visibilityState !== 'hidden' && (!armor || !armor.isBlackedOut)) {
+        status('');
+      }
+    };
+    listen(document, 'visibilitychange', () => {
+      if (document.visibilityState === 'hidden') onFocusLost();
+      else onFocusRegained();
+    });
+    listen(window, 'blur', onFocusLost);
+    listen(window, 'focus', onFocusRegained);
+
     if (typeof VideoArmor !== 'undefined') {
       armor = VideoArmor.mount(container, {
         silentWatermark: options.silentWatermark ?? false,
@@ -6167,7 +6682,16 @@ class StudentView {
                  (window.router && window.router.currentUser) ||
                  (typeof AuthState !== 'undefined' ? AuthState.getUser() : {}),
         ip: options.clientIp || '',
-        onSecurityViolation: (reason, details) => { pause(); transition('paused'); ApiClient.recordTelemetry?.('VIDEO_SECURITY_VIOLATION', { reason, ...details }); }
+        onSecurityViolation: (reason, details) => {
+          pause();
+          transition('paused');
+          ApiClient.recordTelemetry?.('VIDEO_SECURITY_VIOLATION', { reason, ...details });
+        },
+        onRestore: () => {
+          if (document.visibilityState !== 'hidden' && (!armor || !armor.isBlackedOut)) {
+            status('');
+          }
+        }
       });
       container._videoArmorInstance = armor;
     }
@@ -7261,6 +7785,30 @@ class StudentView {
                           autocomplete="off"
                         />
                       </label>
+                    ` : q.question_type === 'TRUE_FALSE' ? `
+                      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                        ${(q.choices || []).map(c => {
+                          const choiceKey = c.choice_key || c.choice_id || c.id;
+                          const isSelected = c.is_selected || (q.selected_choice_keys || []).includes(String(choiceKey));
+                          const textLower = String(c.content || c.text || c.label || '').toLowerCase();
+                          const isTrue = textLower.includes('đúng') || textLower.includes('true') || String(c.label).toUpperCase() === 'A';
+                          return `
+                            <label class="flex items-center gap-3 p-4 rounded-2xl border transition-all cursor-pointer choice-label ${isSelected ? (isTrue ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/40 ring-1 ring-emerald-500' : 'border-rose-500 bg-rose-50/70 dark:bg-rose-950/40 ring-1 ring-rose-500') : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 hover:border-slate-400 dark:hover:border-slate-600'}">
+                              <input
+                                type="radio"
+                                name="q_answer_${idx}"
+                                value="${choiceKey}"
+                                class="mt-0.5 text-primary focus:ring-primary/20 cursor-pointer"
+                                ${isSelected ? 'checked' : ''}
+                              />
+                              <div class="flex items-center gap-2 flex-1">
+                                <span class="material-symbols-outlined text-[20px] ${isTrue ? 'text-emerald-500' : 'text-rose-500'}">${isTrue ? 'check_circle' : 'cancel'}</span>
+                                <span class="text-sm font-bold text-slate-800 dark:text-slate-100">${UI.escapeHtml(cleanChoiceText(c.content || c.text || (isTrue ? 'Đúng (True)' : 'Sai (False)')))}</span>
+                              </div>
+                            </label>
+                          `;
+                        }).join('')}
+                      </div>
                     ` : (q.choices || []).map(c => `
                       <label class="flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/60 cursor-pointer transition-colors choice-label">
                         <input
@@ -7652,12 +8200,13 @@ class StudentView {
             indicatorCount.textContent = `${answeredQuestions.size}/${questions.length} câu`;
           }
 
-          // Update Matrix cell style
+          // Update Matrix cell style - strictly synchronized with answeredQuestions (100% completion gate)
           const matrixBtn = document.getElementById(`matrix_btn_${idx}`);
           if (matrixBtn) {
-            matrixBtn.classList.toggle('bg-primary', selectedChoiceIds.length > 0);
-            matrixBtn.classList.toggle('text-white', selectedChoiceIds.length > 0);
-            matrixBtn.classList.toggle('border-primary', selectedChoiceIds.length > 0);
+            const isComplete = answeredQuestions.has(idx);
+            matrixBtn.classList.toggle('bg-primary', isComplete);
+            matrixBtn.classList.toggle('text-white', isComplete);
+            matrixBtn.classList.toggle('border-primary', isComplete);
           }
 
           try {
@@ -7673,13 +8222,15 @@ class StudentView {
 
       // Interactive matching board wiring for exams
       container.querySelectorAll('.matching-challenge-board[data-exam-matching-qidx]').forEach(board => {
-        StudentView.setupMatchingBoard(board, (lKey, rVal) => {
+        StudentView.setupMatchingBoard(board, (lKey, rVal, rPos, rText) => {
           const select = board.querySelector(`select.interactive-slot-select[data-group-index="${lKey}"]`);
           if (select) {
-            if (rVal) {
-              const opt = Array.from(select.options).find(o =>
-                (o.dataset.answerText || '').toLocaleLowerCase() === String(rVal).toLocaleLowerCase() || o.value === String(rVal)
-              );
+            if (rVal || rText) {
+              const targetText = String(rText || rVal || '').trim().toLowerCase();
+              const opt = Array.from(select.options).find(o => {
+                const optText = String(o.dataset.answerText || o.textContent || '').trim().toLowerCase();
+                return (targetText && optText === targetText) || (rVal && o.value === String(rVal));
+              });
               select.value = opt ? opt.value : '';
             } else {
               select.value = '';
@@ -8582,8 +9133,14 @@ class StudentView {
                         `;
                       })()}
 
-                      <!-- Options Grid (if choices available) -->
-                      ${choices.length > 0 ? `
+                      <!-- Options Grid or Visual Matching Board Review -->
+                      ${(() => {
+                        const groupedMatch = parseGroupedAttemptChoices(q);
+                        if (groupedMatch && groupedMatch.kind === 'MATCH') {
+                          return StudentView.renderMatchingBoardReview(q, idx, answersVisible, answerVisibilityPolicy);
+                        }
+                        if (choices.length > 0) {
+                          return `
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs sm:text-sm">
                           ${choices.map(c => {
                             const selectedKeys = q.selected_choice_keys || q.selected_choice_ids || [];
@@ -8624,12 +9181,15 @@ class StudentView {
                             `;
                           }).join('')}
                         </div>
-                      ` : `
+                          `;
+                        }
+                        return `
                         <div class="space-y-1.5 text-xs text-slate-600 dark:text-slate-400 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40">
                           <div>${answerLabel}: <strong class="${isManualEssay ? (manualEssayIsFullCredit ? 'text-emerald-600 font-bold' : 'text-amber-600 font-bold') : (isCorrect ? 'text-emerald-600 font-bold' : 'text-rose-600 font-bold')}">${UI.escapeHtml(UI.cleanChoiceText(chosenAns))}</strong></div>
                           ${(correctAns && answerVisibilityPolicy !== 'CORRECT_WRONG_ONLY') ? `<div class="text-emerald-600">Đáp án chính xác: <strong>${UI.escapeHtml(UI.cleanChoiceText(correctAns))}</strong></div>` : ''}
                         </div>
-                      `}
+                        `;
+                      })()}
 
                       ${isManualEssay && q.feedback ? `
                         <div class="p-3 rounded-xl bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200">
@@ -8666,6 +9226,8 @@ class StudentView {
           </div>
         </div>
       `;
+
+      setTimeout(() => StudentView.initMatchingBoardReviews(container), 80);
 
       // 1. Audit Drawer Handler (Review Detail Drawer)
       // 1. Audit Drawer Handler (Review Detail Drawer)
@@ -9155,32 +9717,48 @@ class StudentView {
         if (assessType === 'MIDTERM') {
           typeLabel = 'Khảo thí Giữa kỳ';
           typeClass = 'bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800';
-        } else if (assessType === 'FINAL_EXAM') {
-          typeLabel = 'Khảo thí Cuối kỳ';
+        } else if (assessType === 'FINAL_EXAM' || assessType === 'FINAL') {
+          typeLabel = 'Khảo thí Cuối kỳ (Final Test)';
           typeClass = 'bg-purple-50 text-purple-800 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800';
+        } else if (a.learning_unit_id || (a.description && a.description.includes('unit_id:')) || /chương/i.test(a.title)) {
+          typeLabel = 'Bài kiểm tra Chương';
+          typeClass = 'bg-indigo-50 text-indigo-800 border border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800';
         }
+
+        const isPrereqLocked = Boolean(a.is_locked || a.start_block_reason === 'PREREQUISITE');
+        const isClosed = Boolean(a.is_closed || a.start_block_reason === 'CLOSED');
+        const isLimitReached = Boolean(a.is_attempt_limit_reached || a.start_block_reason === 'EXHAUSTED');
+        const isCanResume = Boolean(a.can_resume || (a.active_attempt_id && a.can_resume !== false));
+        const isCanStart = Boolean(a.can_start);
 
         // BẤT BIẾN DUY NHẤT 01 STATUS BADGE
         let singleStatusBadge = '';
-        if (a.is_locked || a.can_start === false) {
+        if (isPrereqLocked) {
           singleStatusBadge = `
             <span class="text-[11px] font-bold px-2.5 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800 flex items-center gap-1.5 shadow-2xs">
               <span class="material-symbols-outlined text-[13px] text-amber-600">lock</span>
               <span>Chưa đủ điều kiện thi</span>
             </span>
           `;
-        } else if (a.is_closed) {
+        } else if (isClosed) {
           singleStatusBadge = `
             <span class="text-[11px] font-bold px-2.5 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800 flex items-center gap-1.5 shadow-2xs">
               <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
               <span>Đã kết thúc</span>
             </span>
           `;
-        } else if (a.is_attempt_limit_reached) {
+        } else if (isLimitReached) {
           singleStatusBadge = `
             <span class="text-[11px] font-bold px-2.5 py-0.5 rounded-md bg-teal-50 text-teal-700 border border-teal-200 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-800 flex items-center gap-1.5 shadow-2xs">
               <span class="material-symbols-outlined text-[13px]">check_circle</span>
               <span>Đã hoàn thành</span>
+            </span>
+          `;
+        } else if (isCanResume) {
+          singleStatusBadge = `
+            <span class="text-[11px] font-bold px-2.5 py-0.5 rounded-md bg-sky-50 text-sky-700 border border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800 flex items-center gap-1.5 shadow-2xs">
+              <span class="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse"></span>
+              <span>Đang làm dở</span>
             </span>
           `;
         } else if (a.is_waiting_room_open && !a.is_open) {
@@ -9201,7 +9779,7 @@ class StudentView {
           singleStatusBadge = `
             <span class="text-[11px] font-bold px-2.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 flex items-center gap-1.5 shadow-2xs">
               <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span>Đang diễn ra</span>
+              <span>Sẵn sàng thi</span>
             </span>
           `;
         }
@@ -9220,14 +9798,14 @@ class StudentView {
 
         // Nút hành động
         let actionHtml = '';
-        if (a.is_locked || a.can_start === false) {
+        if (isPrereqLocked) {
           actionHtml = `
-            <button type="button" class="px-3.5 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-300/80 dark:border-slate-700 cursor-not-allowed select-none" title="${UI.escapeHtml(a.lock_reason || 'Bạn cần hoàn thành toàn bộ bài học trong khóa học trước khi làm bài thi này.')}" onclick="UI.showToast('${UI.escapeHtml(a.lock_reason || 'Bạn cần hoàn thành toàn bộ bài học trong khóa học trước khi làm bài thi này.')}', 'warning')">
+            <button type="button" class="px-3.5 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-300/80 dark:border-slate-700 cursor-not-allowed select-none" title="${UI.escapeHtml(a.lock_reason || 'Bạn cần hoàn thành toàn bộ bài học trong chương trước khi làm bài thi này.')}" onclick="UI.showToast('${UI.escapeHtml(a.lock_reason || 'Bạn cần hoàn thành toàn bộ bài học trong chương trước khi làm bài thi này.')}', 'warning')">
               <span class="material-symbols-outlined text-[15px]">lock</span>
               <span>Chưa đủ điều kiện thi</span>
             </button>
           `;
-        } else if (a.is_closed) {
+        } else if (isClosed) {
           actionHtml = `
             ${a.attempts_count > 0 ? `
               <a href="#/student/assessments/results?id=${a.attempt_id || ''}" class="c-btn c-btn-secondary c-btn-sm flex items-center gap-1 font-bold">
@@ -9240,11 +9818,18 @@ class StudentView {
               <span>Đã đóng ca thi</span>
             </button>
           `;
-        } else if (a.is_attempt_limit_reached) {
+        } else if (isLimitReached) {
           actionHtml = `
             <a href="#/student/assessments/results?id=${a.attempt_id || ''}" class="c-btn c-btn-secondary c-btn-sm flex items-center gap-1.5 font-bold shadow-2xs">
               <span class="material-symbols-outlined text-[16px] text-teal-600">fact_check</span>
               <span>Xem kết quả chính thức</span>
+            </a>
+          `;
+        } else if (isCanResume) {
+          actionHtml = `
+            <a href="#/student/assessments/waiting-room?id=${a.assessment_id || a.id}" class="c-btn c-btn-primary c-btn-sm flex items-center gap-1.5 font-bold shadow-2xs bg-amber-600 hover:bg-amber-700 text-white">
+              <span class="material-symbols-outlined text-[16px]">play_arrow</span>
+              <span>Làm bài tiếp</span>
             </a>
           `;
         } else if (a.is_waiting_room_open && !a.is_open) {
@@ -10282,6 +10867,899 @@ class StudentView {
       container.innerHTML = `<div class="p-8 text-center text-rose-500">Lỗi nạp thông tin: ${UI.escapeHtml(err.message)}</div>`;
     }
   }
+
+  // =========================================================================
+  // 12. Student Digital Wallet & PayOS Deposit Suite (TASK-128 - Invariant 10.27)
+  // Two-column responsive architecture:
+  // Left: Available Balance Card & VietQR PayOS Deposit Form
+  // Right: Realtime Transaction History with Status Badging & 5-item Pagination
+  // =========================================================================
+
+  // =========================================================================
+  // Dedicated Course Purchase Modal (TASK-120: Dual Payment Options)
+  // =========================================================================
+  static async openPurchaseModal(courseId, courseTitle, coursePrice = 0, onDoneCallback = null) {
+    const priceNum = Number(coursePrice || 0);
+
+    // If free course (0 VNĐ), enroll immediately
+    if (priceNum <= 0) {
+      try {
+        UI.startMicroLoading();
+        const res = await ApiClient.purchaseCourseWithWallet(courseId);
+        UI.showToast(res.message || 'Đăng ký khóa học thành công!', 'success');
+        if (typeof onDoneCallback === 'function') onDoneCallback(courseId);
+        else window.location.hash = `#/student/courses/detail?id=${courseId}`;
+      } catch (err) {
+        UI.showToast(err.message || 'Không thể đăng ký khóa học.', 'error');
+      } finally {
+        UI.stopMicroLoading();
+      }
+      return;
+    }
+
+    // Load current wallet balance
+    let userBalance = 0;
+    try {
+      const walletRes = await ApiClient.getMyWallet();
+      userBalance = Number(walletRes.balance || 0);
+    } catch {
+      userBalance = 0;
+    }
+
+    const hasEnoughBalance = userBalance >= priceNum;
+
+    const modalId = 'modal-purchase-course';
+    document.getElementById(modalId)?.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = modalId;
+    overlay.className = 'fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in font-sans';
+    overlay.innerHTML = `
+      <div class="c-card max-w-2xl w-full p-6 sm:p-7 space-y-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl rounded-3xl relative overflow-hidden">
+        
+        <!-- Header -->
+        <div class="flex items-start justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 flex items-center justify-center shrink-0">
+              <span class="material-symbols-outlined text-[24px]">shopping_cart_checkout</span>
+            </div>
+            <div>
+              <h3 class="text-lg font-black text-slate-900 dark:text-white">Thanh toán Mua Khóa học</h3>
+              <p class="text-xs text-slate-400 mt-0.5">Chọn phương thức thanh toán phù hợp để kích hoạt khóa học ngay lập tức.</p>
+            </div>
+          </div>
+          <button type="button" id="btn-close-purchase-modal" class="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 flex items-center justify-center transition-colors cursor-pointer">
+            <span class="material-symbols-outlined text-[18px]">close</span>
+          </button>
+        </div>
+
+        <!-- Course Summary -->
+        <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 flex items-center justify-between gap-3">
+          <div class="min-w-0">
+            <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Khóa học đăng ký</div>
+            <div class="text-sm font-extrabold text-slate-900 dark:text-white truncate">${UI.escapeHtml(courseTitle)}</div>
+          </div>
+          <div class="text-right shrink-0">
+            <div class="text-[11px] font-bold text-slate-400">Học phí niêm yết</div>
+            <div class="text-base font-black text-rose-600 dark:text-rose-400">${UI.formatMoney(priceNum)}</div>
+          </div>
+        </div>
+
+        <!-- 2 Payment Choice Options -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          
+          <!-- Option 1: Pay with Wallet -->
+          <div class="p-5 rounded-2xl border-2 ${hasEnoughBalance ? 'border-emerald-500 bg-emerald-50/20 dark:bg-emerald-950/10' : 'border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/30'} flex flex-col justify-between space-y-4">
+            <div class="space-y-2.5">
+              <div class="flex items-center justify-between">
+                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300">Cách 1: Số dư ví</span>
+                ${hasEnoughBalance ? '<span class="material-symbols-outlined text-emerald-600 text-[18px]">check_circle</span>' : '<span class="material-symbols-outlined text-amber-500 text-[18px]">error</span>'}
+              </div>
+              <h4 class="font-extrabold text-sm text-slate-900 dark:text-white">Thanh toán bằng số dư ví</h4>
+              <div class="text-xs text-slate-500 dark:text-slate-400">
+                Số dư hiện tại: <strong class="text-slate-800 dark:text-slate-200">${UI.formatMoney(userBalance)}</strong>
+              </div>
+              ${!hasEnoughBalance ? `
+                <div class="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-[11px] text-amber-800 dark:text-amber-300">
+                  Số dư ví không đủ. Cần nạp thêm <strong>${UI.formatMoney(priceNum - userBalance)}</strong>.
+                </div>
+              ` : `
+                <div class="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-[11px] text-emerald-700 dark:text-emerald-300 font-semibold">
+                  Số dư đủ để kích hoạt ngay lập tức!
+                </div>
+              `}
+            </div>
+
+            <div>
+              ${hasEnoughBalance ? `
+                <button type="button" id="btn-confirm-wallet-purchase" class="w-full c-btn c-btn-primary c-btn-sm font-bold shadow-sm flex items-center justify-center gap-1.5 cursor-pointer">
+                  <span class="material-symbols-outlined text-[16px]">account_balance_wallet</span>
+                  <span>Trừ ví & Vào học ngay</span>
+                </button>
+              ` : `
+                <button type="button" id="btn-topup-wallet-nav" class="w-full c-btn c-btn-secondary c-btn-sm font-bold flex items-center justify-center gap-1.5 cursor-pointer text-emerald-700 border-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40">
+                  <span class="material-symbols-outlined text-[16px]">add_circle</span>
+                  <span>Nạp ví ngay</span>
+                </button>
+              `}
+            </div>
+          </div>
+
+          <!-- Option 2: Pay directly via VietQR PayOS -->
+          <div class="p-5 rounded-2xl border-2 border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/30 flex flex-col justify-between space-y-4">
+            <div class="space-y-2.5">
+              <div class="flex items-center justify-between">
+                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300">Cách 2: Quét mã VietQR</span>
+                <span class="material-symbols-outlined text-blue-600 text-[18px]">qr_code_2</span>
+              </div>
+              <h4 class="font-extrabold text-sm text-slate-900 dark:text-white">Quét mã QR thanh toán tức thì</h4>
+              <p class="text-xs text-slate-500 dark:text-slate-400">
+                Thanh toán trực tiếp bằng ứng dụng ngân hàng bất kỳ qua VietQR PayOS.
+              </p>
+              <div class="p-2 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-[11px] text-blue-700 dark:text-blue-300 font-semibold">
+                Tự động kích hoạt khóa học sau khi chuyển tiền!
+              </div>
+            </div>
+
+            <div>
+              <button type="button" id="btn-pay-direct-qr" class="w-full c-btn c-btn-secondary c-btn-sm font-bold flex items-center justify-center gap-1.5 cursor-pointer text-blue-700 border-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/40">
+                <span class="material-symbols-outlined text-[16px]">qr_code_scanner</span>
+                <span>Tạo mã QR mua ngay</span>
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Direct QR Container (Hidden initially) -->
+        <div id="direct-qr-container" class="hidden p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4 animate-fade-in text-center">
+          <div class="inline-block p-2 bg-white rounded-xl border border-slate-200 shadow-sm mx-auto">
+            <img id="direct-qr-image" src="" alt="VietQR" class="w-48 h-48 sm:w-56 sm:h-56 mx-auto object-contain" />
+          </div>
+          <div class="max-w-md mx-auto p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs space-y-1.5 text-left font-sans">
+            <div class="flex justify-between"><span class="text-slate-500">Ngân hàng:</span><strong class="text-slate-900 dark:text-white" id="direct-qr-bank">MBBank (MBB)</strong></div>
+            <div class="flex justify-between"><span class="text-slate-500">Số tài khoản:</span><strong class="text-slate-900 dark:text-white font-mono" id="direct-qr-account-number">0908667141</strong></div>
+            <div class="flex justify-between"><span class="text-slate-500">Chủ tài khoản:</span><strong class="text-slate-900 dark:text-white uppercase" id="direct-qr-account-name">PHẠM NGUYỄN HOÀNG PHÚC</strong></div>
+            <div class="flex justify-between"><span class="text-slate-500">Số tiền:</span><strong class="text-emerald-600 font-mono" id="direct-qr-amount">...</strong></div>
+            <div class="flex justify-between border-t border-slate-200 dark:border-slate-700 pt-1.5"><span class="text-slate-500 font-bold">Nội dung CK:</span><strong id="direct-qr-transfer-code" class="font-mono font-black text-rose-600 bg-rose-50 dark:bg-rose-950/60 px-1.5 py-0.5 rounded select-all">PPTQ...</strong></div>
+          </div>
+          <p class="text-slate-400 text-[11px]">Hệ thống đang tự động lắng nghe giao dịch để kích hoạt khóa học...</p>
+        </div>
+
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const close = () => {
+      if (window._purchasePollTimer) clearInterval(window._purchasePollTimer);
+      overlay.remove();
+    };
+
+    document.getElementById('btn-close-purchase-modal').onclick = close;
+    overlay.onclick = (e) => {
+      if (e.target === overlay) close();
+    };
+
+    // Nav to wallet
+    const btnTopupNav = document.getElementById('btn-topup-wallet-nav');
+    if (btnTopupNav) {
+      btnTopupNav.onclick = () => {
+        close();
+        window.location.hash = '#/student/wallet';
+      };
+    }
+
+    // Confirm wallet purchase
+    const btnWalletConfirm = document.getElementById('btn-confirm-wallet-purchase');
+    if (btnWalletConfirm) {
+      btnWalletConfirm.onclick = async () => {
+        btnWalletConfirm.disabled = true;
+        btnWalletConfirm.innerHTML = `<span class="inline-block animate-spin text-sm">⏳</span><span>Đang xử lý...</span>`;
+        try {
+          const res = await ApiClient.purchaseCourseWithWallet(courseId);
+          UI.showToast(res.message || 'Mua khóa học thành công!', 'success');
+          close();
+          if (typeof onDoneCallback === 'function') onDoneCallback(courseId);
+          else window.location.hash = `#/student/courses/detail?id=${courseId}`;
+        } catch (err) {
+          UI.showToast(err.message || 'Lỗi khi mua khóa học.', 'error');
+          btnWalletConfirm.disabled = false;
+          btnWalletConfirm.innerHTML = `<span class="material-symbols-outlined text-[16px]">account_balance_wallet</span><span>Trừ ví & Vào học ngay</span>`;
+        }
+      };
+    }
+
+    // Direct VietQR Pay
+    const btnDirectQr = document.getElementById('btn-pay-direct-qr');
+    if (btnDirectQr) {
+      btnDirectQr.onclick = async () => {
+        btnDirectQr.disabled = true;
+        btnDirectQr.innerHTML = `<span class="inline-block animate-spin text-sm">⏳</span><span>Đang tạo QR...</span>`;
+        try {
+          const retUrl = window.location.origin + `/#/student/courses/detail?id=${courseId}&status=success`;
+          const cancelUrl = window.location.origin + `/#/student/catalog`;
+          let depositRes;
+          try {
+            depositRes = await ApiClient.createDirectCourseQr(courseId, retUrl, cancelUrl);
+          } catch (qrErr) {
+            if (qrErr && qrErr.message && qrErr.message.includes('điều kiện tiên quyết') || (qrErr && qrErr.message && qrErr.message.includes('tiên quyết'))) {
+              throw qrErr;
+            }
+            depositRes = await ApiClient.createDepositRequest(priceNum, retUrl, cancelUrl);
+          }
+          const data = depositRes?.data || depositRes;
+          if (!data || !data.qr_code) throw new Error('Không thể tạo mã VietQR.');
+
+          const qrSec = document.getElementById('direct-qr-container');
+          const qrImg = document.getElementById('direct-qr-image');
+          const qrCodeEl = document.getElementById('direct-qr-transfer-code');
+          const qrBankEl = document.getElementById('direct-qr-bank');
+          const qrAccNumEl = document.getElementById('direct-qr-account-number');
+          const qrAccNameEl = document.getElementById('direct-qr-account-name');
+          const qrAmtEl = document.getElementById('direct-qr-amount');
+          const directQrWrapper = qrImg?.parentElement || qrSec;
+          UI.renderQrCode(directQrWrapper, qrImg, data);
+
+          if (qrImg) {
+            qrImg.classList.add('cursor-pointer');
+            qrImg.title = 'Bấm để phóng to mã QR';
+            qrImg.onclick = () => {
+              UI.showQrLightbox({
+                qrSrc: data.qr_code,
+                qrDataUri: data.qr_data_uri,
+                qrRaw: data.qr_raw,
+                vietqrUrl: data.vietqr_url,
+                title: 'Mã QR Thanh toán Khóa học VietQR',
+                bankName: data.bank_name || 'MBBank',
+                accountNumber: data.account_number || '',
+                amount: data.amount || priceNum,
+                transferCode: data.transfer_code_12 || ''
+              });
+            };
+          }
+
+          if (qrCodeEl) qrCodeEl.textContent = data.transfer_code_12 || '';
+          if (qrBankEl) qrBankEl.textContent = data.bank_name || 'MBBank (MBB)';
+          if (qrAccNumEl) qrAccNumEl.textContent = data.account_number || '0908667141';
+          if (qrAccNameEl) qrAccNameEl.textContent = data.account_name || 'PHẠM NGUYỄN HOÀNG PHÚC';
+          if (qrAmtEl) qrAmtEl.textContent = UI.formatMoney(data.amount || priceNum);
+          if (qrSec) qrSec.classList.remove('hidden');
+
+          // Poll for completion with active PayOS status synchronization
+          if (window._purchasePollTimer) clearInterval(window._purchasePollTimer);
+          window._purchasePollTimer = setInterval(async () => {
+            if (!document.getElementById('modal-purchase-course')) {
+              clearInterval(window._purchasePollTimer);
+              return;
+            }
+            try {
+              const statusRes = await ApiClient.checkTransactionStatus(data.transaction_id || data.order_code);
+              if (statusRes && (statusRes.status === 'COMPLETED' || statusRes.status === 'SUCCESS')) {
+                clearInterval(window._purchasePollTimer);
+                // Automatically complete purchase with the deposited balance
+                await ApiClient.purchaseCourseWithWallet(courseId);
+                UI.showToast('Thanh toán thành công! Khóa học đã được kích hoạt.', 'success');
+                close();
+                if (typeof onDoneCallback === 'function') onDoneCallback(courseId);
+                else window.location.hash = `#/student/courses/detail?id=${courseId}`;
+              }
+            } catch {}
+          }, 2500);
+
+        } catch (err) {
+          UI.showToast(err.message || 'Lỗi khi tạo mã QR.', 'error');
+        } finally {
+          btnDirectQr.disabled = false;
+          btnDirectQr.innerHTML = `<span class="material-symbols-outlined text-[16px]">qr_code_scanner</span><span>Tạo mã QR mua ngay</span>`;
+        }
+      };
+    }
+  }
+
+  static async renderWallet(container, query = '') {
+    container.innerHTML = `
+      <div class="py-6 space-y-8 max-w-[1440px] w-full mx-auto px-4 sm:px-6 lg:px-8 animate-fade-in font-sans">
+        <!-- Page Header -->
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200/80 dark:border-slate-800">
+          <div>
+            <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2.5">
+              <span class="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center material-symbols-outlined text-[24px]">account_balance_wallet</span>
+              <span>Ví tiền</span>
+            </h1>
+          </div>
+          <div class="flex items-center gap-2">
+            <button type="button" id="btn-refresh-wallet-all" class="px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors inline-flex items-center gap-1.5 shadow-2xs cursor-pointer">
+              <span class="material-symbols-outlined text-[16px]">refresh</span>
+              <span>Làm mới</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Top Section: 2-Column Responsive Layout (Left: Balance & Deposit Form, Right: VietQR / Guidance) -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          
+          <!-- LEFT COLUMN (5 cols): Available Balance & Deposit Form -->
+          <div class="lg:col-span-5 space-y-6">
+            
+            <!-- Available Balance Banner -->
+            <div class="rounded-3xl p-6 sm:p-7 bg-gradient-to-br from-emerald-500 via-teal-600 to-cyan-700 dark:from-slate-900 dark:via-indigo-950 dark:to-slate-900 text-white shadow-elevated relative overflow-hidden border border-emerald-400/20 dark:border-indigo-900/60">
+              <div class="absolute -right-8 -bottom-8 w-40 h-40 rounded-full bg-white/10 dark:bg-indigo-500/10 pointer-events-none"></div>
+              <div class="absolute -right-4 -top-4 w-24 h-24 rounded-full bg-white/10 dark:bg-cyan-500/10 pointer-events-none"></div>
+              
+              <div class="relative z-10 space-y-3">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2 text-white/90">
+                    <span class="material-symbols-outlined text-[20px]">account_balance_wallet</span>
+                    <span class="text-xs font-bold uppercase tracking-wider">Số dư khả dụng</span>
+                  </div>
+                  <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-white/20 dark:bg-emerald-500/20 text-white dark:text-emerald-300 backdrop-blur-sm flex items-center gap-1">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse"></span>
+                    <span>Hoạt động</span>
+                  </span>
+                </div>
+
+                <div class="pt-1">
+                  <div id="wallet-balance-display" class="text-3xl sm:text-4xl font-black font-mono tracking-tight text-white drop-shadow-sm">
+                    0 đ
+                  </div>
+                  <p class="text-xs text-white/80 dark:text-slate-400 mt-1">Dùng để thanh toán và ghi danh khóa học nhanh không chờ đợi</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Deposit Form (VietQR PayOS) -->
+            <div class="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-5">
+              <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+                <div class="flex items-center gap-2">
+                  <span class="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center material-symbols-outlined text-[18px]">add_card</span>
+                  <h3 class="font-bold text-sm sm:text-base text-slate-900 dark:text-white">Nạp tiền vào ví</h3>
+                </div>
+                <span class="text-[11px] text-slate-400 font-medium">Tự động 24/7</span>
+              </div>
+
+              <div class="space-y-4">
+                <div>
+                  <label for="deposit-amount-input" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    Số tiền muốn nạp (VNĐ) <span class="text-rose-500 font-bold">*</span>
+                  </label>
+                  <div class="relative">
+                    <input
+                      type="number"
+                      id="deposit-amount-input"
+                      min="10000"
+                      step="10000"
+                      placeholder="Nhập số tiền (VD: 100000)"
+                      class="w-full pl-4 pr-12 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 text-slate-900 dark:text-white font-mono font-bold text-base outline-none focus:border-primary focus:bg-white dark:focus:bg-slate-800 focus:ring-4 focus:ring-primary/10 shadow-2xs transition-all"
+                    />
+                    <span class="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 font-mono">VNĐ</span>
+                  </div>
+                  <p class="text-[11px] text-slate-400 mt-1">Tối thiểu: 10.000 đ. Tối đa: 500.000.000 đ mỗi lần nạp.</p>
+                </div>
+
+                <!-- Quick Preset Chips -->
+                <div>
+                  <span class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Chọn nhanh mệnh giá:</span>
+                  <div class="grid grid-cols-3 sm:grid-cols-5 gap-2" id="deposit-presets">
+                    <button type="button" class="btn-deposit-chip px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-primary text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-primary dark:hover:text-primary bg-slate-50 dark:bg-slate-800 transition-colors cursor-pointer" data-amount="50000">50.000 đ</button>
+                    <button type="button" class="btn-deposit-chip px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-primary text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-primary dark:hover:text-primary bg-slate-50 dark:bg-slate-800 transition-colors cursor-pointer" data-amount="100000">100.000 đ</button>
+                    <button type="button" class="btn-deposit-chip px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-primary text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-primary dark:hover:text-primary bg-slate-50 dark:bg-slate-800 transition-colors cursor-pointer" data-amount="200000">200.000 đ</button>
+                    <button type="button" class="btn-deposit-chip px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-primary text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-primary dark:hover:text-primary bg-slate-50 dark:bg-slate-800 transition-colors cursor-pointer" data-amount="500000">500.000 đ</button>
+                    <button type="button" class="btn-deposit-chip px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-primary text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-primary dark:hover:text-primary bg-slate-50 dark:bg-slate-800 transition-colors cursor-pointer" data-amount="1000000">1.000.000 đ</button>
+                  </div>
+                </div>
+
+                <!-- Generate QR Button -->
+                <button
+                  type="button"
+                  id="btn-generate-qr"
+                  class="w-full py-3.5 px-6 rounded-2xl bg-primary hover:bg-primary-hover text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+                >
+                  <span class="material-symbols-outlined text-[20px]">qr_code_2</span>
+                  <span>Tạo mã QR nạp tiền</span>
+                </button>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- RIGHT COLUMN (7 cols): Helpful Guidance Placeholder OR Active Generated VietQR Card -->
+          <div class="lg:col-span-7">
+            
+            <!-- 1. Initial State: Guidance Placeholder Card -->
+            <div id="qr-placeholder-card" class="bg-white dark:bg-slate-900 rounded-3xl p-8 border border-slate-200/80 dark:border-slate-800 shadow-sm text-center space-y-6">
+              <div class="w-16 h-16 rounded-3xl bg-primary/10 text-primary flex items-center justify-center mx-auto">
+                <span class="material-symbols-outlined text-[36px]">qr_code_scanner</span>
+              </div>
+              <div class="space-y-2">
+                <h3 class="text-lg font-extrabold text-slate-900 dark:text-white">Hướng dẫn nạp tiền tự động</h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">Nhập số tiền ở cột bên trái và bấm <strong>"Tạo mã QR nạp tiền"</strong> để nhận mã VietQR thanh toán thông minh tự động cộng tiền trong 30 giây.</p>
+              </div>
+
+              <!-- 3 Simple Steps -->
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-left pt-2">
+                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 space-y-1.5">
+                  <span class="w-6 h-6 rounded-lg bg-primary text-white font-bold text-xs flex items-center justify-center">1</span>
+                  <div class="font-bold text-xs text-slate-800 dark:text-slate-200">Nhập số tiền</div>
+                  <p class="text-[11px] text-slate-400">Chọn nhanh mệnh giá hoặc tự nhập số tiền nạp.</p>
+                </div>
+                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 space-y-1.5">
+                  <span class="w-6 h-6 rounded-lg bg-emerald-600 text-white font-bold text-xs flex items-center justify-center">2</span>
+                  <div class="font-bold text-xs text-slate-800 dark:text-slate-200">Tạo mã VietQR</div>
+                  <p class="text-[11px] text-slate-400">Hệ thống tạo mã nạp riêng biệt chính xác cho bạn.</p>
+                </div>
+                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 space-y-1.5">
+                  <span class="w-6 h-6 rounded-lg bg-teal-600 text-white font-bold text-xs flex items-center justify-center">3</span>
+                  <div class="font-bold text-xs text-slate-800 dark:text-slate-200">Quét & Nhận tiền</div>
+                  <p class="text-[11px] text-slate-400">Mở app Ngân hàng quét QR, số dư tự cộng ngay.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- 2. Active VietQR Display Card (Initially Hidden, Shown after clicking Generate) -->
+            <div id="qr-display-card" class="hidden bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-7 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-5 animate-fade-in">
+              <div class="text-center space-y-2">
+                <span class="px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60">
+                  Mã VietQR Chuyển Khoản Tự Động
+                </span>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Mở ứng dụng Ngân hàng quét mã QR dưới đây:</p>
+              </div>
+
+              <!-- Large VietQR Viewport (288px-320px with Lightbox Zoom Support) -->
+              <div class="relative group max-w-[288px] sm:max-w-[320px] mx-auto p-3 bg-white rounded-2xl border-2 border-slate-200 dark:border-slate-700 shadow-sm cursor-pointer" id="qr-viewport-box" title="Bấm để phóng to">
+                <img id="qr-image" src="" alt="Mã VietQR nạp tiền" class="w-full aspect-square object-contain mx-auto" />
+                <div class="absolute inset-0 bg-slate-900/40 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-bold gap-1.5 backdrop-blur-[2px]">
+                  <span class="material-symbols-outlined text-[18px]">zoom_in</span>
+                  <span>Bấm để phóng to</span>
+                </div>
+              </div>
+
+              <!-- Transfer Instructions -->
+              <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700 text-xs space-y-2.5 font-sans">
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-500">Ngân hàng:</span>
+                  <span id="qr-bank-name" class="font-bold text-slate-800 dark:text-slate-200">MBBank (MBB)</span>
+                </div>
+                <div class="flex items-center justify-between">
+                  <div class="flex flex-col">
+                    <span class="text-slate-500">Số tài khoản:</span>
+                    <span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">(Định danh MBBank tự động)</span>
+                  </div>
+                  <div class="flex items-center gap-1.5">
+                    <span id="qr-account-number" class="font-mono font-bold text-slate-900 dark:text-white">0908667141</span>
+                    <button type="button" class="text-primary hover:underline text-[11px] font-bold cursor-pointer" id="btn-copy-acc">Chép</button>
+                  </div>
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-500">Chủ tài khoản:</span>
+                  <span id="qr-account-name" class="font-bold text-slate-900 dark:text-white uppercase">PHẠM NGUYỄN HOÀNG PHÚC</span>
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-500">Số tiền:</span>
+                  <span id="qr-amount-text" class="font-mono font-black text-emerald-600 dark:text-emerald-400 text-sm">...</span>
+                </div>
+                <div class="flex items-center justify-between pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
+                  <span class="text-slate-500 font-bold">Nội dung CK:</span>
+                  <div class="flex items-center gap-1.5">
+                    <span id="qr-transfer-code" class="font-mono font-black text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 px-2 py-0.5 rounded text-xs select-all">PPTQ...</span>
+                    <button type="button" class="text-primary hover:underline text-[11px] font-bold cursor-pointer" id="btn-copy-code">Chép</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="text-center" id="qr-poll-status-box">
+                <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400 border border-amber-200 dark:border-amber-800/60 shadow-2xs mx-auto animate-pulse">
+                  <span class="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
+                  <span>Đang tự động lắng nghe giao dịch chuyển khoản...</span>
+                </div>
+              </div>
+
+              <div class="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-[11px] text-amber-800 dark:text-amber-300 flex items-start gap-2">
+                <span class="material-symbols-outlined text-[16px] text-amber-600 shrink-0 mt-0.5">info</span>
+                <span>Vui lòng giữ nguyên <strong>Nội dung CK</strong> để hệ thống tự động cộng tiền trong vòng 30 giây. Mã QR có hiệu lực trong 30 phút.</span>
+              </div>
+
+              <!-- Direct PayOS Checkout Link -->
+              <div id="qr-direct-link-container" class="hidden pt-1">
+                <a id="qr-direct-checkout-btn" href="#" target="_blank" rel="noopener noreferrer" class="w-full py-2.5 px-4 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors border border-indigo-200 dark:border-indigo-800/80 cursor-pointer">
+                  <span class="material-symbols-outlined text-[16px]">open_in_new</span>
+                  <span>Mở cổng thanh toán PayOS trực tiếp</span>
+                </a>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+        <!-- Bottom Section: Full-Width Realtime Transaction History with Pagination -->
+        <div class="w-full space-y-4">
+          <div class="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-7 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-4">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div class="flex items-center gap-2">
+                <span class="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center material-symbols-outlined text-[18px]">receipt_long</span>
+                <div>
+                  <h3 class="font-bold text-sm sm:text-base text-slate-900 dark:text-white">Lịch sử giao dịch</h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                id="btn-refresh-wallet-history"
+                class="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+                title="Tải lại lịch sử"
+              >
+                <span class="material-symbols-outlined text-[18px]">refresh</span>
+              </button>
+            </div>
+
+            <!-- Transactions List Container -->
+            <div id="wallet-transactions-list" class="space-y-3 min-h-[220px]">
+              <div class="text-center py-12 text-slate-400 text-xs">
+                <span class="inline-block animate-spin text-base mb-1">⏳</span>
+                <p>Đang tải lịch sử giao dịch...</p>
+              </div>
+            </div>
+
+            <!-- Compact Pagination Footer (5 items per page) -->
+            <div class="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800">
+              <div id="wallet-pagination-info" class="text-xs text-slate-500 font-medium">
+                Trang 1 / 1
+              </div>
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  id="btn-wallet-prev-page"
+                  disabled
+                  class="px-3.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  Trước
+                </button>
+                <button
+                  type="button"
+                  id="btn-wallet-next-page"
+                  disabled
+                  class="px-3.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  Sau
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+        // Elements
+    const balDisplay = document.getElementById('wallet-balance-display');
+    const amountInput = document.getElementById('deposit-amount-input');
+    const btnGenerate = document.getElementById('btn-generate-qr');
+    const qrCard = document.getElementById('qr-display-card');
+    const qrImg = document.getElementById('qr-image');
+    const qrViewportBox = document.getElementById('qr-viewport-box');
+    const qrBankName = document.getElementById('qr-bank-name');
+    const qrAccNum = document.getElementById('qr-account-number');
+    const qrAmtText = document.getElementById('qr-amount-text');
+    const qrTransferCode = document.getElementById('qr-transfer-code');
+    const btnCopyAcc = document.getElementById('btn-copy-acc');
+    const btnCopyCode = document.getElementById('btn-copy-code');
+    const txList = document.getElementById('wallet-transactions-list');
+    const pageInfo = document.getElementById('wallet-pagination-info');
+    const btnPrev = document.getElementById('btn-wallet-prev-page');
+    const btnNext = document.getElementById('btn-wallet-next-page');
+    const btnRefreshHistory = document.getElementById('btn-refresh-wallet-history');
+    const btnRefreshAll = document.getElementById('btn-refresh-wallet-all');
+
+    let currentPage = 1;
+    const pageSize = 5;
+    let totalPages = 1;
+    let currentQrData = null;
+
+    // Unified QR Generator Function
+    const doGenerateQr = async (val, notify = true) => {
+      if (val < 10000) {
+        if (notify) UI.showToast('Số tiền nạp tối thiểu là 10.000 VNĐ.', 'warning');
+        amountInput?.focus();
+        return;
+      }
+      if (val > 500000000) {
+        if (notify) UI.showToast('Số tiền nạp tối đa là 500.000.000 VNĐ.', 'warning');
+        return;
+      }
+
+      if (btnGenerate) {
+        btnGenerate.disabled = true;
+        btnGenerate.innerHTML = `<span class="inline-block animate-spin text-sm">⏳</span><span>Đang cập nhật mã VietQR...</span>`;
+      }
+
+      try {
+        const retUrl = window.location.origin + '/#/student/wallet?status=success';
+        const cancelUrl = window.location.origin + '/#/student/wallet?status=cancelled';
+        const res = await ApiClient.createDepositRequest(val, retUrl, cancelUrl);
+        const data = res?.data || res;
+
+        if (!data || !data.qr_code) {
+          throw new Error(res?.error || 'Máy chủ không trả về mã QR thanh toán.');
+        }
+
+        currentQrData = data;
+        UI.renderQrCode(qrViewportBox, qrImg, data);
+        if (qrBankName) qrBankName.textContent = data.bank_name || 'MBBank (MBB)';
+        if (qrAccNum) qrAccNum.textContent = data.account_number || '0908667141';
+        const qrAccName = document.getElementById('qr-account-name');
+        if (qrAccName) qrAccName.textContent = data.account_name || 'PHẠM NGUYỄN HOÀNG PHÚC';
+        if (qrAmtText) qrAmtText.textContent = UI.formatMoney(data.amount || val);
+        if (qrTransferCode) qrTransferCode.textContent = data.transfer_code_12 || '';
+
+        const qrDirectContainer = document.getElementById('qr-direct-link-container');
+        const qrDirectBtn = document.getElementById('qr-direct-checkout-btn');
+        if (data.checkout_url && qrDirectBtn && qrDirectContainer) {
+          qrDirectBtn.href = data.checkout_url;
+          qrDirectContainer.classList.remove('hidden');
+        } else if (qrDirectContainer) {
+          qrDirectContainer.classList.add('hidden');
+        }
+
+        if (qrCard) {
+          qrCard.classList.remove('hidden');
+        }
+        const qrPlaceholder = document.getElementById('qr-placeholder-card');
+        if (qrPlaceholder) {
+          qrPlaceholder.classList.add('hidden');
+        }
+
+        if (notify) {
+          UI.showToast('Tạo mã QR VietQR nạp tiền thành công!', 'success');
+        }
+
+        // Active background polling for real-time automatic wallet balance credit
+        if (window._walletQrPollTimer) {
+          clearInterval(window._walletQrPollTimer);
+          window._walletQrPollTimer = null;
+        }
+
+        const txIdToPoll = data.transaction_id || data.order_code;
+        window._walletQrPollTimer = setInterval(async () => {
+          if (!document.getElementById('qr-display-card') || document.getElementById('qr-display-card').classList.contains('hidden')) {
+            clearInterval(window._walletQrPollTimer);
+            window._walletQrPollTimer = null;
+            return;
+          }
+          try {
+            const statusRes = await ApiClient.checkTransactionStatus(txIdToPoll);
+            if (statusRes && (statusRes.status === 'COMPLETED' || statusRes.status === 'SUCCESS')) {
+              clearInterval(window._walletQrPollTimer);
+              window._walletQrPollTimer = null;
+
+              // Display instant success celebration card
+              const qrDisplay = document.getElementById('qr-display-card');
+              if (qrDisplay) {
+                qrDisplay.innerHTML = `
+                  <div class="p-8 rounded-3xl bg-emerald-50/90 dark:bg-emerald-950/40 border-2 border-emerald-500 dark:border-emerald-700 text-center space-y-4 animate-fade-in font-sans">
+                    <div class="w-16 h-16 rounded-3xl bg-emerald-500 text-white flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/20">
+                      <span class="material-symbols-outlined text-[36px]">check_circle</span>
+                    </div>
+                    <div class="space-y-1.5">
+                      <h3 class="text-xl font-extrabold text-emerald-800 dark:text-emerald-200">Nạp tiền thành công!</h3>
+                      <p class="text-xs text-emerald-700 dark:text-emerald-300">
+                        Giao dịch <strong class="font-mono">${UI.escapeHtml(data.transfer_code_12 || '')}</strong> đã được hệ thống tự động cộng vào số dư.
+                      </p>
+                      <div class="text-3xl font-black font-mono text-emerald-600 dark:text-emerald-400 pt-2">
+                        +${UI.formatMoney(statusRes.amount || data.amount || val)}
+                      </div>
+                    </div>
+                    <div class="pt-3">
+                      <button type="button" id="btn-wallet-new-deposit" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition-colors cursor-pointer inline-flex items-center gap-1.5">
+                        <span class="material-symbols-outlined text-[16px]">add_card</span>
+                        <span>Tạo giao dịch nạp khác</span>
+                      </button>
+                    </div>
+                  </div>
+                `;
+                const btnNew = document.getElementById('btn-wallet-new-deposit');
+                if (btnNew) {
+                  btnNew.onclick = () => {
+                    StudentView.renderWallet(container, query);
+                  };
+                }
+              }
+
+              UI.showToast('🎉 Nạp tiền thành công! Số dư ví đã được cộng tự động.', 'success');
+              await loadWalletData(1);
+            }
+          } catch (pollErr) {
+            console.debug('Wallet polling check note:', pollErr);
+          }
+        }, 3000);
+      } catch (err) {
+        if (notify) {
+          UI.showToast('Lỗi tạo mã QR: ' + (err.message || 'Không thể kết nối máy chủ.'), 'error');
+        } else {
+          console.warn('Auto-generation notice:', err);
+        }
+      } finally {
+        if (btnGenerate) {
+          btnGenerate.disabled = false;
+          btnGenerate.innerHTML = `<span class="material-symbols-outlined text-[20px]">qr_code_2</span><span>Tạo mã QR nạp tiền</span>`;
+        }
+      }
+    };
+
+    // Preset chip clicks
+    document.querySelectorAll('.btn-deposit-chip').forEach(chip => {
+      chip.onclick = () => {
+        const amt = parseInt(chip.dataset.amount, 10) || 50000;
+        if (amountInput) {
+          amountInput.value = amt;
+        }
+        document.querySelectorAll('.btn-deposit-chip').forEach(c => {
+          c.classList.remove('border-primary', 'bg-primary/10', 'text-primary');
+        });
+        chip.classList.add('border-primary', 'bg-primary/10', 'text-primary');
+        // If QR code is already visible, update it to the new amount
+        if (qrCard && !qrCard.classList.contains('hidden')) {
+          doGenerateQr(amt, false);
+        }
+      };
+    });
+
+    // Copy buttons
+    if (btnCopyAcc) {
+      btnCopyAcc.onclick = () => {
+        const acc = qrAccNum?.textContent?.trim() || '';
+        if (acc) {
+          navigator.clipboard.writeText(acc);
+          UI.showToast('Đã sao chép số tài khoản!', 'info');
+        }
+      };
+    }
+    if (btnCopyCode) {
+      btnCopyCode.onclick = () => {
+        const code = qrTransferCode?.textContent?.trim() || '';
+        if (code) {
+          navigator.clipboard.writeText(code);
+          UI.showToast('Đã sao chép nội dung chuyển khoản!', 'info');
+        }
+      };
+    }
+
+    // Lightbox click
+    if (qrViewportBox) {
+      qrViewportBox.onclick = () => {
+        if (!currentQrData) return;
+        UI.showQrLightbox({
+          qrSrc: currentQrData.qr_code,
+          qrDataUri: currentQrData.qr_data_uri,
+          qrRaw: currentQrData.qr_raw,
+          vietqrUrl: currentQrData.vietqr_url,
+          title: 'Mã QR Nạp tiền VietQR PayOS',
+          bankName: currentQrData.bank_name || 'MBBank',
+          accountNumber: currentQrData.account_number || '',
+          amount: currentQrData.amount || 0,
+          transferCode: currentQrData.transfer_code_12 || ''
+        });
+      };
+    }
+
+    // Load Wallet & Transactions
+    const loadWalletData = async (page = 1) => {
+      try {
+        const res = await ApiClient.getMyWallet(page, pageSize);
+        if (!res) return;
+
+        // Balance
+        const bal = Number(res.balance || 0);
+        if (balDisplay) {
+          balDisplay.textContent = UI.formatMoney(bal);
+        }
+
+        // Transactions
+        currentPage = res.pagination?.page || page;
+        totalPages = Math.max(1, res.pagination?.total_pages || 1);
+        const totalCount = res.pagination?.total_count || 0;
+
+        if (pageInfo) {
+          pageInfo.textContent = `Trang ${currentPage} / ${totalPages} (${totalCount} giao dịch)`;
+        }
+        if (btnPrev) btnPrev.disabled = currentPage <= 1;
+        if (btnNext) btnNext.disabled = currentPage >= totalPages;
+
+        const items = res.recent_transactions || [];
+        if (items.length === 0) {
+          txList.innerHTML = `
+            <div class="text-center py-12 text-slate-400">
+              <span class="material-symbols-outlined text-4xl mb-1 text-slate-300 dark:text-slate-700">receipt</span>
+              <p class="text-xs font-medium">Chưa có giao dịch nào phát sinh.</p>
+            </div>
+          `;
+          return;
+        }
+
+        const now = Date.now();
+        txList.innerHTML = items.map(tx => {
+          const isDeposit = tx.tx_type === 'DEPOSIT';
+          const amt = Number(tx.amount || 0);
+          const rawStatus = String(tx.status || 'PENDING').toUpperCase();
+          const createdAt = tx.created_at ? UI.parseUtcDate(tx.created_at) : null;
+          const createdMs = createdAt ? createdAt.getTime() : 0;
+          const isStale = (now - createdMs) >= 300000; // >= 5 minutes
+
+          let statusTag = '';
+          if (rawStatus === 'COMPLETED' || rawStatus === 'SUCCESS') {
+            statusTag = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400">Thành công</span>`;
+          } else if (rawStatus === 'PENDING') {
+            if (isStale) {
+              statusTag = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400">Thất bại</span>`;
+            } else {
+              statusTag = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400">Đang xử lý</span>`;
+            }
+          } else {
+            statusTag = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">Thất bại</span>`;
+          }
+
+          const desc = tx.description || (isDeposit ? 'Nạp tiền vào ví' : 'Mua khóa học');
+          const code12 = tx.transfer_code_12 || tx.order_code || '';
+
+          return `
+            <div class="p-3 rounded-2xl border border-slate-100 dark:border-slate-800/80 hover:border-slate-200 dark:hover:border-slate-700 transition-all flex items-center justify-between gap-3">
+              <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-xl ${isDeposit ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600' : 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600'} flex items-center justify-center shrink-0">
+                  <span class="material-symbols-outlined text-[18px]">${isDeposit ? 'arrow_downward' : 'shopping_bag'}</span>
+                </div>
+                <div class="space-y-0.5">
+                  <div class="text-xs font-bold text-slate-800 dark:text-slate-200">${UI.escapeHtml(desc)}</div>
+                  <div class="flex items-center gap-2 text-[10px] text-slate-400">
+                    <span class="font-mono">${UI.escapeHtml(code12)}</span>
+                    <span>•</span>
+                    <span>${createdAt ? UI.formatDateTime(tx.created_at) : '—'}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="text-right space-y-1">
+                <div class="font-mono font-bold text-xs ${isDeposit ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-800 dark:text-slate-200'}">
+                  ${isDeposit ? '+' : '-'}${UI.formatMoney(amt)}
+                </div>
+                <div>${statusTag}</div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      } catch (err) {
+        console.warn('Failed to load wallet data:', err);
+        txList.innerHTML = `<div class="text-center py-8 text-rose-500 text-xs">Không thể tải dữ liệu ví: ${UI.escapeHtml(err.message || '')}</div>`;
+      }
+    };
+
+    // Pagination buttons
+    if (btnPrev) {
+      btnPrev.onclick = () => {
+        if (currentPage > 1) loadWalletData(currentPage - 1);
+      };
+    }
+    if (btnNext) {
+      btnNext.onclick = () => {
+        if (currentPage < totalPages) loadWalletData(currentPage + 1);
+      };
+    }
+    if (btnRefreshHistory) btnRefreshHistory.onclick = () => loadWalletData(currentPage);
+    if (btnRefreshAll) btnRefreshAll.onclick = () => loadWalletData(1);
+
+    // Generate QR Submit
+    if (btnGenerate) {
+      btnGenerate.onclick = async () => {
+        const val = parseInt(amountInput?.value, 10) || 0;
+        await doGenerateQr(val, true);
+        await loadWalletData(1);
+      };
+    }
+
+    // Initial load: Pre-populate 50.000 VNĐ and load transactions (Zero Auto-Request Invariant)
+    if (amountInput) amountInput.value = 50000;
+    const defaultChip = document.querySelector('.btn-deposit-chip[data-amount="50000"]');
+    if (defaultChip) defaultChip.classList.add('border-primary', 'bg-primary/10', 'text-primary');
+    await loadWalletData(1);
+    // Automatic request generation strictly purged per WF35 / Invariant 10.29
+  }
+
   // =========================================================================
   // Settings: Profile, Password Security & Notification Preferences
   // =========================================================================

@@ -23,16 +23,16 @@ from pathlib import Path
 import pytest
 from flask import Flask
 
-from pwd301.extensions import db
-from pwd301.models.course import Course
-from pwd301.models.identity import User
-from pwd301.models.question_bank import Question, QuestionProvenance
-from pwd301.services.course_service import create_course
-from pwd301.services.exceptions import (
+from backend.extensions import db
+from backend.models.course import Course
+from backend.models.identity import User
+from backend.models.question_bank import Question, QuestionProvenance
+from backend.services.course_service import create_course
+from backend.services.exceptions import (
     DocumentImportStateViolationError,
 )
-from pwd301.services.file_service import store_file_stream
-from pwd301.services.import_service import (
+from backend.services.file_service import store_file_stream
+from backend.services.import_service import (
     cancel_import_job,
     commit_import_job,
     create_import_job,
@@ -44,7 +44,7 @@ from pwd301.services.import_service import (
     process_import_job,
     set_import_question_decision,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 def create_sample_docx(paragraphs: list[str]) -> bytes:
@@ -261,7 +261,7 @@ class TestDuplicateDetection:
         instructor_actor: User,
     ) -> None:
         # Create an existing question in the Question Bank
-        from pwd301.services.question_bank_service import create_question
+        from backend.services.question_bank_service import create_question
 
         existing_q = create_question(
             actor=instructor_actor,

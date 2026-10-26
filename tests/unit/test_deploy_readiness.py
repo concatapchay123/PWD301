@@ -36,7 +36,7 @@ def test_named_confirmed_database_is_allowed(monkeypatch):
 
 
 def test_production_rejects_insecure_session_cookie(monkeypatch):
-    from pwd301.config import ProductionConfig
+    from backend.config import ProductionConfig
 
     monkeypatch.setenv("SECRET_KEY", "a-secure-runtime-secret-value-32-chars-minimum")
     monkeypatch.setenv("JWT_SECRET_KEY", "another-secure-runtime-secret-32-chars-minimum")
@@ -102,8 +102,8 @@ def test_dev_compose_defaults_and_worker_dependency():
 
 
 def test_production_baseline_requires_admin_secret(app, monkeypatch):
-    from pwd301.extensions import db
-    from pwd301.seeds.baseline import seed_baseline
+    from backend.extensions import db
+    from backend.seeds.baseline import seed_baseline
 
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.delenv("ADMIN_PASSWORD", raising=False)
@@ -113,7 +113,7 @@ def test_production_baseline_requires_admin_secret(app, monkeypatch):
 
 def test_degraded_required_dependency_is_not_ready(client, monkeypatch):
     monkeypatch.setattr(
-        "pwd301.services.operations_service.check_system_health",
+        "backend.services.operations_service.check_system_health",
         lambda **kwargs: {"status": "DEGRADED", "services": {}},
     )
     assert client.get("/health/deep").status_code == 503
@@ -121,7 +121,7 @@ def test_degraded_required_dependency_is_not_ready(client, monkeypatch):
 
 def test_public_readiness_does_not_expose_dependency_paths_or_errors(client, monkeypatch):
     monkeypatch.setattr(
-        "pwd301.services.operations_service.check_system_health",
+        "backend.services.operations_service.check_system_health",
         lambda **kwargs: {
             "status": "HEALTHY",
             "services": {
@@ -141,7 +141,7 @@ def test_public_readiness_does_not_expose_dependency_paths_or_errors(client, mon
 
 
 def test_production_requires_clamav(monkeypatch):
-    from pwd301.config import ProductionConfig
+    from backend.config import ProductionConfig
 
     monkeypatch.setenv("SECRET_KEY", "a-secure-runtime-secret-value-32-chars-minimum")
     monkeypatch.setenv("JWT_SECRET_KEY", "another-secure-runtime-secret-32-chars-minimum")
@@ -152,8 +152,8 @@ def test_production_requires_clamav(monkeypatch):
 
 
 def test_missing_worker_heartbeat_is_not_healthy(app, monkeypatch, tmp_path):
-    from pwd301.extensions import db
-    from pwd301.services.operations_service import _check_workers_health
+    from backend.extensions import db
+    from backend.services.operations_service import _check_workers_health
 
     monkeypatch.setenv("WORKER_HEARTBEAT_PATH", str(tmp_path / "heartbeat.json"))
     with app.app_context():
@@ -161,8 +161,8 @@ def test_missing_worker_heartbeat_is_not_healthy(app, monkeypatch, tmp_path):
 
 
 def test_production_without_worker_probe_is_not_ready(app, monkeypatch):
-    from pwd301.extensions import db
-    from pwd301.services.operations_service import _check_workers_health
+    from backend.extensions import db
+    from backend.services.operations_service import _check_workers_health
 
     monkeypatch.delenv("WORKER_HEARTBEAT_PATH", raising=False)
     with app.app_context():
@@ -171,20 +171,20 @@ def test_production_without_worker_probe_is_not_ready(app, monkeypatch):
 
 
 def test_cloud_probe_fails_closed(app, monkeypatch):
-    from pwd301.services.exceptions import FileStorageError
-    from pwd301.services.operations_service import _check_cloud_storage_health
+    from backend.services.exceptions import FileStorageError
+    from backend.services.operations_service import _check_cloud_storage_health
 
     def unavailable():
         raise FileStorageError("credentials missing")
 
-    monkeypatch.setattr("pwd301.services.storage_adapter.get_s3_client", unavailable)
+    monkeypatch.setattr("backend.services.storage_adapter.get_s3_client", unavailable)
     with app.app_context():
         app.config["STORAGE_BACKEND"] = "s3"
         assert _check_cloud_storage_health()["status"] == "DOWN"
 
 
 def test_real_health_aggregation_rejects_missing_worker(app, monkeypatch):
-    from pwd301.services import operations_service as operations
+    from backend.services import operations_service as operations
 
     monkeypatch.setattr(
         operations, "_check_db_health", lambda sess: {"status": "HEALTHY", "latency_ms": 1}
@@ -203,7 +203,7 @@ def test_production_telemetry_ignores_development_host_overrides(app, monkeypatc
 
     import psutil
 
-    from pwd301.services.operations_service import get_real_system_telemetry
+    from backend.services.operations_service import get_real_system_telemetry
 
     monkeypatch.setenv("CONTAINER", "true")
     monkeypatch.setenv("HOST_TOTAL_RAM_GB", "9999")
@@ -261,7 +261,7 @@ def test_admin_backup_list_reads_manifest_metadata(app, tmp_path):
     from datetime import datetime
     from unittest.mock import Mock
 
-    from pwd301.services import operations_service as operations
+    from backend.services import operations_service as operations
 
     artifact = tmp_path / "sample.bak"
     artifact.write_bytes(b"staging-proof")

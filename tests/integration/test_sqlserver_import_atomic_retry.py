@@ -12,15 +12,15 @@ import sqlalchemy as sa
 from sqlalchemy.orm import Session
 from werkzeug.serving import make_server
 
-from pwd301.extensions import db
-from pwd301.models.assessment import AssessmentQuestionAssignment
-from pwd301.models.file_import import DocumentImportJob, ImportQuestion
-from pwd301.models.identity import User
-from pwd301.models.question_bank import Question, QuestionProvenance, QuestionRevision
-from pwd301.services import import_service
-from pwd301.services.assessment_service import create_assessment
-from pwd301.services.exceptions import DocumentImportStateViolationError
-from pwd301.services.jwt_auth_service import create_token_pair
+from backend.extensions import db
+from backend.models.assessment import AssessmentQuestionAssignment
+from backend.models.file_import import DocumentImportJob, ImportQuestion
+from backend.models.identity import User
+from backend.models.question_bank import Question, QuestionProvenance, QuestionRevision
+from backend.services import import_service
+from backend.services.assessment_service import create_assessment
+from backend.services.exceptions import DocumentImportStateViolationError
+from backend.services.jwt_auth_service import create_token_pair
 from tests.api.test_import_api import clean_docx_file_asset as clean_docx_file_asset
 from tests.api.test_import_api import foreign_instructor as foreign_instructor
 from tests.api.test_import_api import instructor_user as instructor_user

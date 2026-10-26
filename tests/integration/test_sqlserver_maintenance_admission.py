@@ -8,9 +8,9 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.notification_audit import NotificationPreference
-from pwd301.services import operations_service
+from backend.extensions import db
+from backend.models.notification_audit import NotificationPreference
+from backend.services import operations_service
 from tests.conftest import login_web_user
 from tests.integration.test_sqlserver_import_atomic_retry import http_request
 from tests.integration.test_sqlserver_import_atomic_retry import http_server as http_server
@@ -81,9 +81,9 @@ def test_http_maintenance_query_failure_blocks_write_then_retry_recovers(
 
 WORKER_READ_SCRIPT = """
 import json, os, sys
-from pwd301 import create_app
-from pwd301.extensions import db
-from pwd301.services.operations_service import is_maintenance_active_cached
+from backend import create_app
+from backend.extensions import db
+from backend.services.operations_service import is_maintenance_active_cached
 app = create_app('testing')
 for command in sys.stdin:
     with app.app_context():

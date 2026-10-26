@@ -6,11 +6,11 @@ import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 
-from pwd301.extensions import db
-from pwd301.models.identity import AuthSession, User
-from pwd301.models.types import utc_now
-from pwd301.seeds.baseline import seed_baseline
-from pwd301.services.user_service import change_password, register_user, suspend_user
+from backend.extensions import db
+from backend.models.identity import AuthSession, User
+from backend.models.types import utc_now
+from backend.seeds.baseline import seed_baseline
+from backend.services.user_service import change_password, register_user, suspend_user
 
 
 @pytest.fixture
@@ -387,7 +387,7 @@ class TestWebAuth:
 
     def test_reset_password_flow(self, client: FlaskClient, web_user: User) -> None:
         """POST /auth/reset-password/<token> updates password and allows login with new credentials."""
-        from pwd301.services.user_service import generate_password_reset_token
+        from backend.services.user_service import generate_password_reset_token
 
         token = generate_password_reset_token(web_user.id)
         resp = client.post(
@@ -434,7 +434,7 @@ class TestWebAuth:
 
     def test_verify_email_flow_enables_login(self, client: FlaskClient) -> None:
         """Calling /auth/verify-email/<token> verifies the account and permits subsequent login."""
-        from pwd301.services.user_service import generate_email_verification_token
+        from backend.services.user_service import generate_email_verification_token
 
         seed_baseline(db.session)
         user = register_user(

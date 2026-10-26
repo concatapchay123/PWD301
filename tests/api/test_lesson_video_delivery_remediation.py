@@ -10,12 +10,12 @@ import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 
-from pwd301.extensions import db
-from pwd301.models.identity import Role, User
-from pwd301.services.course_service import change_course_status, create_course
-from pwd301.services.enrollment_service import enroll_student
-from pwd301.services.file_service import attach_resource_to_lesson, store_file_stream
-from pwd301.services.lesson_service import (
+from backend.extensions import db
+from backend.models.identity import Role, User
+from backend.services.course_service import change_course_status, create_course
+from backend.services.enrollment_service import enroll_student
+from backend.services.file_service import attach_resource_to_lesson, store_file_stream
+from backend.services.lesson_service import (
     approve_course_change_request,
     create_learning_unit,
     create_lesson,
@@ -23,7 +23,7 @@ from pwd301.services.lesson_service import (
     queue_lesson_resource_change,
     submit_course_changeset,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 from tests.conftest import login_web_user
 
 
@@ -49,21 +49,21 @@ def setup_roles(app: Flask) -> dict[str, Role]:
 @pytest.fixture
 def instructor_user(app: Flask, setup_roles: dict[str, Role]) -> User:
     unique = uuid.uuid4().hex[:6]
-    u = register_user(f"inst_{unique}@pwd301.local", "Password123!", "Instructor Test")
+    u = register_user(f"inst_{unique}@backend.local", "Password123!", "Instructor Test")
     return assign_role_to_user(u.id, "INSTRUCTOR")
 
 
 @pytest.fixture
 def admin_user(app: Flask, setup_roles: dict[str, Role]) -> User:
     unique = uuid.uuid4().hex[:6]
-    u = register_user(f"admin_{unique}@pwd301.local", "Password123!", "Admin Test")
+    u = register_user(f"admin_{unique}@backend.local", "Password123!", "Admin Test")
     return assign_role_to_user(u.id, "ADMIN")
 
 
 @pytest.fixture
 def student_user(app: Flask, setup_roles: dict[str, Role]) -> User:
     unique = uuid.uuid4().hex[:6]
-    u = register_user(f"student_{unique}@pwd301.local", "Password123!", "Student Test")
+    u = register_user(f"student_{unique}@backend.local", "Password123!", "Student Test")
     return assign_role_to_user(u.id, "STUDENT")
 
 
@@ -171,7 +171,7 @@ def test_approved_lesson_revision_inherits_resources(
     assert staged_lesson.resources[0].file_asset_id == video_asset.id
 
     # Verify student serialization returns the video url
-    from pwd301.blueprints.student.routes import _serialize_student_lesson
+    from backend.blueprints.student.routes import _serialize_student_lesson
 
     enroll_student(student_user, course.id, session=sess)
     sess.commit()
@@ -292,7 +292,7 @@ def test_instructor_curriculum_serialization_filters_historical_lessons(
 
     must not return superseded HISTORICAL lessons.
     """
-    from pwd301.blueprints.instructor.routes import _serialize_course, _serialize_learning_unit
+    from backend.blueprints.instructor.routes import _serialize_course, _serialize_learning_unit
 
     sess = db.session
     unique = uuid.uuid4().hex[:6]
@@ -389,7 +389,7 @@ def test_student_views_multi_video_lesson_and_anti_seek_defaults_locked(
     enroll_student(student_user, course.id, session=sess)
     sess.commit()
 
-    from pwd301.blueprints.student.routes import _serialize_student_lesson
+    from backend.blueprints.student.routes import _serialize_student_lesson
 
     serialized = _serialize_student_lesson(lesson, None)
     assert len(serialized["video_urls"]) == 2

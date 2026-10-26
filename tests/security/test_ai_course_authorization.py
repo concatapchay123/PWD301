@@ -17,11 +17,11 @@ import uuid
 import pytest
 from flask import Flask
 
-from pwd301.extensions import db
-from pwd301.models.course import Course, Enrollment, LearningUnit, Lesson
-from pwd301.models.identity import Role, User
-from pwd301.services.ai_service import create_conversation
-from pwd301.services.exceptions import ForbiddenError
+from backend.extensions import db
+from backend.models.course import Course, Enrollment, LearningUnit, Lesson
+from backend.models.identity import Role, User
+from backend.services.ai_service import create_conversation
+from backend.services.exceptions import ForbiddenError
 
 
 def _get_or_create_role(code: str, name: str) -> Role:

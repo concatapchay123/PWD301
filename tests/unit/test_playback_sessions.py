@@ -4,16 +4,16 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from pwd301.extensions import db
-from pwd301.models.course import Course, Enrollment, EnrollmentPeriod, LearningUnit, Lesson
-from pwd301.models.identity import Role
-from pwd301.services.exceptions import LessonValidationError
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.extensions import db
+from backend.models.course import Course, Enrollment, EnrollmentPeriod, LearningUnit, Lesson
+from backend.models.identity import Role
+from backend.services.exceptions import LessonValidationError
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
 def playback_setup(app, monkeypatch):
-    from pwd301.services import playback_service
+    from backend.services import playback_service
 
     if not db.session.query(Role).filter_by(code="STUDENT").first():
         db.session.add(Role(code="STUDENT", name="Student"))
@@ -56,7 +56,7 @@ def playback_setup(app, monkeypatch):
 
 
 def send(actor, lesson, start, sequence, now, position, state="playing", **kwargs):
-    from pwd301.services.playback_service import record_playback_heartbeat
+    from backend.services.playback_service import record_playback_heartbeat
 
     return record_playback_heartbeat(
         actor,
@@ -75,7 +75,7 @@ def send(actor, lesson, start, sequence, now, position, state="playing", **kwarg
 
 
 def test_first_spam_retry_gap_and_resume(playback_setup):
-    from pwd301.services.playback_service import start_playback_session
+    from backend.services.playback_service import start_playback_session
 
     actor, lesson, t = playback_setup
     start = start_playback_session(actor, lesson.public_id, "youtube:abcdefghijk", now=t)
@@ -92,7 +92,7 @@ def test_first_spam_retry_gap_and_resume(playback_setup):
         actor, lesson.public_id, "youtube:abcdefghijk", now=t + timedelta(seconds=51)
     )
     assert resume["frontier"] == 10 and resume["next_sequence"] == 1
-    from pwd301.models.playback import PlaybackReceipt
+    from backend.models.playback import PlaybackReceipt
 
     assert db.session.query(PlaybackReceipt).count() == 0
     with pytest.raises(LessonValidationError):
@@ -101,7 +101,7 @@ def test_first_spam_retry_gap_and_resume(playback_setup):
 
 @pytest.mark.parametrize("state", ["paused", "buffering", "hidden", "blackout", "error"])
 def test_nonplaying_stops_interval(playback_setup, state):
-    from pwd301.services.playback_service import start_playback_session
+    from backend.services.playback_service import start_playback_session
 
     actor, lesson, t = playback_setup
     start = start_playback_session(actor, lesson.public_id, "youtube:abcdefghijk", now=t)
@@ -116,7 +116,7 @@ def test_nonplaying_stops_interval(playback_setup, state):
 
 @pytest.mark.parametrize("rate", [0.75, 1, 2])
 def test_delayed_heartbeat_cannot_credit_stalled_playback(playback_setup, rate):
-    from pwd301.services.playback_service import start_playback_session
+    from backend.services.playback_service import start_playback_session
 
     actor, lesson, t = playback_setup
     start = start_playback_session(actor, lesson.public_id, "youtube:abcdefghijk", now=t)
@@ -130,7 +130,7 @@ def test_delayed_heartbeat_cannot_credit_stalled_playback(playback_setup, rate):
 
 
 def test_missing_sequence_and_forged_media_fail(playback_setup):
-    from pwd301.services.playback_service import start_playback_session
+    from backend.services.playback_service import start_playback_session
 
     actor, lesson, t = playback_setup
     start = start_playback_session(actor, lesson.public_id, "youtube:abcdefghijk", now=t)
@@ -141,7 +141,7 @@ def test_missing_sequence_and_forged_media_fail(playback_setup):
 
 
 def test_legacy_video_payload_cannot_credit(playback_setup):
-    from pwd301.services.lesson_service import record_lesson_progress
+    from backend.services.lesson_service import record_lesson_progress
 
     actor, lesson, t = playback_setup
     with pytest.raises(LessonValidationError):
@@ -149,8 +149,8 @@ def test_legacy_video_payload_cannot_credit(playback_setup):
 
 
 def test_duration_unavailable_falls_back_resiliently(playback_setup, monkeypatch):
-    from pwd301.models.playback import MediaProgress
-    from pwd301.services import playback_service
+    from backend.models.playback import MediaProgress
+    from backend.services import playback_service
 
     actor, lesson, t = playback_setup
     monkeypatch.setattr(
@@ -180,7 +180,7 @@ test_duration_unavailable_uses_resilient_fallback = test_duration_unavailable_fa
 
 
 def test_playback_fallback_missing_api_key(playback_setup, app, monkeypatch):
-    from pwd301.services import playback_service, youtube_validator_service
+    from backend.services import playback_service, youtube_validator_service
 
     actor, lesson, t = playback_setup
     app.config["YOUTUBE_API_KEY"] = ""
@@ -200,7 +200,7 @@ def test_playback_fallback_missing_api_key(playback_setup, app, monkeypatch):
 def test_playback_fallback_network_timeout(playback_setup, app, monkeypatch):
     import urllib.error
 
-    from pwd301.services import playback_service, youtube_validator_service
+    from backend.services import playback_service, youtube_validator_service
 
     actor, lesson, t = playback_setup
     app.config["YOUTUBE_API_KEY"] = "mock-key-for-test"
@@ -223,8 +223,8 @@ def test_playback_fallback_network_timeout(playback_setup, app, monkeypatch):
 
 
 def test_playback_fallback_client_duration_honored(playback_setup, monkeypatch):
-    from pwd301.models.playback import MediaProgress
-    from pwd301.services import playback_service
+    from backend.models.playback import MediaProgress
+    from backend.services import playback_service
 
     actor, lesson, t = playback_setup
     monkeypatch.setattr(
@@ -246,8 +246,8 @@ def test_playback_fallback_client_duration_honored(playback_setup, monkeypatch):
 
 
 def test_playback_fallback_lesson_estimated_duration_honored(playback_setup, monkeypatch):
-    from pwd301.models.playback import MediaProgress
-    from pwd301.services import playback_service
+    from backend.models.playback import MediaProgress
+    from backend.services import playback_service
 
     actor, lesson, t = playback_setup
     lesson.estimated_duration_minutes = 15
@@ -273,12 +273,12 @@ def test_playback_fallback_lesson_estimated_duration_honored(playback_setup, mon
 
 
 def test_heartbeat_dynamic_duration_refinement_preserves_frontier(playback_setup, monkeypatch):
-    from pwd301.models.playback import MediaProgress
-    from pwd301.services.playback_service import start_playback_session
+    from backend.models.playback import MediaProgress
+    from backend.services.playback_service import start_playback_session
 
     actor, lesson, t = playback_setup
     monkeypatch.setattr(
-        "pwd301.services.playback_service.get_youtube_metadata",
+        "backend.services.playback_service.get_youtube_metadata",
         lambda _: {"valid": False, "reason": "metadata_not_configured"},
     )
     start = start_playback_session(actor, lesson.public_id, "youtube:abcdefghijk", now=t)
@@ -328,9 +328,9 @@ def test_heartbeat_dynamic_duration_refinement_preserves_frontier(playback_setup
 
 
 def test_duration_resilient_fallback_with_oembed(playback_setup, monkeypatch):
-    import pwd301.services.youtube_validator_service as yvs
-    from pwd301.models.playback import MediaProgress
-    from pwd301.services import playback_service
+    import backend.services.youtube_validator_service as yvs
+    from backend.models.playback import MediaProgress
+    from backend.services import playback_service
 
     actor, lesson, t = playback_setup
     monkeypatch.setattr(
@@ -357,7 +357,7 @@ def test_duration_resilient_fallback_with_oembed(playback_setup, monkeypatch):
 
 
 def test_zero_reconciliation_cannot_forge_video_completion(playback_setup):
-    from pwd301.services.playback_service import reconcile_lesson_progress
+    from backend.services.playback_service import reconcile_lesson_progress
 
     actor, lesson, t = playback_setup
     result = reconcile_lesson_progress(actor, lesson.public_id, 1, now=t)
@@ -368,7 +368,7 @@ def test_data_api_duration_and_private_video_fail_closed(app, monkeypatch):
     import io
     import json
 
-    from pwd301.services.youtube_validator_service import get_youtube_metadata
+    from backend.services.youtube_validator_service import get_youtube_metadata
 
     app.config["YOUTUBE_API_KEY"] = "server-test-key"
     data = {
@@ -394,7 +394,7 @@ def test_data_api_duration_and_private_video_fail_closed(app, monkeypatch):
 def test_hls_paths_are_isolated_by_asset_and_revision(app):
     from types import SimpleNamespace
 
-    from pwd301.services.video_drm_service import get_asset_hls_directory
+    from backend.services.video_drm_service import get_asset_hls_directory
 
     lesson = SimpleNamespace(course_id=1, id=2)
     asset = SimpleNamespace(public_id="11111111-1111-1111-1111-111111111111")
@@ -406,7 +406,7 @@ def test_hls_paths_are_isolated_by_asset_and_revision(app):
 
 
 def test_unrecognized_video_cannot_fallback_to_content_session(playback_setup):
-    from pwd301.services.playback_service import start_playback_session
+    from backend.services.playback_service import start_playback_session
 
     actor, lesson, t = playback_setup
     lesson.markdown_content = "<!-- video_url: https://example.com/untrusted.mp4 -->"
@@ -416,7 +416,7 @@ def test_unrecognized_video_cannot_fallback_to_content_session(playback_setup):
 
 
 def test_web_session_contract_and_replay_after_session_restart(playback_setup, client):
-    from pwd301.models.identity import User
+    from backend.models.identity import User
     from tests.conftest import login_web_user
 
     actor, lesson, t = playback_setup
@@ -457,7 +457,7 @@ def test_web_routes_forward_client_duration_and_support_start_alias(
     login_web_user(client, actor)
 
     monkeypatch.setattr(
-        "pwd301.services.playback_service.get_youtube_metadata",
+        "backend.services.playback_service.get_youtube_metadata",
         lambda _: {"valid": False, "reason": "metadata_not_configured"},
     )
     res_alias = client.post(
@@ -476,7 +476,7 @@ def test_web_routes_forward_client_duration_and_support_start_alias(
 
 
 def test_video_completion_preserves_minimum_and_quiz(playback_setup):
-    from pwd301.services.playback_service import start_playback_session
+    from backend.services.playback_service import start_playback_session
 
     actor, lesson, t = playback_setup
     lesson.minimum_completion_seconds = 300
@@ -493,7 +493,7 @@ def test_video_completion_preserves_minimum_and_quiz(playback_setup):
 
 
 def test_rate_transition_and_invalid_seek_reconcile(playback_setup):
-    from pwd301.services.playback_service import start_playback_session
+    from backend.services.playback_service import start_playback_session
 
     actor, lesson, t = playback_setup
     start = start_playback_session(actor, lesson.public_id, "youtube:abcdefghijk", now=t)
@@ -505,7 +505,7 @@ def test_rate_transition_and_invalid_seek_reconcile(playback_setup):
     assert fast["credited_seconds"] == 10 and fast["frontier"] == 30
     forged = send(actor, lesson, start, 6, t + timedelta(seconds=21), 90, playback_rate=2)
     assert forged["seek_required"] and forged["frontier"] == 30
-    from pwd301.models.notification_audit import AuditEvent
+    from backend.models.notification_audit import AuditEvent
 
     assert (
         db.session.query(AuditEvent).filter_by(action="LESSON_PROGRESS_PACE_ANOMALY").count() == 1
@@ -513,8 +513,8 @@ def test_rate_transition_and_invalid_seek_reconcile(playback_setup):
 
 
 def test_receipt_cleanup_does_not_change_progress(playback_setup):
-    from pwd301.models.playback import PlaybackReceipt
-    from pwd301.services.playback_service import cleanup_playback_receipts, start_playback_session
+    from backend.models.playback import PlaybackReceipt
+    from backend.services.playback_service import cleanup_playback_receipts, start_playback_session
 
     actor, lesson, t = playback_setup
     start = start_playback_session(actor, lesson.public_id, "youtube:abcdefghijk", now=t)
@@ -527,8 +527,8 @@ def test_receipt_cleanup_does_not_change_progress(playback_setup):
 
 
 def test_preexisting_completion_keeps_seek_permission(playback_setup):
-    from pwd301.models.course import LessonProgress
-    from pwd301.services.playback_service import start_playback_session
+    from backend.models.course import LessonProgress
+    from backend.services.playback_service import start_playback_session
 
     actor, lesson, t = playback_setup
     period = db.session.query(EnrollmentPeriod).one()
@@ -549,8 +549,8 @@ def test_preexisting_completion_keeps_seek_permission(playback_setup):
 
 
 def test_sequence_integer_limit_requires_new_lease(playback_setup):
-    from pwd301.models.playback import PlaybackSession
-    from pwd301.services.playback_service import start_playback_session
+    from backend.models.playback import PlaybackSession
+    from backend.services.playback_service import start_playback_session
 
     actor, lesson, t = playback_setup
     start = start_playback_session(actor, lesson.public_id, "youtube:abcdefghijk", now=t)
@@ -564,7 +564,7 @@ def test_sequence_integer_limit_requires_new_lease(playback_setup):
 def test_studio_oembed_cannot_override_data_api_embed_denial(app, monkeypatch):
     import io
 
-    from pwd301.services import youtube_validator_service as service
+    from backend.services import youtube_validator_service as service
 
     app.config["YOUTUBE_API_KEY"] = "server-test-key"
     response = io.BytesIO(b'{"title":"Public-looking title","author_name":"Author"}')
@@ -580,7 +580,7 @@ def test_studio_oembed_cannot_override_data_api_embed_denial(app, monkeypatch):
 
 
 def test_reconcile_lesson_progress_allows_completion_with_is_completed(playback_setup):
-    from pwd301.services.playback_service import reconcile_lesson_progress
+    from backend.services.playback_service import reconcile_lesson_progress
 
     actor, lesson, t = playback_setup
     prog = reconcile_lesson_progress(actor, lesson.id, view_fraction=1.0, is_completed=True, now=t)
@@ -590,9 +590,9 @@ def test_reconcile_lesson_progress_allows_completion_with_is_completed(playback_
 
 def test_multi_video_lesson_requires_all_videos_100_percent(playback_setup):
     """Task R3: Multi-video lesson requires 100% on ALL videos to unlock quiz and complete lesson."""
-    from pwd301.services.exceptions import LessonStateViolationError
-    from pwd301.services.lesson_service import get_lesson_progress, submit_lesson_quiz
-    from pwd301.services.playback_service import start_playback_session
+    from backend.services.exceptions import LessonStateViolationError
+    from backend.services.lesson_service import get_lesson_progress, submit_lesson_quiz
+    from backend.services.playback_service import start_playback_session
 
     actor, lesson, t = playback_setup
     lesson.markdown_content = (
@@ -651,8 +651,8 @@ def test_multi_video_lesson_requires_all_videos_100_percent(playback_setup):
 
 def test_single_video_90_percent_does_not_complete(playback_setup):
     """Task R3/R4: Single video at 90% does not complete; reaching final 5s (>= 95s of 100s) completes video."""
-    from pwd301.services.lesson_service import get_lesson_progress
-    from pwd301.services.playback_service import start_playback_session
+    from backend.services.lesson_service import get_lesson_progress
+    from backend.services.playback_service import start_playback_session
 
     actor, lesson, t = playback_setup
     lesson.minimum_completion_seconds = 0

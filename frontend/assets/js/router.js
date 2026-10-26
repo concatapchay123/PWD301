@@ -228,78 +228,70 @@ class AppRouter {
 
     // 1. Hotkeys Prevention (DevTools, View Source, Screenshot in Exams)
 
+    let lastSecurityToastTime = 0;
+    const showSecurityWarningToast = (msg) => {
+      const now = Date.now();
+      if (now - lastSecurityToastTime < 3000) return;
+      lastSecurityToastTime = now;
+      if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
+        UI.showToast(msg, 'warning');
+      }
+    };
+
     window.addEventListener('keydown', (e) => {
-
       if (this.isSecurityLocked) return;
-
       const key = (e.key || '').toUpperCase();
-
       const code = e.keyCode || e.which;
-
       const isCtrlOrMeta = e.ctrlKey || e.metaKey;
-
       const isShift = e.shiftKey;
-
       const isAlt = e.altKey;
 
-
-
       // F12
-
       if (key === 'F12' || code === 123) {
-
         e.preventDefault();
-
         e.stopPropagation();
-
+        showSecurityWarningToast('CẢNH BÁO AN NINH: Phím tắt F12 (DevTools) đã bị vô hiệu hóa để bảo vệ bản quyền hệ thống!');
         if (isExamActive()) {
-
-          this.triggerGlobalSecurityLockdown('DEVTOOLS_DETECTED');
-
+          if (typeof ExamAntiCheatManager !== 'undefined' && ExamAntiCheatManager.activeInstance) {
+            ExamAntiCheatManager.activeInstance.recordSecurityViolation('DEVTOOLS_SHORTCUT_ATTEMPT');
+          }
+          if (this.currentRole !== 'ADMIN') {
+            this.triggerGlobalSecurityLockdown('DEVTOOLS_DETECTED');
+          }
         }
-
         return false;
-
       }
-
-
 
       // Ctrl+Shift+I / J / C (DevTools Inspector, Console)
-
       if (isCtrlOrMeta && isShift && (key === 'I' || key === 'J' || key === 'C' || code === 73 || code === 74 || code === 67)) {
-
         e.preventDefault();
-
         e.stopPropagation();
-
+        showSecurityWarningToast('CẢNH BÁO AN NINH: Thao tác mở bảng điều khiển DevTools (Ctrl+Shift+I/J/C) đã bị chặn!');
         if (isExamActive()) {
-
-          this.triggerGlobalSecurityLockdown('DEVTOOLS_DETECTED');
-
+          if (typeof ExamAntiCheatManager !== 'undefined' && ExamAntiCheatManager.activeInstance) {
+            ExamAntiCheatManager.activeInstance.recordSecurityViolation('DEVTOOLS_SHORTCUT_ATTEMPT');
+          }
+          if (this.currentRole !== 'ADMIN') {
+            this.triggerGlobalSecurityLockdown('DEVTOOLS_DETECTED');
+          }
         }
-
         return false;
-
       }
 
-
-
       // Ctrl+U (View Source)
-
       if (isCtrlOrMeta && (key === 'U' || code === 85)) {
-
         e.preventDefault();
-
         e.stopPropagation();
-
+        showSecurityWarningToast('CẢNH BÁO AN NINH: Thao tác xem mã nguồn trang (Ctrl+U) đã bị chặn!');
         if (isExamActive()) {
-
-          this.triggerGlobalSecurityLockdown('VIEW_SOURCE_ATTEMPT');
-
+          if (typeof ExamAntiCheatManager !== 'undefined' && ExamAntiCheatManager.activeInstance) {
+            ExamAntiCheatManager.activeInstance.recordSecurityViolation('VIEW_SOURCE_ATTEMPT');
+          }
+          if (this.currentRole !== 'ADMIN') {
+            this.triggerGlobalSecurityLockdown('VIEW_SOURCE_ATTEMPT');
+          }
         }
-
         return false;
-
       }
 
 
@@ -383,6 +375,22 @@ class AppRouter {
     }, true);
 
 
+
+    // 3. Real-time DevTools Open Detection (Window dimension divergence on resize / periodic check)
+    const checkDevToolsActive = () => {
+      const threshold = 160;
+      const isWindowDocked = (window.outerWidth - window.innerWidth > threshold) ||
+                             (window.outerHeight - window.innerHeight > threshold);
+      if (isWindowDocked) {
+        showSecurityWarningToast('CẢNH BÁO AN NINH: Phát hiện công cụ DevTools đang mở. Mọi thao tác kiểm tra mã nguồn đều được ghi nhận!');
+        if (isExamActive() && this.currentRole !== 'ADMIN') {
+          this.triggerGlobalSecurityLockdown('DEVTOOLS_DETECTED');
+        }
+      }
+    };
+
+    window.addEventListener('resize', checkDevToolsActive);
+    setInterval(checkDevToolsActive, 2500);
 
     // NOTE: Obsolete timing delta trap ((function(){debugger;})() > 100ms) has been permanently removed
 
@@ -510,13 +518,13 @@ class AppRouter {
 
         <div class="w-16 h-16 mx-auto rounded-full bg-rose-500/10 text-rose-500 flex items-center justify-center">
 
-          <span class="material-symbols-outlined text-[36px]">shield</span>
+          <span class="material-symbols-outlined text-[36px]">lock</span>
 
         </div>
 
         <h2 class="text-lg font-extrabold text-white tracking-wide">
 
-          🛡️ CẢNH BÁO AN NINH HỆ THỐNG
+          CẢNH BÁO AN NINH HỆ THỐNG
 
         </h2>
 
@@ -1000,12 +1008,14 @@ class AppRouter {
 
     const { path, query } = this.parseHash(routeHash);
 
-
-
-
+    // Special Guard: Reset Password view is always accessible regardless of existing session
+    if (path.includes('reset-password') || routeHash.includes('reset-password')) {
+      this.toggleShell(false);
+      this.renderAuth();
+      return;
+    }
 
     // Auth Guard: If not logged in and not on auth path, redirect to auth
-
     if (!this.currentUser && !path.startsWith('#/auth') && !path.startsWith('#/login')) {
 
       await this.refreshCurrentUser();
@@ -1351,7 +1361,18 @@ class AppRouter {
     }
 
     const currentHash = window.location.hash || '';
-    if (!currentHash.includes('verify') && !currentHash.includes('verified=') && !currentHash.includes('security_lockdown=')) {
+
+    // Handle Dedicated SPA Reset Password View
+    if (currentHash.includes('reset-password')) {
+      const match = currentHash.match(/[?&]token=([^&]+)/);
+      const token = match ? decodeURIComponent(match[1]) : '';
+      if (this.viewport && typeof AuthView !== 'undefined' && typeof AuthView.renderResetPassword === 'function') {
+        AuthView.renderResetPassword(this.viewport, token);
+        return;
+      }
+    }
+
+    if (!currentHash.includes('verify') && !currentHash.includes('verified=') && !currentHash.includes('reset-password') && !currentHash.includes('security_lockdown=')) {
       if (window.history && window.history.replaceState) {
         window.history.replaceState(null, '', '#/auth');
       } else {
@@ -1585,6 +1606,8 @@ class AppRouter {
 
 
 
+    } else if (path === '#/instructor/appeals/grade-editor') {
+      await InstructorView.renderAppealGradeEditor(viewport, query.id || query.appeal_id, query.attempt_id);
     } else if (path === '#/instructor/appeals') {
 
       await InstructorView.renderAppeals(viewport, query);
@@ -1635,7 +1658,7 @@ class AppRouter {
 
       const parts = path.split('/');
 
-      const assessmentId = parts[3];
+      const assessmentId = parts[3] === 'results' ? (query.id || query.assessment_id) : parts[3];
 
       await InstructorView.renderAssessmentResultsPage(viewport, assessmentId, query.course_id || null);
 
@@ -2169,13 +2192,13 @@ class AppRouter {
 
         { label: 'Bài kiểm tra', path: '#/student/assessments', icon: 'quiz' },
 
-        { label: 'Ví & Nạp tiền', path: '#/student/wallet', icon: 'account_balance_wallet' },
+        { label: 'Ví & Nạp tiền', path: '#/student/wallet', icon: 'account_balance_wallet', extraClass: 'topbar-nav-extra-student' },
 
       ];
 
       if (!canSwitchToInstructor) {
 
-        menu.push({ label: 'Đăng ký Giảng viên', path: '#/student/become-instructor', icon: 'badge' });
+        menu.push({ label: 'Đăng ký Giảng viên', path: '#/student/become-instructor', icon: 'badge', extraClass: 'topbar-nav-extra-student' });
 
       }
 
@@ -2195,53 +2218,175 @@ class AppRouter {
 
     if (topNav) {
 
-      topNav.innerHTML = menu.map(m => {
-
+      const renderNavLink = (m, extraClass = '') => {
+        const itemExtraClass = [extraClass, m.extraClass].filter(Boolean).join(' ');
         const isPathActive = checkPathActive(m.path);
-
         const badgeNum = Number(m.badge) || 0;
-
         return `
-
           <a
-
             href="${m.path}"
-
-            class="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
-
+            class="flex items-center gap-1 xl:gap-1.5 px-2 xl:px-2.5 py-1 rounded-lg text-[11px] xl:text-xs font-semibold transition-all whitespace-nowrap shrink-0 ${itemExtraClass} ${
               isPathActive
-
                 ? 'bg-[#FAF9F5] dark:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] font-bold shadow-2xs'
-
                 : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#FAF9F5] dark:hover:bg-[#262524] hover:text-[#222120] dark:hover:text-[#EDEDEB]'
-
             }"
-
             ${badgeNum > 0 ? `title="${m.label} (${badgeNum} việc cần xử lý)"` : ''}
-
           >
-
-            <span class="material-symbols-outlined text-[16px]">${m.icon}</span>
-
+            <span class="material-symbols-outlined text-[15px] xl:text-[16px]">${m.icon}</span>
             <span class="inline-flex items-center">
-
               <span>${m.label}</span>
-
               ${badgeNum > 0 ? `
-
-                <sup class="ml-0.5 -top-1.5 text-[11px] font-black text-amber-600 dark:text-amber-400 select-none leading-none tracking-tight">${badgeNum > 99 ? '99+' : badgeNum}</sup>
-
+                <sup class="ml-0.5 -top-1.5 text-[10px] xl:text-[11px] font-black text-amber-600 dark:text-amber-400 select-none leading-none tracking-tight">${badgeNum > 99 ? '99+' : badgeNum}</sup>
               ` : ''}
-
             </span>
-
           </a>
+        `;
+      };
 
+      if (role === 'ADMIN' && menu.length > 4) {
+        const primaryItems = menu.slice(0, 2);
+        const tier3Item = menu[2];
+        const tier2Item = menu[3];
+        const secondaryItems = menu.slice(4);
+        const activeSecondary = secondaryItems.find(m => checkPathActive(m.path));
+        const isTier3Active = tier3Item && checkPathActive(tier3Item.path);
+        const isTier2Active = tier2Item && checkPathActive(tier2Item.path);
+        const isMoreActive = !!activeSecondary;
+        const baseSecondaryBadges = secondaryItems.reduce((acc, m) => acc + (Number(m.badge) || 0), 0);
+        const tier2BadgeNum = Number(tier2Item?.badge) || 0;
+        const tier3BadgeNum = Number(tier3Item?.badge) || 0;
+
+        const primaryHtml = primaryItems.map(m => renderNavLink(m)).join('');
+        const tier3Html = tier3Item ? renderNavLink(tier3Item, 'topbar-admin-tier3') : '';
+        const tier2Html = tier2Item ? renderNavLink(tier2Item, 'topbar-admin-tier2') : '';
+        const secondaryHtml = secondaryItems.map(m => renderNavLink(m, 'topbar-admin-extra')).join('');
+
+        const moreDropdownHtml = `
+          <div class="relative topbar-admin-more-btn shrink-0" id="topbar-admin-more-wrapper">
+            <button
+              type="button"
+              id="topbar-admin-more-btn"
+              class="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
+                isMoreActive
+                  ? 'bg-[#FAF9F5] dark:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] font-bold shadow-2xs'
+                  : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#FAF9F5] dark:hover:bg-[#262524] hover:text-[#222120] dark:hover:text-[#EDEDEB]'
+              }"
+              title="Các mục quản trị khác"
+              aria-expanded="false"
+              aria-haspopup="true"
+            >
+              <span class="material-symbols-outlined text-[16px]">more_horiz</span>
+              <span class="inline-flex items-center">
+                <span>${isMoreActive ? (activeSecondary?.label || 'Thêm') : 'Thêm'}</span>
+                ${baseSecondaryBadges > 0 ? `
+                  <sup class="ml-0.5 -top-1.5 text-[11px] font-black text-amber-600 dark:text-amber-400 select-none leading-none tracking-tight">${baseSecondaryBadges > 99 ? '99+' : baseSecondaryBadges}</sup>
+                ` : ''}
+                ${tier2BadgeNum > 0 ? `
+                  <sup class="topbar-more-badge-tier2 ml-0.5 -top-1.5 text-[11px] font-black text-amber-600 dark:text-amber-400 select-none leading-none tracking-tight">${tier2BadgeNum > 99 ? '99+' : tier2BadgeNum}</sup>
+                ` : ''}
+                ${tier3BadgeNum > 0 ? `
+                  <sup class="topbar-more-badge-tier3 ml-0.5 -top-1.5 text-[11px] font-black text-amber-600 dark:text-amber-400 select-none leading-none tracking-tight">${tier3BadgeNum > 99 ? '99+' : tier3BadgeNum}</sup>
+                ` : ''}
+              </span>
+              <span class="material-symbols-outlined text-[15px] transition-transform" id="topbar-admin-more-chevron">expand_more</span>
+            </button>
+            <div
+              id="topbar-admin-more-dropdown"
+              class="hidden absolute right-0 top-9 w-56 bg-[#FAF9F5] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-xl shadow-elevated z-50 py-1 divide-y divide-[#F4F1EA] dark:divide-[#2E2D2B] text-xs transition-all"
+              role="menu"
+            >
+              <div class="py-1">
+                ${tier3Item ? `
+                  <a
+                    href="${tier3Item.path}"
+                    class="topbar-admin-tier3-dropdown flex items-center justify-between px-3 py-2 text-xs font-medium transition-colors ${
+                      isTier3Active
+                        ? 'bg-[#F4F1EA] dark:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] font-bold'
+                        : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] hover:text-[#222120] dark:hover:text-[#EDEDEB]'
+                    }"
+                    role="menuitem"
+                  >
+                    <div class="flex items-center gap-2">
+                      <span class="material-symbols-outlined text-[17px]">${tier3Item.icon}</span>
+                      <span>${tier3Item.label}</span>
+                    </div>
+                    ${(Number(tier3Item.badge) || 0) > 0 ? `
+                      <span class="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">${tier3Item.badge}</span>
+                    ` : ''}
+                  </a>
+                ` : ''}
+                ${tier2Item ? `
+                  <a
+                    href="${tier2Item.path}"
+                    class="topbar-admin-tier2-dropdown flex items-center justify-between px-3 py-2 text-xs font-medium transition-colors ${
+                      isTier2Active
+                        ? 'bg-[#F4F1EA] dark:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] font-bold'
+                        : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] hover:text-[#222120] dark:hover:text-[#EDEDEB]'
+                    }"
+                    role="menuitem"
+                  >
+                    <div class="flex items-center gap-2">
+                      <span class="material-symbols-outlined text-[17px]">${tier2Item.icon}</span>
+                      <span>${tier2Item.label}</span>
+                    </div>
+                    ${(Number(tier2Item.badge) || 0) > 0 ? `
+                      <span class="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">${tier2Item.badge}</span>
+                    ` : ''}
+                  </a>
+                ` : ''}
+                ${secondaryItems.map(m => {
+                  const isItemActive = checkPathActive(m.path);
+                  const badgeNum = Number(m.badge) || 0;
+                  return `
+                    <a
+                      href="${m.path}"
+                      class="flex items-center justify-between px-3 py-2 text-xs font-medium transition-colors ${
+                        isItemActive
+                          ? 'bg-[#F4F1EA] dark:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] font-bold'
+                          : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] hover:text-[#222120] dark:hover:text-[#EDEDEB]'
+                      }"
+                      role="menuitem"
+                    >
+                      <div class="flex items-center gap-2">
+                        <span class="material-symbols-outlined text-[17px]">${m.icon}</span>
+                        <span>${m.label}</span>
+                      </div>
+                      ${badgeNum > 0 ? `
+                        <span class="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">${badgeNum}</span>
+                      ` : ''}
+                    </a>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+          </div>
         `;
 
-      }).join('');
+        topNav.innerHTML = primaryHtml + tier3Html + tier2Html + secondaryHtml + moreDropdownHtml;
 
-
+        const moreBtn = document.getElementById('topbar-admin-more-btn');
+        const moreDropdown = document.getElementById('topbar-admin-more-dropdown');
+        const moreChevron = document.getElementById('topbar-admin-more-chevron');
+        if (moreBtn && moreDropdown) {
+          moreBtn.onclick = (e) => {
+            e.stopPropagation();
+            const isHidden = moreDropdown.classList.contains('hidden');
+            this.closeAvatarDropdown();
+            this.closeNotificationsDropdown();
+            if (isHidden) {
+              moreDropdown.classList.remove('hidden');
+              if (moreChevron) moreChevron.style.transform = 'rotate(180deg)';
+              moreBtn.setAttribute('aria-expanded', 'true');
+            } else {
+              moreDropdown.classList.add('hidden');
+              if (moreChevron) moreChevron.style.transform = 'rotate(0deg)';
+              moreBtn.setAttribute('aria-expanded', 'false');
+            }
+          };
+        }
+      } else {
+        topNav.innerHTML = menu.map(m => renderNavLink(m)).join('');
+      }
 
       topNav.querySelectorAll('a').forEach(link => {
 
@@ -2250,6 +2395,7 @@ class AppRouter {
           this.closeAvatarDropdown();
 
           this.closeNotificationsDropdown();
+          this.closeAdminMoreDropdown?.();
 
         });
 
@@ -2393,7 +2539,15 @@ class AppRouter {
 
     if (nameEl) nameEl.textContent = displayName;
 
-    this.refreshTopbarWalletBalance?.();
+    const walletWrapper = document.getElementById('topbar-wallet-wrapper');
+    if (walletWrapper) {
+      if (this.currentRole === 'ADMIN') {
+        walletWrapper.classList.add('hidden');
+      } else {
+        walletWrapper.classList.remove('hidden');
+        this.refreshTopbarWalletBalance?.();
+      }
+    }
 
 
 
@@ -2587,25 +2741,18 @@ class AppRouter {
 
 
 
+        ${this.currentRole !== 'ADMIN' ? `
         <div class="p-1.5 border-b border-[#E8E6DF] dark:border-[#2E2D2B]">
-
           <a
-
             href="#/student/wallet"
-
             class="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:bg-[#FAF9F5] dark:hover:bg-[#262524] transition-colors"
-
             onclick="window.app?.closeAvatarDropdown?.() || document.getElementById('topbar-role-dropdown')?.classList.add('hidden')"
-
           >
-
             <span class="material-symbols-outlined text-[16px]">account_balance_wallet</span>
-
             <span>Ví tài khoản & Nạp tiền</span>
-
           </a>
-
         </div>
+        ` : ''}
 
 
 
@@ -2975,6 +3122,17 @@ class AppRouter {
 
 
 
+  closeAdminMoreDropdown() {
+    const dropdown = document.getElementById('topbar-admin-more-dropdown');
+    const chevron = document.getElementById('topbar-admin-more-chevron');
+    const btn = document.getElementById('topbar-admin-more-btn');
+    if (dropdown && !dropdown.classList.contains('hidden')) {
+      dropdown.classList.add('hidden');
+      if (chevron) chevron.style.transform = 'rotate(0deg)';
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+    }
+  }
+
   closeAvatarDropdown() {
 
     const dropdown = document.getElementById('topbar-role-dropdown');
@@ -2988,6 +3146,7 @@ class AppRouter {
     if (chevron) chevron.style.transform = 'rotate(0deg)';
 
     if (avatarBtn) avatarBtn.setAttribute('aria-expanded', 'false');
+    this.closeAdminMoreDropdown?.();
 
   }
 
@@ -3036,6 +3195,11 @@ class AppRouter {
           this.closeAvatarDropdown();
 
         }
+        const moreDropdown = document.getElementById('topbar-admin-more-dropdown');
+        const moreBtn = document.getElementById('topbar-admin-more-btn');
+        if (moreDropdown && moreBtn && !moreDropdown.contains(e.target) && !moreBtn.contains(e.target)) {
+          this.closeAdminMoreDropdown?.();
+        }
 
       });
 
@@ -3045,6 +3209,9 @@ class AppRouter {
 
           this.closeAvatarDropdown();
 
+        }
+        if (e.key === 'Escape') {
+          this.closeAdminMoreDropdown?.();
         }
 
       });

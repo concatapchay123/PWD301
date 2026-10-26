@@ -7,13 +7,13 @@ from unittest.mock import patch
 
 import pytest
 
-from pwd301.extensions import db
-from pwd301.models.course import CourseChangeRequest, Lesson
-from pwd301.models.file_import import FileAsset, LessonResource, QuestionRevisionResource
-from pwd301.models.question_bank import Question, QuestionRevision
-from pwd301.services.course_service import create_course
-from pwd301.services.exceptions import ConflictError
-from pwd301.services.file_service import (
+from backend.extensions import db
+from backend.models.course import CourseChangeRequest, Lesson
+from backend.models.file_import import FileAsset, LessonResource, QuestionRevisionResource
+from backend.models.question_bank import Question, QuestionRevision
+from backend.services.course_service import create_course
+from backend.services.exceptions import ConflictError
+from backend.services.file_service import (
     add_file_revision,
     attach_resource_to_lesson,
     detach_resource_from_lesson,
@@ -21,8 +21,8 @@ from pwd301.services.file_service import (
     store_file_stream,
     trash_file_asset,
 )
-from pwd301.services.lesson_service import create_learning_unit, create_lesson
-from pwd301.services.scanner_service import ScanVerdict
+from backend.services.lesson_service import create_learning_unit, create_lesson
+from backend.services.scanner_service import ScanVerdict
 
 pytest_plugins = ["tests.test_lesson_revision_lifecycle"]
 
@@ -30,8 +30,8 @@ pytest_plugins = ["tests.test_lesson_revision_lifecycle"]
 def _uploaded_resource(owner, course, verdict="PASS"):
     scan = ScanVerdict(status=verdict, engine_name="fixture")
     with (
-        patch("pwd301.services.file_service.scan_file_all_engines", return_value=[scan]),
-        patch("pwd301.services.file_service.scan_blob_file", return_value=scan),
+        patch("backend.services.file_service.scan_file_all_engines", return_value=[scan]),
+        patch("backend.services.file_service.scan_blob_file", return_value=scan),
     ):
         return store_file_stream(
             owner,
@@ -46,16 +46,16 @@ def _uploaded_resource(owner, course, verdict="PASS"):
 def test_retention_preserves_bytes_and_verdicts_of_retained_course_submission(
     app, published_course, instructor_user, admin_user, decision
 ):
-    from pwd301.models.file_import import FileBlob, FileRevision, FileScanResult
-    from pwd301.models.types import utc_now
-    from pwd301.services.file_service import get_file_storage_root
-    from pwd301.services.lesson_service import (
+    from backend.models.file_import import FileBlob, FileRevision, FileScanResult
+    from backend.models.types import utc_now
+    from backend.services.file_service import get_file_storage_root
+    from backend.services.lesson_service import (
         approve_course_change_request,
         reject_course_change_request,
         retract_course_changeset,
         submit_course_changeset,
     )
-    from pwd301.services.retention_service import prune_trash_entities
+    from backend.services.retention_service import prune_trash_entities
 
     course, _ = published_course
     asset = _uploaded_resource(instructor_user, course)
@@ -92,9 +92,9 @@ def test_retention_preserves_bytes_and_verdicts_of_retained_course_submission(
 def test_retention_still_prunes_expired_unsubmitted_private_upload(
     app, published_course, instructor_user
 ):
-    from pwd301.models.types import utc_now
-    from pwd301.services.file_service import get_file_storage_root
-    from pwd301.services.retention_service import prune_trash_entities
+    from backend.models.types import utc_now
+    from backend.services.file_service import get_file_storage_root
+    from backend.services.retention_service import prune_trash_entities
 
     course, _ = published_course
     asset = _uploaded_resource(instructor_user, course)
@@ -113,7 +113,7 @@ def test_retention_still_prunes_expired_unsubmitted_private_upload(
 def test_approved_standalone_upload_cannot_mutate_approved_bytes(
     app, published_course, instructor_user, admin_user, operation
 ):
-    from pwd301.services.lesson_service import (
+    from backend.services.lesson_service import (
         approve_course_change_request,
         submit_course_changeset,
     )
@@ -144,9 +144,9 @@ def test_legacy_unreferenced_resource_is_an_immutable_approved_baseline(
 def test_unsafe_upload_is_private_ledger_only_and_does_not_poison_submission(
     app, client, published_course, instructor_user, admin_user, student_user, verdict
 ):
-    from pwd301.services.course_service import update_course
-    from pwd301.services.enrollment_service import enroll_student
-    from pwd301.services.lesson_service import (
+    from backend.services.course_service import update_course
+    from backend.services.enrollment_service import enroll_student
+    from backend.services.lesson_service import (
         approve_course_change_request,
         submit_course_changeset,
     )
@@ -198,11 +198,11 @@ def test_trash_removes_clean_file_from_submission_but_restore_explicitly_rejoins
 def test_background_scan_recovery_never_releases_private_upload_without_explicit_review(
     app, client, published_course, instructor_user, admin_user, student_user
 ):
-    from pwd301.models.file_import import FileScanResult
-    from pwd301.models.types import utc_now
-    from pwd301.services.course_service import update_course
-    from pwd301.services.enrollment_service import enroll_student
-    from pwd301.services.lesson_service import (
+    from backend.models.file_import import FileScanResult
+    from backend.models.types import utc_now
+    from backend.services.course_service import update_course
+    from backend.services.enrollment_service import enroll_student
+    from backend.services.lesson_service import (
         approve_course_change_request,
         submit_course_changeset,
     )
@@ -245,20 +245,20 @@ def test_new_course_upload_is_private_until_aggregate_approval(
 ):
     from unittest.mock import patch
 
-    from pwd301.services.enrollment_service import enroll_student
-    from pwd301.services.lesson_service import (
+    from backend.services.enrollment_service import enroll_student
+    from backend.services.lesson_service import (
         approve_course_change_request,
         discard_course_changeset,
         submit_course_changeset,
     )
-    from pwd301.services.scanner_service import ScanVerdict
+    from backend.services.scanner_service import ScanVerdict
     from tests.conftest import login_web_user
 
     course, _ = published_course
     clean = ScanVerdict(status="PASS", engine_name="fixture")
     with (
-        patch("pwd301.services.file_service.scan_file_all_engines", return_value=[clean]),
-        patch("pwd301.services.file_service.scan_blob_file", return_value=clean),
+        patch("backend.services.file_service.scan_file_all_engines", return_value=[clean]),
+        patch("backend.services.file_service.scan_blob_file", return_value=clean),
     ):
         asset = store_file_stream(
             instructor_user,

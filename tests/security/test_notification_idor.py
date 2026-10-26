@@ -20,16 +20,16 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.identity import Role, User
-from pwd301.services.authorization_service import ForbiddenError
-from pwd301.services.jwt_auth_service import create_token_pair
-from pwd301.services.notification_service import (
+from backend.extensions import db
+from backend.models.identity import Role, User
+from backend.services.authorization_service import ForbiddenError
+from backend.services.jwt_auth_service import create_token_pair
+from backend.services.notification_service import (
     dismiss_notification,
     dispatch_notification,
     mark_notification_as_read,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture

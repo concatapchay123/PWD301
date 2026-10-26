@@ -6,25 +6,25 @@ import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import Course, Lesson
-from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import AuditEvent
-from pwd301.models.question_bank import (
+from backend.extensions import db
+from backend.models.course import Course, Lesson
+from backend.models.identity import Role, User
+from backend.models.notification_audit import AuditEvent
+from backend.models.question_bank import (
     QuestionProvenance,
 )
-from pwd301.services.course_service import create_course
-from pwd301.services.exceptions import (
+from backend.services.course_service import create_course
+from backend.services.exceptions import (
     QuestionValidationError,
 )
-from pwd301.services.lesson_service import create_lesson
-from pwd301.services.question_bank_service import (
+from backend.services.lesson_service import create_lesson
+from backend.services.question_bank_service import (
     create_question,
     list_course_questions,
     restore_question,
     trash_question,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture

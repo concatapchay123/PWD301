@@ -24,47 +24,47 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.ai_rag import AIConversation, AIMessage
-from pwd301.models.file_import import FileAsset, FileBlob, FileRevision, FileScanResult
-from pwd301.models.identity import Role, User
-from pwd301.models.types import utc_now
-from pwd301.services.assessment_service import (
+from backend.extensions import db
+from backend.models.ai_rag import AIConversation, AIMessage
+from backend.models.file_import import FileAsset, FileBlob, FileRevision, FileScanResult
+from backend.models.identity import Role, User
+from backend.models.types import utc_now
+from backend.services.assessment_service import (
     assign_question,
     create_assessment,
     create_section,
     publish_assessment,
 )
-from pwd301.services.attempt_service import (
+from backend.services.attempt_service import (
     release_attempt_lease,
     renew_attempt_lease,
     start_assessment_attempt,
 )
-from pwd301.services.audit_service import (
+from backend.services.audit_service import (
     get_audit_log_detail,
     query_audit_logs,
     record_audit_event,
 )
-from pwd301.services.auth_token_service import (
+from backend.services.auth_token_service import (
     reset_password_with_token,
     verify_email_with_token,
 )
-from pwd301.services.background_job_service import (
+from backend.services.background_job_service import (
     claim_next_background_job,
     enqueue_background_job,
 )
-from pwd301.services.course_service import change_course_status, create_course
-from pwd301.services.enrollment_service import enroll_student
-from pwd301.services.exceptions import (
+from backend.services.course_service import change_course_status, create_course
+from backend.services.enrollment_service import enroll_student
+from backend.services.exceptions import (
     AttemptLeaseConflictError,
     FileAccessDeniedError,
     InvalidTokenError,
     TokenAlreadyConsumedError,
 )
-from pwd301.services.file_service import get_file_for_download
-from pwd301.services.question_bank_service import create_question
-from pwd301.services.retention_service import purge_expired_ai_messages
-from pwd301.services.user_service import (
+from backend.services.file_service import get_file_for_download
+from backend.services.question_bank_service import create_question
+from backend.services.retention_service import purge_expired_ai_messages
+from backend.services.user_service import (
     assign_role_to_user,
     generate_email_verification_token,
     generate_password_reset_token,

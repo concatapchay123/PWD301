@@ -3,8 +3,8 @@ from typing import Any
 
 from flask.testing import FlaskClient
 
-from pwd301.extensions import db
-from pwd301.services.assessment_service import create_assessment
+from backend.extensions import db
+from backend.services.assessment_service import create_assessment
 from tests.api.test_student_exam_backend_remediation import login_client
 
 # Ensure fixtures from test_student_exam_backend_remediation are registered
@@ -43,7 +43,7 @@ def test_default_proctoring_lifecycle_and_focus_events(
     assessment.request_fullscreen = True
     db.session.commit()
 
-    csrf = login_client(client, "student_exam@pwd301.local")
+    csrf = login_client(client, "student_exam@backend.local")
 
     # Start attempt
     start_res = client.post(
@@ -97,7 +97,7 @@ def test_default_proctoring_lifecycle_and_focus_events(
 
     # Logout student and login instructor to review
     client.post("/auth/logout", headers={"X-CSRFToken": csrf})
-    inst_csrf = login_client(client, "instructor_exam@pwd301.local")
+    inst_csrf = login_client(client, "instructor_exam@backend.local")
 
     review_res = client.get(
         f"/instructor/attempts/{attempt_id}/focus-events",

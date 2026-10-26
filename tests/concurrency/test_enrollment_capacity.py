@@ -5,13 +5,13 @@ from pathlib import Path
 import pytest
 from flask import Flask
 
-from pwd301.extensions import db
-from pwd301.models.course import Course, Enrollment
-from pwd301.models.identity import Role, User
-from pwd301.services.course_service import change_course_status, create_course
-from pwd301.services.enrollment_service import enroll_student, leave_course, re_enroll_student
-from pwd301.services.exceptions import EnrollmentCapacityExceededError
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.extensions import db
+from backend.models.course import Course, Enrollment
+from backend.models.identity import Role, User
+from backend.services.course_service import change_course_status, create_course
+from backend.services.enrollment_service import enroll_student, leave_course, re_enroll_student
+from backend.services.exceptions import EnrollmentCapacityExceededError
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -183,7 +183,7 @@ def test_concurrent_threads_enrollment_capacity_race(tmp_path: Path) -> None:
     """Five threads race to enroll for the last 1 seat; exactly 1 wins and 4 are rejected."""
     import concurrent.futures
 
-    from pwd301 import create_app
+    from backend import create_app
 
     db_file = tmp_path / "capacity_race.db"
     test_app = create_app(

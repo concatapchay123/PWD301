@@ -24,20 +24,20 @@ from flask.testing import FlaskClient
 from pypdf import PdfReader
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import Enrollment, EnrollmentPeriod
-from pwd301.models.types import utc_now
-from pwd301.seeds.baseline import seed_baseline
-from pwd301.services.assessment_service import (
+from backend.extensions import db
+from backend.models.course import Enrollment, EnrollmentPeriod
+from backend.models.types import utc_now
+from backend.seeds.baseline import seed_baseline
+from backend.services.assessment_service import (
     assign_question,
     create_assessment,
     publish_assessment,
 )
-from pwd301.services.course_service import create_course
-from pwd301.services.file_service import attach_resource_to_lesson, store_file_stream
-from pwd301.services.lesson_service import create_lesson
-from pwd301.services.question_bank_service import create_question
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.course_service import create_course
+from backend.services.file_service import attach_resource_to_lesson, store_file_stream
+from backend.services.lesson_service import create_lesson
+from backend.services.question_bank_service import create_question
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 def login_client(client: FlaskClient, email: str, password: str = "Password@123") -> str:
@@ -63,7 +63,7 @@ def student_fixture(app: Flask) -> dict[str, Any]:
 
     # 1. Instructor & Student
     instructor = register_user(
-        email="instructor_stu@pwd301.local",
+        email="instructor_stu@backend.local",
         password="Password@123",
         display_name="TS. Doan Giang Vien",
         session=sess,
@@ -71,7 +71,7 @@ def student_fixture(app: Flask) -> dict[str, Any]:
     assign_role_to_user(instructor.id, "INSTRUCTOR", session=sess)
 
     student = register_user(
-        email="student_stu@pwd301.local",
+        email="student_stu@backend.local",
         password="Password@123",
         display_name="Nguyen Van Sinh Vien",
         session=sess,
@@ -244,7 +244,7 @@ def test_student_assessments_endpoint_payload_parity(
     client: FlaskClient, student_fixture: dict[str, Any]
 ) -> None:
     """Verify GET /student/assessments returns items, assessments, upcoming, and recent_results."""
-    login_client(client, "student_stu@pwd301.local")
+    login_client(client, "student_stu@backend.local")
     res = client.get("/student/assessments", headers={"Accept": "application/json"})
     assert res.status_code == 200
     data = res.get_json()
@@ -270,7 +270,7 @@ def test_student_attempt_result_exposes_only_persisted_metrics_and_release_polic
     client: FlaskClient, student_fixture: dict[str, Any]
 ) -> None:
     """Verify attempt result provides server-authoritative metrics and honors release policy."""
-    csrf = login_client(client, "student_stu@pwd301.local")
+    csrf = login_client(client, "student_stu@backend.local")
     asm_id = str(student_fixture["assessment"].public_id)
 
     # 1. Start assessment
@@ -325,7 +325,7 @@ def test_student_can_download_released_attempt_result_as_pdf(
     client: FlaskClient, student_fixture: dict[str, Any]
 ) -> None:
     """A released result must download as a real PDF attachment, not invoke printing."""
-    csrf = login_client(client, "student_stu@pwd301.local")
+    csrf = login_client(client, "student_stu@backend.local")
     assessment_id = str(student_fixture["assessment"].public_id)
 
     start_res = client.post(
@@ -377,12 +377,12 @@ def test_student_can_download_released_attempt_result_as_pdf(
 def test_gradebook_pdf_exports_every_page_and_preserves_pending_status(
     client: FlaskClient, student_fixture: dict[str, Any], monkeypatch, role: str
 ) -> None:
-    from pwd301.services import attempt_service, result_pdf_service
+    from backend.services import attempt_service, result_pdf_service
 
     if role == "admin":
         admin = register_user("pdf_admin@example.com", "Password@123", "PDF Admin")
         assign_role_to_user(admin.id, "ADMIN")
-        from pwd301.models.identity import Role, UserRole
+        from backend.models.identity import Role, UserRole
 
         admin_role = db.session.query(Role).filter_by(code="ADMIN").one()
         db.session.query(UserRole).filter_by(
@@ -456,7 +456,7 @@ def test_student_cannot_download_result_pdf_before_score_release(
     """A result PDF must remain unavailable while the configured score is hidden."""
     student_fixture["assessment"].score_release_policy = "INSTRUCTOR_RELEASE"
     db.session.commit()
-    csrf = login_client(client, "student_stu@pwd301.local")
+    csrf = login_client(client, "student_stu@backend.local")
     assessment_id = str(student_fixture["assessment"].public_id)
 
     start_res = client.post(
@@ -483,7 +483,7 @@ def test_student_course_detail_adr002_and_clamav_fail_closed(
     client: FlaskClient, student_fixture: dict[str, Any]
 ) -> None:
     """Verify GET /student/courses/<id> leaks NO internal PKs and filters dirty/unscanned files."""
-    login_client(client, "student_stu@pwd301.local")
+    login_client(client, "student_stu@backend.local")
     course_id = str(student_fixture["course"].public_id)
 
     res = client.get(f"/student/courses/{course_id}", headers={"Accept": "application/json"})
@@ -526,7 +526,7 @@ def test_student_my_learning_dual_envelope_and_ai_rag_idor_defense(
     client: FlaskClient, student_fixture: dict[str, Any]
 ) -> None:
     """Verify my-learning returns enrollments & courses, and AI chat enforces enrollment check."""
-    csrf = login_client(client, "student_stu@pwd301.local")
+    csrf = login_client(client, "student_stu@backend.local")
 
     # 1. Test my-learning dual envelope
     res = client.get("/student/my-learning")
@@ -582,7 +582,7 @@ def test_student_cannot_force_lesson_completion_from_progress_payload(
     client: FlaskClient, student_fixture: dict[str, Any]
 ) -> None:
     """The progress endpoint must derive completion instead of trusting client input."""
-    csrf = login_client(client, "student_stu@pwd301.local")
+    csrf = login_client(client, "student_stu@backend.local")
     lesson_id = str(student_fixture["lesson"].public_id)
 
     response = client.post(
@@ -603,7 +603,7 @@ def test_student_lesson_hides_unscanned_resources(
     asset = student_fixture["clean_asset"]
     asset.status = "PENDING"
     db.session.commit()
-    login_client(client, "student_stu@pwd301.local")
+    login_client(client, "student_stu@backend.local")
 
     response = client.get(
         f"/student/courses/{student_fixture['course'].public_id}/lessons/{lesson.public_id}"
@@ -618,7 +618,7 @@ def test_student_lesson_shows_resources_attached_to_that_lesson(
 ) -> None:
     """A clean file attached to a lesson appears in that lesson's detail response."""
     lesson = student_fixture["lesson"]
-    login_client(client, "student_stu@pwd301.local")
+    login_client(client, "student_stu@backend.local")
 
     response = client.get(
         f"/student/courses/{student_fixture['course'].public_id}/lessons/{lesson.public_id}"
@@ -642,7 +642,7 @@ def test_student_course_detail_hides_unpublished_lessons(
         session=db.session,
     )
     db.session.commit()
-    login_client(client, "student_stu@pwd301.local")
+    login_client(client, "student_stu@backend.local")
 
     response = client.get(f"/student/courses/{student_fixture['course'].public_id}")
 
@@ -671,7 +671,7 @@ def test_student_lesson_with_mini_quiz_stays_incomplete_until_every_answer_is_su
         + " -->"
     )
     db.session.commit()
-    csrf = login_client(client, "student_stu@pwd301.local")
+    csrf = login_client(client, "student_stu@backend.local")
 
     early_quiz = client.post(
         f"/student/lessons/{lesson.public_id}/quiz-completion",
@@ -726,7 +726,7 @@ def test_video_only_lesson_requires_full_view_fraction_before_completion(
     lesson = student_fixture["lesson"]
     lesson.markdown_content = "# Lesson\n\n<!-- video_url: https://youtu.be/abcdefghijk -->"
     db.session.commit()
-    csrf = login_client(client, "student_stu@pwd301.local")
+    csrf = login_client(client, "student_stu@backend.local")
 
     partial = client.post(
         f"/student/lessons/{lesson.public_id}/progress",
@@ -750,7 +750,7 @@ def test_student_cannot_complete_a_malformed_mini_quiz(student_fixture, client):
     lesson.markdown_content = '# Lesson\n\n<!-- mini_quiz: [{"type":"UNSUPPORTED"},null] -->'
     db.session.flush()
 
-    token = login_client(client, "student_stu@pwd301.local")
+    token = login_client(client, "student_stu@backend.local")
     response = client.post(
         f"/student/lessons/{lesson.public_id}/quiz-completion",
         json={"answers": ["anything", "anything"]},
@@ -764,7 +764,7 @@ def test_student_become_instructor_and_utf8_integrity(
     client: FlaskClient, student_fixture: dict[str, Any]
 ) -> None:
     """Verify instructor nomination endpoints do not leak PKs and return clean UTF-8 JSON."""
-    csrf = login_client(client, "student_stu@pwd301.local")
+    csrf = login_client(client, "student_stu@backend.local")
 
     # 1. GET become-instructor
     res_get = client.get("/student/become-instructor")
@@ -780,7 +780,7 @@ def test_student_become_instructor_and_utf8_integrity(
             "institution_name": "Đại học Bách Khoa TP.HCM",
             "specialization": "Kỹ thuật Phần mềm & An toàn Thông tin",
             "experience_years": 5,
-            "certificate_url": "https://cloud.pwd301.edu.vn/cv/sample.pdf",
+            "certificate_url": "https://cloud.backend.edu.vn/cv/sample.pdf",
             "statement": "Tôi mong muốn giảng dạy các học phần Web Security và Phân tán.",
         },
     )
@@ -826,7 +826,7 @@ def test_student_course_detail_filters_course_image(
     cover_asset.status = "ACTIVE"
     sess.commit()
 
-    login_client(client, "student_stu@pwd301.local")
+    login_client(client, "student_stu@backend.local")
     res = client.get(
         f"/student/courses/{course.public_id}",
         headers={"Accept": "application/json"},
@@ -839,7 +839,7 @@ def test_student_course_detail_filters_course_image(
 
 def test_student_recommendations_api(client: FlaskClient, student_fixture: dict[str, Any]) -> None:
     """Verify GET /student/recommendations returns Algorithm 14 recommendations (ADR-002)."""
-    login_client(client, "student_stu@pwd301.local")
+    login_client(client, "student_stu@backend.local")
     res = client.get(
         "/student/recommendations",
         headers={"Accept": "application/json"},
@@ -863,7 +863,7 @@ def test_student_can_ask_ai_about_published_course_without_enrollment(
     client: FlaskClient, student_fixture: dict[str, Any]
 ) -> None:
     """Student browsing catalog can ask AI about course syllabus without 403 Forbidden."""
-    from pwd301.models.course import Course
+    from backend.models.course import Course
 
     instructor = student_fixture["instructor"]
     sess = db.session
@@ -882,7 +882,7 @@ def test_student_can_ask_ai_about_published_course_without_enrollment(
     sess.add(unregistered_course)
     sess.commit()
 
-    csrf = login_client(client, "student_stu@pwd301.local")
+    csrf = login_client(client, "student_stu@backend.local")
     resp = client.post(
         "/student/ai/chat",
         headers={"X-CSRFToken": csrf, "Accept": "application/json"},
@@ -901,7 +901,7 @@ def test_student_ai_chat_new_session_when_conversation_id_null(
     client: FlaskClient, student_fixture: dict[str, Any]
 ) -> None:
     """Sending conversation_id=null actively creates a fresh session."""
-    csrf = login_client(client, "student_stu@pwd301.local")
+    csrf = login_client(client, "student_stu@backend.local")
     # First message: creates session 1
     resp1 = client.post(
         "/student/ai/chat",

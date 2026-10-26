@@ -7,12 +7,12 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.identity import User, UserRole
-from pwd301.models.notification_audit import AuditEvent, EmailDelivery, NotificationEvent
-from pwd301.services.audit_service import suspend_user_account, unsuspend_user_account
-from pwd301.services.exceptions import AdminActionForbiddenError
-from pwd301.services.user_service import suspend_user
+from backend.extensions import db
+from backend.models.identity import User, UserRole
+from backend.models.notification_audit import AuditEvent, EmailDelivery, NotificationEvent
+from backend.services.audit_service import suspend_user_account, unsuspend_user_account
+from backend.services.exceptions import AdminActionForbiddenError
+from backend.services.user_service import suspend_user
 from tests.test_admin_security_remediation import primary_admin as primary_admin
 from tests.test_admin_security_remediation import student_user as student_user
 from tests.test_admin_security_remediation import subordinate_admin as subordinate_admin

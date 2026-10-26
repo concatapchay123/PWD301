@@ -4,20 +4,20 @@ import hashlib
 
 import pytest
 
-from pwd301.extensions import db
-from pwd301.models.course import CourseChangeRequest
-from pwd301.models.file_import import (
+from backend.extensions import db
+from backend.models.course import CourseChangeRequest
+from backend.models.file_import import (
     FileAsset,
     FileBlob,
     FileRevision,
     FileScanResult,
     LessonResource,
 )
-from pwd301.models.types import utc_now
-from pwd301.services.course_service import update_course
-from pwd301.services.course_workflow_service import course_review_version
-from pwd301.services.exceptions import ConflictError
-from pwd301.services.lesson_service import (
+from backend.models.types import utc_now
+from backend.services.course_service import update_course
+from backend.services.course_workflow_service import course_review_version
+from backend.services.exceptions import ConflictError
+from backend.services.lesson_service import (
     approve_course_change_request,
     submit_course_changeset,
     update_lesson,
@@ -91,7 +91,7 @@ def test_changed_submitted_asset_blocks_atomic_approval(
             instructor_user, course.id, {"thumbnail_file_asset_id": asset.id}, session=db.session
         )
     else:
-        from pwd301.services.question_bank_service import create_question
+        from backend.services.question_bank_service import create_question
 
         create_question(
             instructor_user,
@@ -175,7 +175,7 @@ def test_initial_review_identity_includes_referenced_asset_bytes(
 def test_initial_review_identity_includes_current_question_answers(
     app, published_course, admin_user
 ):
-    from pwd301.services.question_bank_service import create_question
+    from backend.services.question_bank_service import create_question
 
     course, _ = published_course
     question = create_question(

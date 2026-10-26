@@ -5,19 +5,19 @@ import uuid
 import pytest
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.attempt_regrade import (
+from backend.extensions import db
+from backend.models.attempt_regrade import (
     AssessmentResult,
     AttemptQuestionGradeHistory,
     RegradeItem,
     RegradeJob,
 )
-from pwd301.models.operations import BackgroundJob
-from pwd301.services.assessment_service import create_assessment
-from pwd301.services.attempt_service import submit_assessment_attempt
-from pwd301.services.background_job_service import claim_next_background_job, execute_background_job
-from pwd301.services.course_service import create_course
-from pwd301.services.jwt_auth_service import create_token_pair
+from backend.models.operations import BackgroundJob
+from backend.services.assessment_service import create_assessment
+from backend.services.attempt_service import submit_assessment_attempt
+from backend.services.background_job_service import claim_next_background_job, execute_background_job
+from backend.services.course_service import create_course
+from backend.services.jwt_auth_service import create_token_pair
 from tests.integration.test_sqlserver_import_atomic_retry import http_request
 from tests.integration.test_sqlserver_import_atomic_retry import http_server as http_server
 from tests.integration.test_sqlserver_password_reset_atomic import SecretString

@@ -13,8 +13,8 @@ import sqlalchemy as sa
 from flask import Flask
 from flask.testing import FlaskClient, FlaskCliRunner
 
-from pwd301 import create_app
-from pwd301.extensions import db
+from backend import create_app
+from backend.extensions import db
 from scripts.test_database_guard import require_disposable_database
 
 
@@ -100,7 +100,7 @@ def runner(app: Flask) -> FlaskCliRunner:
 
 def login_web_user(client: FlaskClient, user: Any) -> str:
     """Helper for testing Web UI routes: establishes a valid authenticated Flask session."""
-    from pwd301.services.session_auth_service import create_auth_session
+    from backend.services.session_auth_service import create_auth_session
 
     _, raw_key = create_auth_session(user, session=db.session)
     db.session.commit()
@@ -128,7 +128,7 @@ def require_disposable_sqlserver_target(database_url: str) -> None:
 @pytest.fixture(autouse=True)
 def _reset_rate_limits_between_tests() -> Generator[None, None, None]:
     """Reset rate limit counters before and after each test for clean test isolation."""
-    from pwd301.services.rate_limit_service import reset_all_rate_limits
+    from backend.services.rate_limit_service import reset_all_rate_limits
 
     reset_all_rate_limits()
     yield
@@ -138,7 +138,7 @@ def _reset_rate_limits_between_tests() -> Generator[None, None, None]:
 @pytest.fixture(autouse=True)
 def _reset_maintenance_cache_between_tests():
     """Disposable app databases must not share another test's maintenance lease."""
-    from pwd301.services.operations_service import invalidate_maintenance_cache
+    from backend.services.operations_service import invalidate_maintenance_cache
 
     invalidate_maintenance_cache()
     yield
@@ -150,8 +150,8 @@ def playback_watch(monkeypatch):
     """Drive real pacing logic with only provider metadata and UTC clock controlled."""
     from datetime import timedelta
 
-    from pwd301.models.types import utc_now
-    from pwd301.services import playback_service
+    from backend.models.types import utc_now
+    from backend.services import playback_service
 
     monkeypatch.setattr(
         playback_service,

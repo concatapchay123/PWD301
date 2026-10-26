@@ -11,27 +11,27 @@ import decimal
 
 from werkzeug.security import check_password_hash
 
-from pwd301.extensions import db
-from pwd301.models.assessment import Assessment
-from pwd301.models.attempt_regrade import (
+from backend.extensions import db
+from backend.models.assessment import Assessment
+from backend.models.attempt_regrade import (
     AssessmentAttempt,
     AssessmentResult,
     AttemptQuestion,
     AttemptQuestionGrade,
 )
-from pwd301.models.course import (
+from backend.models.course import (
     Course,
     CourseCompletionSummary,
     CoursePrerequisite,
     Enrollment,
     Lesson,
 )
-from pwd301.models.file_import import LessonResource
-from pwd301.models.identity import User
-from pwd301.models.notification_audit import AuditEvent, Notification, NotificationEvent
-from pwd301.models.question_bank import Question
-from pwd301.seeds.baseline import seed_baseline
-from pwd301.seeds.demo import DEMO_PASSWORD, seed_demo
+from backend.models.file_import import LessonResource
+from backend.models.identity import User
+from backend.models.notification_audit import AuditEvent, Notification, NotificationEvent
+from backend.models.question_bank import Question
+from backend.seeds.baseline import seed_baseline
+from backend.seeds.demo import DEMO_PASSWORD, seed_demo
 
 
 def test_seed_demo_success(app):
@@ -44,9 +44,9 @@ def test_seed_demo_success(app):
             "tqtphamnguyenhoangphuc@gmail.com" in summary["users_created"]
             or "tqtphamnguyenhoangphuc@gmail.com" in summary["users_existing"]
         )
-        assert "instructor1@pwd301.local" in summary["users_created"]
-        assert "student1@pwd301.local" in summary["users_created"]
-        assert "student4@pwd301.local" in summary["users_created"]
+        assert "instructor1@backend.local" in summary["users_created"]
+        assert "student1@backend.local" in summary["users_created"]
+        assert "student4@backend.local" in summary["users_created"]
 
         users = db.session.query(User).all()
         assert len(users) >= 7
@@ -57,12 +57,12 @@ def test_seed_demo_success(app):
             "vinhphu2020.nt@gmail.com",
             "danglyquan@gmail.com",
             "callmewin06@gmail.com",
-            "instructor1@pwd301.local",
-            "instructor2@pwd301.local",
-            "student1@pwd301.local",
-            "student2@pwd301.local",
-            "student3@pwd301.local",
-            "student4@pwd301.local",
+            "instructor1@backend.local",
+            "instructor2@backend.local",
+            "student1@backend.local",
+            "student2@backend.local",
+            "student3@backend.local",
+            "student4@backend.local",
         ]:
             assert email in user_map
             u = user_map[email]
@@ -72,9 +72,9 @@ def test_seed_demo_success(app):
 
         # Check roles
         assert user_map["tqtphamnguyenhoangphuc@gmail.com"].role_codes == {"STUDENT", "INSTRUCTOR", "ADMIN"}
-        assert user_map["instructor1@pwd301.local"].role_codes == {"STUDENT", "INSTRUCTOR"}
-        assert user_map["instructor2@pwd301.local"].role_codes == {"STUDENT", "INSTRUCTOR"}
-        assert user_map["student1@pwd301.local"].role_codes == {"STUDENT"}
+        assert user_map["instructor1@backend.local"].role_codes == {"STUDENT", "INSTRUCTOR"}
+        assert user_map["instructor2@backend.local"].role_codes == {"STUDENT", "INSTRUCTOR"}
+        assert user_map["student1@backend.local"].role_codes == {"STUDENT"}
 
         # 2. Courses verification
         courses = db.session.query(Course).all()
@@ -125,7 +125,7 @@ def test_seed_demo_success(app):
 
         # 5. Enrollments & Attempts verification
         # Student 1: GRADED attempt with perfect score and CourseCompletionSummary
-        s1 = user_map["student1@pwd301.local"]
+        s1 = user_map["student1@backend.local"]
         enr1 = (
             db.session.query(Enrollment)
             .filter(Enrollment.student_user_id == s1.id, Enrollment.course_id == c1.id)
@@ -181,7 +181,7 @@ def test_seed_demo_success(app):
         assert summary_rec.ever_completed is True
 
         # Student 2: SUBMITTED attempt with pending essay
-        s2 = user_map["student2@pwd301.local"]
+        s2 = user_map["student2@backend.local"]
         att2 = (
             db.session.query(AssessmentAttempt)
             .filter(AssessmentAttempt.student_user_id == s2.id)
@@ -208,7 +208,7 @@ def test_seed_demo_success(app):
         assert essay_grade2.grading_status == "PENDING"
 
         # Student 4: Clean account with 0 enrollments for live demo
-        s4 = user_map["student4@pwd301.local"]
+        s4 = user_map["student4@backend.local"]
         enr4_count = (
             db.session.query(Enrollment).filter(Enrollment.student_user_id == s4.id).count()
         )

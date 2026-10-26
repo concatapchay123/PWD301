@@ -165,9 +165,9 @@ def test_frontend_admin_views_and_api_assets(client: FlaskClient) -> None:
 
 def test_admin_portal_authenticated_flow(client: FlaskClient, app: Flask) -> None:
     """Verify live admin endpoints respond correctly when called by an authenticated Admin."""
-    from pwd301.extensions import db
-    from pwd301.models.identity import Role
-    from pwd301.services.user_service import assign_role_to_user, register_user
+    from backend.extensions import db
+    from backend.models.identity import Role
+    from backend.services.user_service import assign_role_to_user, register_user
     from tests.conftest import login_web_user
 
     # Setup roles if needed

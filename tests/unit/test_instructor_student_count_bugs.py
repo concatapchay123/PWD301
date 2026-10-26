@@ -21,13 +21,13 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.blueprints.instructor.routes import _serialize_course
-from pwd301.extensions import db
-from pwd301.models.identity import User
-from pwd301.services.analytics_service import get_instructor_overview_analytics
-from pwd301.services.course_service import create_course
-from pwd301.services.enrollment_service import enroll_student, leave_course
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.blueprints.instructor.routes import _serialize_course
+from backend.extensions import db
+from backend.models.identity import User
+from backend.services.analytics_service import get_instructor_overview_analytics
+from backend.services.course_service import create_course
+from backend.services.enrollment_service import enroll_student, leave_course
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture

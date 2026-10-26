@@ -19,14 +19,14 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import Course, CourseChangeRequest, Lesson
-from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import Notification, NotificationEvent
-from pwd301.services.course_service import create_course
-from pwd301.services.lesson_service import create_learning_unit, create_lesson
-from pwd301.services.rate_limit_service import reset_all_rate_limits
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.extensions import db
+from backend.models.course import Course, CourseChangeRequest, Lesson
+from backend.models.identity import Role, User
+from backend.models.notification_audit import Notification, NotificationEvent
+from backend.services.course_service import create_course
+from backend.services.lesson_service import create_learning_unit, create_lesson
+from backend.services.rate_limit_service import reset_all_rate_limits
+from backend.services.user_service import assign_role_to_user, register_user
 from tests.conftest import login_web_user
 
 
@@ -576,8 +576,8 @@ def test_learner_progress_preserved_after_changeset_approval(
     published_course: Course,
 ) -> None:
     """LESSON-001 Invariant: Enrolled student progress is preserved 100% when lessons are reordered."""
-    from pwd301.models.course import EnrollmentPeriod, LessonProgress
-    from pwd301.services.enrollment_service import enroll_student
+    from backend.models.course import EnrollmentPeriod, LessonProgress
+    from backend.services.enrollment_service import enroll_student
 
     # Create and enroll a student
     sess = db.session
@@ -681,7 +681,7 @@ def test_draft_curriculum_creates_no_admin_change_requests_or_notifications(
     setup_roles: dict[str, Role],
 ) -> None:
     """TC-DOS-02: Editing a DRAFT course reorders directly and creates ZERO admin requests or notifications."""
-    from pwd301.models.notification_audit import Notification
+    from backend.models.notification_audit import Notification
 
     sess = db.session
     # Count admin notifications before

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from pwd301.services import video_drm_service as drm
+from backend.services import video_drm_service as drm
 
 
 def test_concurrent_hls_requests_publish_one_complete_generation(tmp_path, monkeypatch):

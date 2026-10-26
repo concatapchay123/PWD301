@@ -18,12 +18,12 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import Course, CourseChangeRequest, Lesson
-from pwd301.seeds.baseline import seed_baseline
-from pwd301.services.course_service import create_course
-from pwd301.services.lesson_service import create_lesson
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.extensions import db
+from backend.models.course import Course, CourseChangeRequest, Lesson
+from backend.seeds.baseline import seed_baseline
+from backend.services.course_service import create_course
+from backend.services.lesson_service import create_lesson
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -34,7 +34,7 @@ def changeset_env(app: Flask) -> dict[str, Any]:
 
     # 1. Register users
     inst_user = register_user(
-        email="instructor_cs@pwd301.local",
+        email="instructor_cs@backend.local",
         password="Password@123",
         display_name="ThS. Giảng Viên Changeset",
         session=sess,
@@ -42,14 +42,14 @@ def changeset_env(app: Flask) -> dict[str, Any]:
     assign_role_to_user(inst_user.id, "INSTRUCTOR", session=sess)
 
     admin_user = register_user(
-        email="admin_cs@pwd301.local",
+        email="admin_cs@backend.local",
         password="Password@123",
         display_name="Quản Trị Viên Phê Duyệt",
         session=sess,
     )
     assign_role_to_user(admin_user.id, "ADMIN", session=sess)
     # Grant COURSE_REVIEW permission to admin
-    from pwd301.models.identity import UserRole
+    from backend.models.identity import UserRole
 
     ur = sess.query(UserRole).filter_by(user_id=admin_user.id).first()
     if ur:

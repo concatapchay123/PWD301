@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pwd301.services.scope_classifier import (
+from backend.services.scope_classifier import (
     REFUSAL_MESSAGE_OUT_OF_SCOPE,
     REFUSAL_MESSAGE_SECURITY,
     classify_query_scope,
@@ -125,7 +125,7 @@ def test_malicious_and_hacker_queries_blocked(malicious_query: str) -> None:
 )
 def test_external_project_creation_refused(project_query: str) -> None:
     """Outsourced project creation and commercial web building requests must be refused."""
-    from pwd301.services.scope_classifier import REFUSAL_MESSAGE_EXTERNAL_PROJECT
+    from backend.services.scope_classifier import REFUSAL_MESSAGE_EXTERNAL_PROJECT
 
     result = classify_query_scope(project_query)
     assert result.is_in_scope is False
@@ -147,7 +147,7 @@ def test_external_project_creation_refused(project_query: str) -> None:
 )
 def test_coding_requests_refused_on_global_main_page(coding_on_main_page: str) -> None:
     """On main page, raw coding/HTML programming is refused with course guidance."""
-    from pwd301.services.scope_classifier import REFUSAL_MESSAGE_GLOBAL_CONTEXT
+    from backend.services.scope_classifier import REFUSAL_MESSAGE_GLOBAL_CONTEXT
 
     result = classify_query_scope(
         coding_on_main_page, context="Context: GLOBAL, Surface: MAIN_PAGE"
@@ -182,7 +182,7 @@ def test_system_and_course_guidance_accepted_on_global_page(lms_guidance_query: 
 
 def test_course_context_accepts_academic_and_rejects_external_projects() -> None:
     """Inside course, academic queries are accepted while full project creation is refused."""
-    from pwd301.services.scope_classifier import REFUSAL_MESSAGE_EXTERNAL_PROJECT
+    from backend.services.scope_classifier import REFUSAL_MESSAGE_EXTERNAL_PROJECT
 
     course_ctx = "Context: COURSE, Course: Lập trình Web"
 
@@ -202,7 +202,7 @@ def test_course_context_accepts_academic_and_rejects_external_projects() -> None
 
 def test_hybrid_classifier_fast_path_bypasses_ai() -> None:
     """Hybrid classifier fast-path blocks threats and recipes without invoking AI."""
-    from pwd301.services.scope_classifier import classify_query_scope_hybrid
+    from backend.services.scope_classifier import classify_query_scope_hybrid
 
     mock_client = MagicMock()
 
@@ -234,7 +234,7 @@ def test_hybrid_classifier_fast_path_bypasses_ai() -> None:
 
 def test_hybrid_classifier_invokes_ai_guardrail_for_subtle_abuse() -> None:
     """Hybrid classifier invokes AI guardrail to prevent clever attempts to bào AI."""
-    from pwd301.services.scope_classifier import (
+    from backend.services.scope_classifier import (
         REFUSAL_MESSAGE_AI_ABUSE,
         ScopeResult,
         classify_query_scope_hybrid,
@@ -265,7 +265,7 @@ def test_hybrid_classifier_invokes_ai_guardrail_for_subtle_abuse() -> None:
 
 def test_real_gemini_client_classify_intent_decisions() -> None:
     """RealGeminiClient.classify_intent correctly converts AI JSON decisions into ScopeResult."""
-    from pwd301.services.gemini_service import RealGeminiClient
+    from backend.services.gemini_service import RealGeminiClient
 
     client = RealGeminiClient(api_key="mock-api-key")
 
@@ -325,7 +325,7 @@ def test_real_gemini_client_classify_intent_decisions() -> None:
 )
 def test_confidential_role_mechanisms_rejected(role_query: str) -> None:
     """Probing role mechanisms, role permissions, or role hierarchy must be rejected."""
-    from pwd301.services.scope_classifier import (
+    from backend.services.scope_classifier import (
         REFUSAL_MESSAGE_CONFIDENTIAL_SYSTEM,
         classify_query_scope,
     )
@@ -359,7 +359,7 @@ def test_confidential_role_mechanisms_rejected(role_query: str) -> None:
 )
 def test_confidential_account_info_rejected(account_query: str) -> None:
     """Probing for user accounts, account information, or credentials must be rejected."""
-    from pwd301.services.scope_classifier import (
+    from backend.services.scope_classifier import (
         REFUSAL_MESSAGE_CONFIDENTIAL_SYSTEM,
         classify_query_scope,
     )
@@ -391,7 +391,7 @@ def test_confidential_account_info_rejected(account_query: str) -> None:
 )
 def test_confidential_system_internals_rejected(internals_query: str) -> None:
     """Probing into how the system works internally or its architecture must be rejected."""
-    from pwd301.services.scope_classifier import (
+    from backend.services.scope_classifier import (
         REFUSAL_MESSAGE_CONFIDENTIAL_SYSTEM,
         classify_query_scope,
     )
@@ -424,7 +424,7 @@ def test_confidential_system_internals_rejected(internals_query: str) -> None:
 )
 def test_academic_role_and_mechanism_questions_preserved(academic_query: str) -> None:
     """Academic questions using words like 'vai trò' or 'cơ chế' must remain in-scope."""
-    from pwd301.services.scope_classifier import classify_query_scope
+    from backend.services.scope_classifier import classify_query_scope
 
     result = classify_query_scope(academic_query)
     assert result.is_in_scope is True

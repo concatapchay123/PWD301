@@ -1,0 +1,5325 @@
+from __future__ import annotations
+
+import contextlib
+import json
+import logging
+import re
+import uuid
+from decimal import ROUND_HALF_UP, Decimal
+from math import isfinite
+from typing import Any
+
+import sqlalchemy as sa
+from flask import Response, jsonify, request, send_file
+
+from backend.blueprints.instructor import instructor_bp
+from backend.extensions import db
+from backend.models.course import (
+    Course,
+    CourseChangeRequest,
+    CoursePrerequisite,
+    Enrollment,
+    LearningUnit,
+    Lesson,
+)
+from backend.models.file_import import FileAsset, QuestionRevisionResource
+from backend.models.identity import User
+from backend.services.analytics_service import (
+    get_instructor_course_analytics,
+    get_instructor_overview_analytics,
+)
+from backend.services.assessment_service import (
+    _lock_assessment_for_mutation,
+    _resolve_assessment,
+    _resolve_question,
+    _serialize_assessment,
+    _serialize_assignment,
+    _serialize_blueprint,
+    _serialize_section,
+    assessment_authoring_token,
+    assign_question,
+    cancel_assessment,
+    configure_blueprint,
+    create_assessment,
+    create_section,
+    delete_section,
+    get_assessment_detail,
+    list_course_assessments,
+    materialize_blueprint_pool,
+    publish_assessment,
+    remove_question_assignment,
+    reorder_assessment_questions,
+    restore_assessment,
+    trash_assessment,
+    trigger_assessment_regrade,
+    update_assessment,
+    update_question_assignment,
+)
+from backend.services.authorization_service import (
+    _resolve_course,
+    _resolve_lesson,
+    get_authenticated_actor,
+    instructor_required,
+    require_authenticated_actor,
+    require_course_manager,
+    require_student_data_access,
+)
+from backend.services.completion_service import (
+    get_or_create_default_completion_rule,
+    set_course_completion_rule,
+)
+from backend.services.course_service import (
+    change_course_status,
+    create_course,
+    get_course_detail,
+    get_course_last_rejection,
+    get_course_thumbnail_asset,
+    trash_course,
+    update_course,
+)
+from backend.services.enrollment_service import (
+    add_course_prerequisite,
+    get_course_enrollments,
+    remove_course_prerequisite,
+)
+from backend.services.exceptions import (
+    AssessmentLockedError,
+    ConflictError,
+    CourseAlreadyExistsError,
+    CourseStateViolationError,
+    CourseValidationError,
+    DocumentParsingError,
+    FileInfectedError,
+    FileSecurityQuarantineError,
+    ForbiddenError,
+    LessonValidationError,
+    ResourceNotFoundError,
+    ValidationError,
+)
+from backend.services.file_service import (
+    _serialize_file_asset,
+    _serialize_lesson_resource,
+    attach_resource_to_lesson,
+    detach_resource_from_lesson,
+    get_file_for_download,
+    rescan_file_asset,
+    sanitize_filename,
+    store_file_stream,
+    validate_file_metadata,
+)
+from backend.services.import_service import (
+    commit_import_job,
+    create_import_job,
+    process_import_job,
+)
+from backend.services.lesson_service import (
+    change_lesson_status,
+    create_learning_unit,
+    create_lesson,
+    list_learning_units,
+    reorder_lessons,
+    trash_lesson,
+    update_learning_unit,
+    update_lesson,
+)
+from backend.services.question_bank_service import (
+    _serialize_question,
+    create_question,
+    update_question,
+)
+from backend.services.regrade_worker import (
+    get_regrade_job_detail,
+    retry_regrade_job,
+)
+
+_logger = logging.getLogger(__name__)
+
+
+def _extract_video_url_from_markdown(content: str | None) -> str | None:
+    if not content:
+        return None
+    import re
+
+    m = re.search(r"<!--\s*video_url:\s*(\S+?)\s*-->", content)
+    return m.group(1) if m else None
+
+
+def _extract_video_urls_from_markdown(content: str | None) -> list[str]:
+    if not content:
+        return []
+    match = re.search(r"<!--\s*video_urls:\s*(\[.*?\])\s*-->", content, re.DOTALL)
+    if match:
+        try:
+            urls = json.loads(match.group(1))
+            if isinstance(urls, list):
+                return [url for url in urls if isinstance(url, str)]
+        except (ValueError, TypeError):
+            return []
+    legacy = _extract_video_url_from_markdown(content)
+    return [legacy] if legacy else []
+
+
+def _validate_video_urls(urls: Any) -> list[str]:
+    from urllib.parse import parse_qs, urlparse
+
+    if not isinstance(urls, list) or len(urls) > 2:
+        raise ValidationError("Mỗi Lesson chỉ được có tối đa 2 video.")
+    validated = []
+    for raw in urls:
+        if not isinstance(raw, str):
+            raise ValidationError("Liên kết video không hợp lệ.")
+        parsed = urlparse(raw.strip())
+        host = (parsed.hostname or "").lower()
+        if parsed.scheme == "https" and host in {"vimeo.com", "www.vimeo.com"}:
+            video_number = parsed.path.strip("/")
+            if not video_number.isdecimal():
+                raise ValidationError("Liên kết video Vimeo không hợp lệ.")
+            canonical = f"https://vimeo.com/{video_number}"
+            if canonical in validated:
+                raise ValidationError("Video bị trùng trong bài học.")
+            validated.append(canonical)
+            continue
+        video_id = ""
+        if parsed.scheme == "https" and host in {"youtube.com", "www.youtube.com"}:
+            if parsed.path == "/watch":
+                video_id = parse_qs(parsed.query).get("v", [""])[0]
+            elif parsed.path.startswith(("/shorts/", "/embed/", "/live/", "/v/")):
+                video_id = parsed.path.split("/")[2]
+        elif parsed.scheme == "https" and host == "youtu.be":
+            video_id = parsed.path.lstrip("/")
+        if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
+            raise ValidationError("Chỉ chấp nhận liên kết video YouTube hợp lệ.")
+        canonical = f"https://www.youtube.com/watch?v={video_id}"
+        if canonical in validated:
+            raise ValidationError("Video YouTube bị trùng trong bài học.")
+        validated.append(canonical)
+    return validated
+
+
+def _attach_uploaded_lesson_files(
+    actor: User,
+    course_id: int,
+    lesson: Lesson,
+    uploaded_files: Any,
+) -> None:
+    """Persist multipart lesson files and link them to the staged lesson."""
+    media_file = uploaded_files.get("media_file")
+    if media_file and media_file.filename:
+        media_asset = store_file_stream(
+            actor=actor,
+            course_id=course_id,
+            file_stream=media_file.stream,
+            filename=media_file.filename,
+            content_type=media_file.content_type,
+            asset_type="RESOURCE",
+            title=f"Bài giảng: {lesson.title}",
+            session=db.session,
+        )
+        attach_resource_to_lesson(
+            actor=actor,
+            lesson_id=lesson.id,
+            asset_id=media_asset.id,
+            is_downloadable=True,
+            label=media_file.filename,
+            session=db.session,
+        )
+
+    resource_files: list[Any] = []
+    for key in ("resource_files", "resource_file", "file"):
+        resource_files.extend(uploaded_files.getlist(key))
+
+    for resource_file in resource_files:
+        if resource_file and resource_file.filename and resource_file != media_file:
+            resource_asset = store_file_stream(
+                actor=actor,
+                course_id=course_id,
+                file_stream=resource_file.stream,
+                filename=resource_file.filename,
+                content_type=resource_file.content_type,
+                asset_type="RESOURCE",
+                title=resource_file.filename,
+                session=db.session,
+            )
+            attach_resource_to_lesson(
+                actor=actor,
+                lesson_id=lesson.id,
+                asset_id=resource_asset.id,
+                is_downloadable=True,
+                label=resource_file.filename,
+                session=db.session,
+            )
+
+    db.session.expire(lesson, ["resources"])
+
+
+def _resolve_learning_unit(unit_id: Any, session: Any = None) -> LearningUnit | None:
+    if not unit_id:
+        return None
+    sess = session if session is not None else db.session
+    try:
+        u_guid = uuid.UUID(str(unit_id))
+        return sess.query(LearningUnit).filter(LearningUnit.public_id == u_guid).first()
+    except (ValueError, TypeError):
+        try:
+            return sess.get(LearningUnit, int(unit_id))
+        except (ValueError, TypeError):
+            return None
+
+
+def _lesson_uploaded_video_count(lesson: Lesson) -> int:
+    return sum(
+        1
+        for resource in lesson.resources
+        if not getattr(resource, "is_deleted", False)
+        and resource.file_asset is not None
+        and (
+            (resource.file_asset.mime_type or "").lower().startswith("video/")
+            or (resource.file_asset.original_filename or "")
+            .lower()
+            .endswith((".mp4", ".webm", ".mkv", ".mov"))
+        )
+    )
+
+
+def _extract_mini_quiz_from_markdown(content: str | None) -> list[dict[str, Any]]:
+    if not content:
+        return []
+    import json
+    import re
+
+    m = re.search(r"<!--\s*mini_quiz:\s*(.+?)\s*-->", content, re.DOTALL)
+    if m:
+        try:
+            parsed = json.loads(m.group(1))
+            if isinstance(parsed, list):
+                return parsed
+        except Exception:
+            pass
+    return []
+
+
+def _extract_mini_quiz_passing_from_markdown(content: str | None) -> int:
+    if not content:
+        return 80
+    import re
+
+    m = re.search(r"<!--\s*mini_quiz_passing:\s*(\d+)\s*-->", content)
+    if m:
+        try:
+            val = int(m.group(1))
+            return max(50, min(100, val))
+        except Exception:
+            pass
+    return 80
+
+
+def _serialize_lesson(les: Lesson) -> dict[str, Any]:
+    video_urls = _extract_video_urls_from_markdown(les.markdown_content)
+    video_url = video_urls[0] if video_urls else None
+    if not video_url and hasattr(les, "resources") and les.resources:
+        for r in les.resources:
+            if getattr(r, "is_deleted", False):
+                continue
+            if r.file_asset and r.file_asset.virus_scan_status == "CLEAN":
+                mime = r.file_asset.mime_type or ""
+                name = (r.file_asset.display_name or "").lower()
+                if mime.startswith("video/") or name.endswith((".mp4", ".webm", ".mkv", ".mov")):
+                    cid = str(les.course.public_id) if les.course else ""
+                    rid = str(r.public_id)
+                    fid = str(r.file_asset.public_id)
+                    video_url = (
+                        f"/student/courses/{cid}/files/{rid}/download?disposition=inline"
+                        if cid
+                        else f"/student/files/{fid}/download?disposition=inline"
+                    )
+                    break
+
+    quiz = _extract_mini_quiz_from_markdown(les.markdown_content)
+    quiz_passing_percent = _extract_mini_quiz_passing_from_markdown(les.markdown_content)
+
+    return {
+        "lesson_id": str(les.public_id),
+        "learning_unit_id": str(les.learning_unit.public_id) if les.learning_unit else None,
+        "learning_unit_title": les.learning_unit.title if les.learning_unit else None,
+        "course_id": str(les.course.public_id) if les.course else None,
+        "title": les.title,
+        "summary": les.summary,
+        "markdown_content": les.markdown_content,
+        "video_url": video_url,
+        "video_urls": video_urls,
+        "quiz": quiz,
+        "quiz_passing_percent": quiz_passing_percent,
+        "position": les.position,
+        "estimated_duration_minutes": les.estimated_duration_minutes,
+        "minimum_completion_seconds": les.minimum_completion_seconds,
+        "viewed_fraction_required": float(les.viewed_fraction_required),
+        "status": les.status,
+        "revision_no": getattr(les, "revision_no", 1) or 1,
+        "previous_lesson_id": getattr(les, "previous_lesson_id", None),
+        "material_change_summary": getattr(les, "material_change_summary", None),
+        "is_draft": bool(les.status in ("DRAFT", "PENDING_APPROVAL")),
+        "is_modified": bool(les.previous_lesson_id is not None),
+        "is_new": bool(
+            les.previous_lesson_id is None
+            and les.status in ("DRAFT", "PENDING_APPROVAL")
+            and bool(les.course and les.course.status == "PUBLISHED")
+        ),
+        "is_staged_delete": bool(les.material_change_summary == "[STAGED_DELETE]"),
+        "is_flagged": bool(
+            les.material_change_summary and les.material_change_summary.startswith("[FLAGGED]: ")
+        ),
+        "flag_reason": (
+            les.material_change_summary.replace("[FLAGGED]: ", "")
+            if (
+                les.material_change_summary
+                and les.material_change_summary.startswith("[FLAGGED]: ")
+            )
+            else None
+        ),
+        "published_at": les.published_at.isoformat() if les.published_at else None,
+        "created_at": les.created_at.isoformat(),
+        "updated_at": les.updated_at.isoformat(),
+        "resources": (
+            [_serialize_lesson_resource(r) for r in les.resources]
+            if hasattr(les, "resources") and les.resources
+            else []
+        ),
+    }
+
+
+def _serialize_learning_unit(unit: LearningUnit) -> dict[str, Any]:
+    children = [
+        lesson for lesson in unit.lessons if lesson.deleted_at is None and lesson.status != "TRASH"
+    ]
+    # Deduplicate: if a lesson has a DRAFT revision, prefer the DRAFT revision for instructor view
+    replaced_orig_ids = {
+        les.previous_lesson_id
+        for les in children
+        if les.previous_lesson_id and les.status in ("DRAFT", "PENDING_APPROVAL")
+    }
+    visible_children = [
+        les for les in children if les.id not in replaced_orig_ids and les.status != "HISTORICAL"
+    ]
+    sorted_children = sorted(visible_children, key=lambda les: les.position or 0)
+
+    change_request_id = unit.change_request_id
+    review = db.session.get(CourseChangeRequest, change_request_id) if change_request_id else None
+    is_staged = bool(review and review.status in ("DRAFT", "PENDING"))
+    pending_approval = bool(review and review.status == "PENDING")
+
+    return {
+        "learning_unit_id": str(unit.public_id),
+        "course_id": str(unit.course.public_id) if unit.course else None,
+        "title": unit.title,
+        "position": unit.position,
+        "lesson_count": len(sorted_children),
+        "lessons": [_serialize_lesson(lesson) for lesson in sorted_children],
+        "is_staged": is_staged,
+        "pending_approval": pending_approval,
+        "change_request_id": change_request_id,
+    }
+
+
+def _serialize_course(c: Course, summary: bool = False) -> dict[str, Any]:
+    from backend.services.course_workflow_service import (
+        course_requires_review,
+        course_review_version,
+        effective_course,
+    )
+
+    original_course = c
+    actor = get_authenticated_actor()
+    c = effective_course(c, actor, db.session)
+    thumbnail = get_course_thumbnail_asset(c)
+    active_lessons = []
+    if hasattr(c, "lessons") and c.lessons:
+        non_deleted = [
+            les
+            for les in c.lessons
+            if not getattr(les, "deleted_at", None) and les.status != "TRASH"
+        ]
+        replaced_orig_ids = {
+            les.previous_lesson_id
+            for les in non_deleted
+            if les.previous_lesson_id and les.status in ("DRAFT", "PENDING_APPROVAL")
+        }
+        visible_lessons = [
+            les
+            for les in non_deleted
+            if les.id not in replaced_orig_ids and les.status != "HISTORICAL"
+        ]
+        if summary:
+            active_lessons = [
+                {
+                    "lesson_id": str(les.public_id),
+                    "title": les.title,
+                    "position": les.position,
+                    "status": les.status,
+                    "is_draft": bool(les.status in ("DRAFT", "PENDING_APPROVAL")),
+                    "is_modified": bool(les.previous_lesson_id is not None),
+                    "is_staged_delete": bool(les.material_change_summary == "[STAGED_DELETE]"),
+                }
+                for les in sorted(visible_lessons, key=lambda x: x.position or 0)
+            ]
+        else:
+            active_lessons = [
+                _serialize_lesson(les)
+                for les in sorted(visible_lessons, key=lambda x: x.position or 0)
+            ]
+    instructor_name = c.owner_instructor.display_name if c.owner_instructor else None
+    instructor_email = c.owner_instructor.email if c.owner_instructor else None
+
+    # Accurate active enrollments count (excluding withdrawn and suspended students)
+    active_enrollments = [
+        e
+        for e in getattr(c, "enrollments", [])
+        if getattr(e, "status", None) == "ACTIVE"
+        and (getattr(e, "student", None) is None or getattr(e.student, "status", None) == "ACTIVE")
+    ]
+    enrollments_count = len(active_enrollments)
+
+    # Extract dynamic contact_info and trailer_url if stored in course description
+    contact_info = None
+    trailer_url = None
+    clean_description = c.description or ""
+    if c.description and "<!-- contact_info:" in c.description:
+        m_contact = re.search(r"<!--\s*contact_info:\s*(\{.*?\})\s*-->", c.description, re.DOTALL)
+        if m_contact:
+            with contextlib.suppress(Exception):
+                contact_info = json.loads(m_contact.group(1))
+        clean_description = re.sub(
+            r"<!--\s*contact_info:\s*\{.*?\}\s*-->\n*", "", clean_description, flags=re.DOTALL
+        ).strip()
+
+    if c.description and "<!-- trailer_url:" in c.description:
+        m_trailer = re.search(r"<!--\s*trailer_url:\s*(.*?)\s*-->", c.description, re.DOTALL)
+        if m_trailer:
+            trailer_url = m_trailer.group(1).strip()
+        clean_description = re.sub(
+            r"<!--\s*trailer_url:\s*.*?\s*-->\n*", "", clean_description, flags=re.DOTALL
+        ).strip()
+    elif c.description and c.description.strip().startswith("{"):
+        with contextlib.suppress(Exception):
+            parsed_d = json.loads(c.description)
+            if isinstance(parsed_d, dict):
+                trailer_url = parsed_d.get("video_url") or parsed_d.get("trailer_url")
+                if not trailer_url and isinstance(parsed_d.get("blocks"), list):
+                    for b in parsed_d["blocks"]:
+                        if isinstance(b, dict) and b.get("data") and b["data"].get("video_url"):
+                            trailer_url = b["data"]["video_url"]
+                            break
+                clean_description = parsed_d.get("summary") or clean_description
+
+    if not contact_info:
+        contact_info = {
+            "email": instructor_email or "",
+            "phone": "",
+            "group": "",
+            "office_hours": "",
+        }
+
+    lo_data = None
+    if c.learning_objectives:
+        try:
+            lo_data = json.loads(c.learning_objectives)
+        except Exception:
+            lo_data = c.learning_objectives
+
+    cr_data = None
+    if c.completion_requirements:
+        try:
+            cr_data = json.loads(c.completion_requirements)
+        except Exception:
+            cr_data = c.completion_requirements
+
+    price_val = int(getattr(c, "price", 0) or 0)
+    price_fmt = f"{price_val:,} đ".replace(",", ".") if price_val > 0 else "Miễn phí"
+
+    trailer_asset = None
+    if getattr(c, "trailer_file_asset_id", None):
+        from backend.models.file_import import FileAsset
+        trailer_asset = db.session.get(FileAsset, c.trailer_file_asset_id)
+
+    return {
+        "course_id": str(c.public_id),
+        "course_code": c.course_code,
+        "title": c.title,
+        "price": price_val,
+        "price_formatted": price_fmt,
+        "description": clean_description,
+        "learning_objectives": lo_data,
+        "target_audience": c.target_audience,
+        "completion_requirements": cr_data,
+        "category": c.category,
+        "difficulty": c.difficulty,
+        "capacity": c.capacity,
+        "status": c.status,
+        "requires_review": course_requires_review(c),
+        "review_version": course_review_version(original_course, db.session),
+        "thumbnail_asset_id": str(thumbnail.public_id) if thumbnail else None,
+        "thumbnail_url": (
+            f"/api/files/{thumbnail.public_id}/download?disposition=inline" if thumbnail else None
+        ),
+        "trailer_file_asset_id": str(trailer_asset.public_id) if trailer_asset else (str(c.trailer_file_asset_id) if getattr(c, "trailer_file_asset_id", None) else None),
+        "trailer_file_name": trailer_asset.display_name if trailer_asset else None,
+        "trailer_file_size": f"{trailer_asset.file_size_bytes / (1024 * 1024):.1f} MB" if trailer_asset and trailer_asset.file_size_bytes else None,
+        "owner_instructor_id": (str(c.owner_instructor.public_id) if c.owner_instructor else None),
+        "instructor_name": instructor_name,
+        "instructor_email": instructor_email,
+        "contact_info": contact_info,
+        "trailer_url": trailer_url or (f"/api/files/{trailer_asset.public_id}/stream" if trailer_asset else None),
+        "video_url": trailer_url or (f"/api/files/{trailer_asset.public_id}/stream" if trailer_asset else None),
+        "enrollments_count": enrollments_count,
+        "enrolled_count": enrollments_count,
+        "lessons": active_lessons,
+        "learning_units": (
+            []
+            if summary
+            else [
+                _serialize_learning_unit(unit)
+                for unit in (
+                    list_learning_units(actor, c.id, session=db.session)
+                    if actor
+                    else c.learning_units
+                )
+                if unit.deleted_at is None
+            ]
+        ),
+        "last_rejection": (
+            get_course_last_rejection(c.id, session=db.session) if c.status == "DRAFT" else None
+        ),
+        "created_at": c.created_at.isoformat(),
+        "updated_at": c.updated_at.isoformat(),
+    }
+
+
+@instructor_bp.route("/dashboard", methods=["GET"])
+@instructor_required
+def dashboard() -> Any:
+    """Instructor dashboard displaying courses managed by the actor with analytics overview."""
+    actor = require_authenticated_actor()
+    scope = request.args.get("scope", "assigned").strip().lower()
+    overview = get_instructor_overview_analytics(actor, session=db.session, scope=scope)
+    return jsonify({"success": True, "data": overview, **overview}), 200
+
+
+@instructor_bp.route("/courses/<course_id>/analytics", methods=["GET"])
+@instructor_required
+def course_analytics_view(course_id: str) -> tuple[Response, int] | Response:
+    """Course-level learning analytics and performance report."""
+    actor = require_authenticated_actor()
+    analytics = get_instructor_course_analytics(actor, course_id, session=db.session)
+    return jsonify(analytics), 200
+
+
+@instructor_bp.route("/courses/<course_id>/students/<student_id>", methods=["GET"])
+@instructor_required
+def get_student_detail(course_id: str, student_id: str) -> tuple[Response, int] | Response:
+    """View student detail within a managed course.
+
+    Invariants enforced:
+    - Instructor must manage this course.
+    - Student must be enrolled in this course.
+    - Otherwise raises ForbiddenError (403).
+    """
+    actor = require_authenticated_actor()
+
+    sess = db.session
+    student, course = require_student_data_access(actor, student_id, course_id, session=sess)
+
+    enrollment = (
+        sess.query(Enrollment)
+        .filter(
+            Enrollment.student_user_id == student.id,
+            Enrollment.course_id == course.id,
+        )
+        .first()
+    )
+
+    data = {
+        "course_id": str(course.public_id),
+        "course_title": course.title,
+        "student_id": str(student.public_id),
+        "student_name": student.display_name,
+        "student_email": student.email,
+        "progress_percent": (
+            float(enrollment.current_progress_percent or 0.0) if enrollment else 0.0
+        ),
+        "enrollment_status": enrollment.status if enrollment else None,
+    }
+    return jsonify(data), 200
+
+
+@instructor_bp.route("/courses", methods=["GET"])
+@instructor_required
+def my_courses() -> Any:
+    """List courses managed by the instructor (never platform-wide, even if admin)."""
+    actor = require_authenticated_actor()
+
+    assigned_query = db.session.query(Course).filter(
+        Course.owner_instructor_id == actor.id,
+        Course.deleted_at.is_(None),
+    )
+    assigned_count = assigned_query.count()
+
+    courses = assigned_query.order_by(Course.created_at.desc()).all()
+    serialized = [_serialize_course(c, summary=True) for c in courses]
+    data_payload = {
+        "courses": serialized,
+        "scope": "assigned",
+        "is_admin": bool(actor.is_admin),
+        "assigned_count": assigned_count,
+        "total_platform_count": assigned_count,
+    }
+    return jsonify(
+        {
+            "success": True,
+            "data": data_payload,
+            "courses": serialized,
+            "scope": "assigned",
+            "is_admin": bool(actor.is_admin),
+            "assigned_count": assigned_count,
+            "total_platform_count": assigned_count,
+        }
+    ), 200
+
+
+@instructor_bp.route("/courses", methods=["POST"])
+@instructor_required
+def create_course_route() -> Any:
+    """Create a new course in DRAFT status."""
+    actor = require_authenticated_actor()
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    try:
+        course = create_course(actor, payload)
+    except (CourseValidationError, CourseAlreadyExistsError, ForbiddenError):
+        raise
+    except sa.exc.IntegrityError as exc:
+        db.session.rollback()
+        raise CourseAlreadyExistsError("Course code or title violates unique constraint.") from exc
+    except Exception:
+        db.session.rollback()
+        raise
+
+    return jsonify(_serialize_course(course)), 201
+
+
+@instructor_bp.route("/courses/<course_id>", methods=["GET"])
+@instructor_required
+def get_course_route(course_id: str) -> Any:
+    """Get detailed course information for managing."""
+    actor = require_authenticated_actor()
+    course = get_course_detail(actor, course_id)
+    return jsonify(_serialize_course(course)), 200
+
+
+@instructor_bp.route("/courses/<course_id>/manage", methods=["GET"])
+@instructor_required
+def manage_course_hub(course_id: str) -> Any:
+    """Dedicated Course Management Hub for Instructors."""
+    actor = require_authenticated_actor()
+    course = require_course_manager(actor, course_id, session=db.session)
+
+    active_count = sum(
+        1
+        for e in getattr(course, "enrollments", [])
+        if getattr(e, "status", None) == "ACTIVE"
+        and (getattr(e, "student", None) is None or getattr(e.student, "status", None) == "ACTIVE")
+    )
+
+    data = {
+        "course_id": str(course.public_id),
+        "course_code": course.course_code,
+        "title": course.title,
+        "status": course.status,
+        "owner_instructor_id": (
+            str(course.owner_instructor.public_id) if course.owner_instructor else None
+        ),
+        "lessons_count": len(
+            [les for les in course.lessons if getattr(les, "deleted_at", None) is None]
+        ),
+        "enrollments_count": active_count,
+        "enrolled_count": active_count,
+    }
+    from flask import get_flashed_messages
+
+    flashes = list(get_flashed_messages(with_categories=True))
+    flash_texts = [f[1] if isinstance(f, tuple | list) and len(f) > 1 else str(f) for f in flashes]
+
+    resp_dict: dict[str, Any] = {"success": True, "data": data, **data}
+    if flash_texts:
+        resp_dict["flashes"] = flashes
+        resp_dict["flash_messages"] = flash_texts
+        resp_dict["message"] = "; ".join(flash_texts)
+    return jsonify(resp_dict), 200
+
+
+def _normalize_course_metadata_payload(actor, course_id, payload):
+    from backend.services.course_workflow_service import effective_course
+
+    if not isinstance(payload, dict):
+        raise CourseValidationError("Course metadata must be a JSON object.")
+    allowed = {
+        "course_code",
+        "title",
+        "category",
+        "description",
+        "trailer_url",
+        "video_url",
+        "contact_info",
+        "learning_objectives",
+        "target_audience",
+        "completion_requirements",
+        "difficulty",
+        "capacity",
+        "max_enrollments",
+        "storage_quota_bytes",
+        "thumbnail_file_asset_id",
+        "trailer_file_asset_id",
+        "row_version",
+        "reason",
+        "as_draft",
+        "changeset",
+        "in_changeset",
+    }
+    if set(payload) - allowed:
+        raise CourseValidationError("Unsupported course metadata fields.")
+    payload = dict(payload)
+    if "max_enrollments" in payload and "capacity" not in payload:
+        payload["capacity"] = payload.pop("max_enrollments")
+    for key in ("capacity", "storage_quota_bytes", "thumbnail_file_asset_id", "trailer_file_asset_id"):
+        if payload.get(key) == "":
+            payload[key] = None
+
+    if "trailer_url" in payload or "video_url" in payload:
+        trailer_val = (
+            payload.pop("trailer_url", None) or payload.pop("video_url", None) or ""
+        ).strip()
+        c_inst = _resolve_course(course_id, session=db.session)
+        cur_desc = (
+            payload.get("description")
+            if "description" in payload
+            else (effective_course(c_inst, actor, db.session).description if c_inst else "")
+        )
+        clean_desc = re.sub(
+            r"<!--\s*trailer_url:\s*.*?\s*-->\n*", "", cur_desc or "", flags=re.DOTALL
+        ).strip()
+        if trailer_val:
+            payload["description"] = f"{clean_desc}\n\n<!-- trailer_url: {trailer_val} -->".strip()
+            payload["trailer_url"] = trailer_val
+        else:
+            payload["description"] = clean_desc
+            payload["trailer_url"] = None
+
+    if "contact_info" in payload:
+        contact_dict = payload.pop("contact_info")
+        if isinstance(contact_dict, dict):
+            c_inst = _resolve_course(course_id, session=db.session)
+            cur_desc = (
+                payload.get("description")
+                if "description" in payload
+                else (effective_course(c_inst, actor, db.session).description if c_inst else "")
+            )
+            clean_desc = re.sub(
+                r"<!--\s*contact_info:\s*\{.*?\}\s*-->\n*", "", cur_desc or "", flags=re.DOTALL
+            ).strip()
+            contact_json = json.dumps(contact_dict, ensure_ascii=False)
+            payload["description"] = (
+                f"{clean_desc}\n\n<!-- contact_info: {contact_json} -->".strip()
+            )
+
+    return payload
+
+
+@instructor_bp.route("/courses/<course_id>", methods=["POST", "PATCH", "PUT"])
+@instructor_required
+def update_course_route(course_id: str) -> Any:
+    """Update editable course metadata with mass-assignment defense."""
+    actor = require_authenticated_actor()
+
+    payload = _normalize_course_metadata_payload(
+        actor, course_id, request.get_json(silent=True) or request.form.to_dict() or {}
+    )
+
+    try:
+        course = update_course(actor, course_id, payload)
+        db.session.commit()
+    except (
+        CourseValidationError,
+        CourseAlreadyExistsError,
+        ForbiddenError,
+        CourseStateViolationError,
+    ):
+        db.session.rollback()
+        raise
+    except Exception:
+        db.session.rollback()
+        raise
+
+    if isinstance(course, CourseChangeRequest):
+        course_obj = _resolve_course(course_id, session=db.session)
+        if course_obj is None:
+            raise ResourceNotFoundError("Course not found.")
+        return jsonify(
+            _authoring_response(actor, course_obj, {"course": _serialize_course(course_obj)})
+        ), 200
+    return jsonify(_authoring_response(actor, course, _serialize_course(course))), 200
+
+
+@instructor_bp.route("/courses/<course_id>/price", methods=["PUT", "POST"])
+@instructor_required
+def instructor_update_course_price(course_id: str) -> tuple[Response, int] | Response:
+    """Update course price (Instructor manager only)."""
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    try:
+        new_price = int(payload.get("price", 0))
+        if new_price < 0:
+            raise ValueError
+    except (ValueError, TypeError):
+        return jsonify({"success": False, "error": "Giá khóa học (price) phải là số nguyên không âm (>= 0)."}), 400
+
+    course = require_course_manager(actor, course_id, session=db.session)
+    if not course:
+        raise ResourceNotFoundError("Course not found.")
+
+    course.price = new_price
+    db.session.commit()
+
+    price_val = course.price
+    price_fmt = f"{price_val:,} đ".replace(",", ".") if price_val > 0 else "Miễn phí"
+    data = {
+        "course_id": str(course.public_id),
+        "price": price_val,
+        "price_formatted": price_fmt,
+    }
+    return jsonify({
+        "success": True,
+        "data": data,
+        "course_id": str(course.public_id),
+        "price": price_val,
+        "price_formatted": price_fmt,
+    }), 200
+
+
+def validate_course_publish_readiness(
+    course_obj: Course, actor: Any | None = None, session: Any | None = None
+) -> dict[str, Any]:
+    """Validate 5 canonical pre-flight criteria before course publication:
+    1. 16:9 Cover Image
+    2. Intro video / Trailer URL
+    3. Authentic description (>= 20 chars, no default placeholder) and learning objectives
+    4. Academic settings / completion rule (minimum_progress_percent >= 50%)
+    5. Curriculum completeness (>= 1 unit, >= 1 non-empty lesson)
+    """
+    from backend.models.course import CourseCompletionRule
+    from backend.services.course_workflow_service import effective_course
+
+    sess = session or db.session
+    if actor is not None:
+        course_obj = effective_course(course_obj, actor, sess)
+
+    # 1. Cover Image
+    has_cover = bool(
+        course_obj.thumbnail_file_asset_id
+        or (course_obj.thumbnail_url and str(course_obj.thumbnail_url).strip())
+    )
+
+    # 2. Intro Video / Trailer
+    trailer_url = None
+    if course_obj.description and "<!-- trailer_url:" in course_obj.description:
+        m_tr = re.search(r"<!--\s*trailer_url:\s*(.*?)\s*-->", course_obj.description, re.DOTALL)
+        if m_tr:
+            trailer_url = m_tr.group(1).strip()
+    elif course_obj.description and course_obj.description.strip().startswith("{"):
+        with contextlib.suppress(Exception):
+            p_desc = json.loads(course_obj.description)
+            if isinstance(p_desc, dict):
+                trailer_url = p_desc.get("video_url") or p_desc.get("trailer_url")
+    has_trailer = bool(
+        getattr(course_obj, "trailer_file_asset_id", None)
+        or (trailer_url and str(trailer_url).strip())
+    )
+
+    # 3. Authentic Description and SLOs
+    clean_desc = course_obj.description or ""
+    clean_desc = re.sub(r"<!--\s*contact_info:\s*\{.*?\}\s*-->\n*", "", clean_desc, flags=re.DOTALL)
+    clean_desc = re.sub(
+        r"<!--\s*trailer_url:\s*.*?\s*-->\n*", "", clean_desc, flags=re.DOTALL
+    ).strip()
+    has_valid_desc = bool(
+        clean_desc
+        and len(clean_desc) >= 20
+        and not any(
+            ph in clean_desc.lower()
+            for ph in ["chưa có mô tả", "mô tả mặc định", "default description"]
+        )
+    )
+    lo_list = course_obj.learning_objectives_list
+    has_lo = bool(lo_list and len(lo_list) >= 1)
+    has_info = bool(has_valid_desc and has_lo)
+
+    if has_info:
+        info_detail = f"Đầy đủ mô tả chi tiết và chuẩn đầu ra môn học ({len(lo_list)} mục)."
+    elif not has_valid_desc and not has_lo:
+        info_detail = "Cần bổ sung mô tả thực tế (tối thiểu 20 ký tự) và ít nhất 1 chuẩn đầu ra (Learning Objective)."
+    elif not has_valid_desc:
+        info_detail = f"Chuẩn đầu ra: Đã có {len(lo_list)} mục (Đạt). Tuy nhiên mô tả khóa học chưa đạt yêu cầu (cần tối thiểu 20 ký tự thực tế, không dùng nội dung mẫu)."
+    else:
+        info_detail = "Mô tả khóa học đã đạt yêu cầu (>= 20 ký tự). Cần bổ sung ít nhất 1 chuẩn đầu ra môn học (Learning Objective)."
+
+    # 4. Academic Settings / Completion Rule
+    rule = sess.query(CourseCompletionRule).filter_by(course_id=course_obj.id).first()
+    has_academic = bool(
+        rule
+        and rule.minimum_progress_percent is not None
+        and float(rule.minimum_progress_percent) >= 50.0
+    )
+
+    # 5. Curriculum
+    valid_units = [u for u in course_obj.learning_units if u.deleted_at is None]
+    valid_lessons = [
+        les
+        for les in course_obj.lessons
+        if les.deleted_at is None and les.status != "TRASH" and (les.markdown_content or "").strip()
+    ]
+    has_curriculum = bool(valid_units and valid_lessons)
+
+    is_ready = bool(has_cover and has_trailer and has_info and has_academic and has_curriculum)
+
+    return {
+        "is_ready": is_ready,
+        "criteria": [
+            {
+                "id": "cover_image",
+                "title": "Ảnh bìa đại diện khóa học (Tỷ lệ 16:9)",
+                "passed": has_cover,
+                "detail": "Đã có ảnh bìa chuẩn 16:9."
+                if has_cover
+                else "Chưa có ảnh bìa khóa học. Vui lòng tải lên ảnh bìa tỷ lệ 16:9.",
+            },
+            {
+                "id": "intro_video",
+                "title": "Video giới thiệu / Trailer khóa học",
+                "passed": has_trailer,
+                "detail": f"Đã có video trailer: {trailer_url}"
+                if has_trailer
+                else "Chưa có video giới thiệu khóa học. Vui lòng cập nhật liên kết video trailer (YouTube/HLS).",
+            },
+            {
+                "id": "course_info",
+                "title": "Thông tin khóa học & Chuẩn đầu ra (SLOs)",
+                "passed": has_info,
+                "detail": info_detail,
+                "sub_items": [
+                    {
+                        "id": "description",
+                        "title": "Mô tả khóa học (tối thiểu 20 ký tự thực tế)",
+                        "passed": has_valid_desc,
+                        "action_tab": "overview",
+                        "detail": "Đã có mô tả chi tiết đạt chuẩn."
+                        if has_valid_desc
+                        else "Cần tối thiểu 20 ký tự mô tả thực tế (không dùng nội dung mẫu) tại Tab 'Tổng quan'.",
+                    },
+                    {
+                        "id": "learning_objectives",
+                        "title": f"Chuẩn đầu ra môn học / SLOs ({len(lo_list)} mục)",
+                        "passed": has_lo,
+                        "action_tab": "curriculum-slos",
+                        "detail": f"Đã thiết lập {len(lo_list)} chuẩn đầu ra môn học."
+                        if has_lo
+                        else "Cần bổ sung ít nhất 1 chuẩn đầu ra (Learning Objective) tại Tab 'Đề cương & Chuẩn đầu ra'.",
+                    },
+                ],
+            },
+            {
+                "id": "academic_settings",
+                "title": "Cài đặt học vụ & Điều kiện hoàn thành",
+                "passed": has_academic,
+                "detail": f"Tiến độ tối thiểu: {float(rule.minimum_progress_percent):.0f}%"
+                if (has_academic and rule and rule.minimum_progress_percent is not None)
+                else "Chưa cấu hình điều kiện hoàn thành khóa học (tiến độ tối thiểu >= 50%).",
+            },
+            {
+                "id": "curriculum",
+                "title": "Đề cương & Nội dung bài giảng",
+                "passed": has_curriculum,
+                "detail": f"{len(valid_units)} chương mục, {len(valid_lessons)} bài giảng có nội dung."
+                if has_curriculum
+                else "Khóa học cần có ít nhất 1 Chương mục và 1 Bài giảng có nội dung.",
+            },
+        ],
+    }
+
+
+@instructor_bp.route("/courses/<course_id>/publish-checklist", methods=["GET"])
+@instructor_required
+def course_publish_checklist_route(course_id: str) -> Any:
+    """Return pre-flight publication checklist status for a course."""
+    actor = require_authenticated_actor()
+    course_obj = _resolve_course(course_id, session=db.session)
+    if course_obj is None:
+        raise ResourceNotFoundError("Khóa học không tồn tại.")
+    require_course_manager(actor, course_obj.id, session=db.session)
+    checklist = validate_course_publish_readiness(course_obj, actor=actor, session=db.session)
+    return jsonify(checklist), 200
+
+
+@instructor_bp.route("/courses/<course_id>/submit", methods=["POST"])
+@instructor_bp.route("/courses/<course_id>/publish-request", methods=["POST"])
+@instructor_required
+def submit_course_route(course_id: str) -> Any:
+    """Submit a DRAFT course for admin review with pre-flight checklist validation."""
+    actor = require_authenticated_actor()
+
+    course_obj = _resolve_course(course_id, session=db.session)
+    if course_obj is None:
+        raise ResourceNotFoundError("Khóa học không tồn tại.")
+    require_course_manager(actor, course_obj.id, session=db.session)
+
+    checklist = validate_course_publish_readiness(course_obj, actor=actor, session=db.session)
+    if not checklist["is_ready"]:
+        failed_items = [c["detail"] for c in checklist["criteria"] if not c["passed"]]
+        raise CourseValidationError(
+            "Khóa học chưa đủ điều kiện xuất bản: " + " ".join(failed_items)
+        )
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = payload.get("reason", "Giảng viên đề xuất phê duyệt giáo trình và xuất bản khóa học.")
+    try:
+        course = change_course_status(
+            actor,
+            course_id,
+            "SUBMITTED_FOR_REVIEW",
+            reason=reason,
+            require_thumbnail=True,
+        )
+        return jsonify(_serialize_course(course)), 200
+    except Exception:
+        raise
+
+
+@instructor_bp.route("/courses/<course_id>/cancel-submit", methods=["POST"])
+@instructor_required
+def cancel_submit_course_route(course_id: str) -> Any:
+    """Cancel review submission and revert to DRAFT."""
+    actor = require_authenticated_actor()
+    from backend.services.course_workflow_service import course_review_version, lock_course
+
+    course = require_course_manager(actor, course_id, session=db.session)
+    course = lock_course(course, db.session)
+    payload = request.get_json(silent=True) or {}
+    if course.status != "SUBMITTED_FOR_REVIEW" or payload.get(
+        "review_version"
+    ) != course_review_version(course, db.session):
+        raise ConflictError("Bản gửi duyệt đã thay đổi; hãy tải lại trước khi rút lại.")
+    try:
+        course = change_course_status(
+            actor,
+            course_id,
+            "DRAFT",
+            reason="Giảng viên rút lại yêu cầu xét duyệt để chỉnh sửa thêm.",
+            session=db.session,
+        )
+        db.session.commit()
+        return jsonify(_serialize_course(course)), 200
+    except Exception:
+        raise
+
+
+@instructor_bp.route("/courses/<course_id>/publish", methods=["POST"])
+@instructor_required
+def publish_course_route(course_id: str) -> Any:
+    """Publish an approved course (or direct publish if actor is Admin)."""
+    actor = require_authenticated_actor()
+    try:
+        course_obj = _resolve_course(course_id)
+        if course_obj is None:
+            raise ResourceNotFoundError("Khóa học không tồn tại.")
+
+        if course_obj.status == "DRAFT":
+            return (
+                jsonify(
+                    {
+                        "error": {
+                            "code": "COURSE_STATE_VIOLATION",
+                            "message": (
+                                "Khóa học đang ở trạng thái DRAFT. "
+                                "Cần gửi duyệt trước khi xuất bản."
+                            ),
+                        }
+                    }
+                ),
+                409,
+            )
+        elif course_obj.status == "SUBMITTED_FOR_REVIEW":
+            return (
+                jsonify(
+                    {
+                        "error": {
+                            "code": "COURSE_STATE_VIOLATION",
+                            "message": "Khóa học đang chờ Admin xét duyệt.",
+                        }
+                    }
+                ),
+                409,
+            )
+        else:
+            course = change_course_status(actor, course_id, "PUBLISHED")
+
+        return jsonify(_serialize_course(course)), 200
+    except Exception:
+        raise
+
+
+@instructor_bp.route("/courses/<course_id>", methods=["DELETE"])
+@instructor_bp.route("/courses/<course_id>/trash", methods=["POST", "DELETE"])
+@instructor_required
+def trash_course_route(course_id: str) -> Any:
+    """Soft-delete a course to TRASH."""
+    actor = require_authenticated_actor()
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = payload.get("reason")
+    course = trash_course(actor, course_id, reason=reason)
+    try:
+        from backend.services.realtime_service import broadcast_event
+        broadcast_event("course:trashed", {
+            "course_id": str(course.public_id),
+            "title": course.title,
+            "status": course.status,
+            "reason": reason,
+        })
+    except Exception:
+        pass
+    return jsonify({
+        "success": True,
+        "message": "Đã chuyển khóa học vào thùng rác thành công.",
+        "data": {
+            "course_id": str(course.public_id),
+            "status": course.status,
+            "title": course.title,
+        },
+        "course_id": str(course.public_id),
+        "status": course.status,
+    }), 200
+
+
+def _authoring_response(actor, course, data):
+    from backend.services.course_workflow_service import active_changeset, review_version
+
+    record = active_changeset(course.id, db.session)
+    result = {
+        **{key: value for key, value in data.items() if key != "success"},
+        "is_draft": bool(record),
+        "pending_approval": False,
+        "change_request_id": record.id if record else None,
+        "request_id": record.id if record else None,
+        "review_version": review_version(record) if record else None,
+        "message": "Đã lưu vào bản nháp cập nhật." if record else "Đã lưu thay đổi.",
+    }
+    return {"success": True, "data": result, "error": None, **result}
+
+
+@instructor_bp.route("/courses/<course_id>/learning-units", methods=["GET", "POST"])
+@instructor_required
+def learning_units_route(course_id: str) -> Any:
+    actor = require_authenticated_actor()
+    course = require_course_manager(actor, course_id, session=db.session)
+    if request.method == "GET":
+        return jsonify(
+            {
+                "items": [
+                    _serialize_learning_unit(unit) for unit in list_learning_units(actor, course.id)
+                ]
+            }
+        ), 200
+    unit = create_learning_unit(
+        actor, course.id, request.get_json(silent=True) or {}, session=db.session
+    )
+    db.session.commit()
+    return jsonify(_authoring_response(actor, course, _serialize_learning_unit(unit))), 201
+
+
+@instructor_bp.route("/courses/<course_id>/learning-units/reorder", methods=["PUT", "POST"])
+@instructor_required
+def reorder_learning_units_route(course_id: str) -> Any:
+    actor = require_authenticated_actor()
+    course = require_course_manager(actor, course_id, session=db.session)
+    payload = request.get_json(silent=True) or {}
+    unit_ids = payload.get("unit_ids") or payload.get("learning_unit_ids") or []
+    from backend.services.rate_limit_service import check_curriculum_mutation_rate_limit
+
+    check_curriculum_mutation_rate_limit(actor.id, course.id, limit=15, window_seconds=60)
+    from backend.services.lesson_service import reorder_learning_units
+
+    units = reorder_learning_units(actor, course.id, unit_ids, session=db.session)
+    db.session.commit()
+    return jsonify(
+        _authoring_response(
+            actor, course, {"items": [_serialize_learning_unit(unit) for unit in units]}
+        )
+    ), 200
+
+
+@instructor_bp.route("/courses/<course_id>/learning-units/<unit_id>/submit", methods=["POST"])
+@instructor_bp.route("/learning-units/<unit_id>/submit", methods=["POST"])
+@instructor_required
+def submit_learning_unit_route(unit_id: str, course_id: str | None = None) -> Any:
+    actor = require_authenticated_actor()
+    unit = _resolve_learning_unit(unit_id, session=db.session)
+    if unit is None:
+        raise ResourceNotFoundError("Chương bài học không tồn tại.")
+    require_course_manager(actor, unit.course_id, session=db.session)
+    raise ConflictError("Hãy gửi xét duyệt toàn bộ khóa học hoặc một đợt cập nhật tổng hợp.")
+
+
+@instructor_bp.route("/learning-units/<unit_id>", methods=["DELETE"])
+@instructor_required
+def delete_learning_unit_route(unit_id: str) -> Any:
+    actor = require_authenticated_actor()
+    unit = _resolve_learning_unit(unit_id, session=db.session)
+    if unit is None:
+        raise ResourceNotFoundError("Chương bài học không tồn tại.")
+    course = require_course_manager(actor, unit.course_id, session=db.session)
+    from backend.services.lesson_service import delete_learning_unit
+
+    delete_learning_unit(actor, unit_id, session=db.session)
+    db.session.commit()
+    return jsonify(_authoring_response(actor, course, {"success": True})), 200
+
+
+@instructor_bp.route("/learning-units/<unit_id>", methods=["PATCH"])
+@instructor_required
+def update_learning_unit_route(unit_id: str) -> Any:
+    actor = require_authenticated_actor()
+    unit = _resolve_learning_unit(unit_id, session=db.session)
+    if unit is None:
+        raise ResourceNotFoundError("Chương bài học không tồn tại.")
+    course = require_course_manager(actor, unit.course_id, session=db.session)
+    unit = update_learning_unit(
+        actor, unit_id, request.get_json(silent=True) or {}, session=db.session
+    )
+    db.session.commit()
+    return jsonify(_authoring_response(actor, course, _serialize_learning_unit(unit))), 200
+
+
+@instructor_bp.route("/courses/<course_id>/lessons", methods=["POST"])
+@instructor_required
+def create_lesson_route(course_id: str) -> Any:
+    """Create a new lesson in a managed course."""
+    actor = require_authenticated_actor()
+    course = require_course_manager(actor, course_id, session=db.session)
+
+    from backend.services.rate_limit_service import check_curriculum_mutation_rate_limit
+
+    check_curriculum_mutation_rate_limit(actor.id, course.id, limit=15, window_seconds=60)
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    if not payload.get("estimated_duration_minutes"):
+        payload.pop("estimated_duration_minutes", None)
+    if not payload.get("summary"):
+        payload.pop("summary", None)
+
+    # Milestone 4: Default markdown_content and title if blank so instructors
+    # are not forced to type manual markdown or titles when uploading media.
+    raw_title = payload.get("title")
+    if not raw_title or not isinstance(raw_title, str) or not raw_title.strip():
+        payload["title"] = "Bài giảng mới"
+
+    raw_md = payload.get("markdown_content")
+    if not raw_md or not raw_md.strip():
+        title = payload.get("title", "Bài giảng")
+        summary = payload.get("summary") or "Nội dung bài giảng đa phương tiện."
+        raw_md = f"# {title}\n\n{summary}"
+
+    video_urls = payload.pop("video_urls", None)
+    video_url = payload.pop("video_url", None)
+    import re
+
+    if video_urls is not None:
+        validated_urls = _validate_video_urls(video_urls)
+        raw_md = re.sub(r"<!--\s*video_urls?:.*?-->\s*", "", raw_md, flags=re.DOTALL)
+        if validated_urls:
+            raw_md = f"<!-- video_urls: {json.dumps(validated_urls)} -->\n\n" + raw_md
+    elif video_url and str(video_url).strip():
+        if not re.search(r"<!--\s*video_url:\s*\S+?\s*-->", raw_md):
+            raw_md = f"<!-- video_url: {str(video_url).strip()} -->\n\n" + raw_md
+
+    quiz = payload.pop("quiz", None)
+    if (
+        quiz
+        and isinstance(quiz, list)
+        and not re.search(r"<!--\s*mini_quiz:\s*.+?\s*-->", raw_md, re.DOTALL)
+    ):
+        raw_md = f"{raw_md}\n\n<!-- mini_quiz: {json.dumps(quiz, ensure_ascii=False)} -->"
+
+    payload["markdown_content"] = raw_md
+
+    try:
+        # Milestone 4 Remediation: Pre-validate all uploaded files BEFORE calling create_lesson
+        # to ensure transaction atomicity and prevent ghost lessons if validation fails.
+        if request.files:
+            files_to_validate: list[Any] = []
+            media_file = request.files.get("media_file")
+            if media_file and media_file.filename and media_file.filename.strip():
+                files_to_validate.append(media_file)
+
+            for key in ("resource_files", "resource_file", "file"):
+                for rf in request.files.getlist(key):
+                    if rf and rf.filename and rf.filename.strip() and rf not in files_to_validate:
+                        files_to_validate.append(rf)
+
+            uploaded_videos = sum(
+                1
+                for item in files_to_validate
+                if (item.content_type or "").lower().startswith("video/")
+                or (item.filename or "").lower().endswith((".mp4", ".webm", ".mkv", ".mov"))
+            )
+            requested_urls = (
+                validated_urls if video_urls is not None else ([video_url] if video_url else [])
+            )
+            if uploaded_videos + len(requested_urls) > 2:
+                raise ValidationError("Mỗi Lesson chỉ được có tối đa 2 video.")
+            if len(files_to_validate) - uploaded_videos > 5:
+                raise ValidationError("Mỗi Lesson chỉ được có tối đa 5 tài liệu.")
+
+            for f in files_to_validate:
+                if f.filename:
+                    clean_fn = sanitize_filename(f.filename)
+                    validate_file_metadata(clean_fn, getattr(f, "content_type", None))
+
+        lesson = create_lesson(actor, course.id, payload, session=db.session)
+        attached_count = 0
+
+        # Milestone 4: Process multipart uploaded media and resource files
+        if request.files:
+            try:
+                media_file = request.files.get("media_file")
+                if media_file and media_file.filename:
+                    m_asset = store_file_stream(
+                        actor=actor,
+                        course_id=course.id,
+                        file_stream=media_file.stream,
+                        filename=media_file.filename,
+                        content_type=media_file.content_type,
+                        asset_type="RESOURCE",
+                        title=f"Bài giảng: {lesson.title}",
+                        session=db.session,
+                    )
+                    attach_resource_to_lesson(
+                        actor=actor,
+                        lesson_id=lesson.id,
+                        asset_id=m_asset.id,
+                        is_downloadable=True,
+                        label=media_file.filename,
+                        session=db.session,
+                    )
+                    attached_count += 1
+
+                r_files: list[Any] = []
+                for key in ("resource_files", "resource_file", "file"):
+                    r_files.extend(request.files.getlist(key))
+
+                for r_file in r_files:
+                    if r_file and r_file.filename and r_file != media_file:
+                        r_asset = store_file_stream(
+                            actor=actor,
+                            course_id=course.id,
+                            file_stream=r_file.stream,
+                            filename=r_file.filename,
+                            content_type=r_file.content_type,
+                            asset_type="RESOURCE",
+                            title=r_file.filename,
+                            session=db.session,
+                        )
+                        attach_resource_to_lesson(
+                            actor=actor,
+                            lesson_id=lesson.id,
+                            asset_id=r_asset.id,
+                            is_downloadable=True,
+                            label=r_file.filename,
+                            session=db.session,
+                        )
+                        attached_count += 1
+            except Exception:
+                # Cleanup guard: delete created lesson on storage failure to prevent orphan records
+                try:
+                    db.session.rollback()
+                    l_to_del = (
+                        db.session.get(Lesson, lesson.id)
+                        if lesson and hasattr(lesson, "id")
+                        else None
+                    )
+                    if l_to_del is not None:
+                        db.session.delete(l_to_del)
+                        db.session.commit()
+                except Exception:
+                    db.session.rollback()
+                raise
+
+        db.session.commit()
+        serialized = _serialize_lesson(lesson)
+        return jsonify(
+            _authoring_response(
+                actor,
+                course,
+                {
+                    **serialized,
+                    "lesson": serialized,
+                    "resources_attached": attached_count,
+                },
+            )
+        ), 201
+    except Exception:
+        raise
+
+
+@instructor_bp.route("/courses/<course_id>/lessons/<lesson_id>/resources", methods=["POST"])
+@instructor_required
+def attach_lesson_resource_route(course_id: str, lesson_id: str) -> Any:
+    """Attach an uploaded file to an existing lesson."""
+    actor = require_authenticated_actor()
+    course = require_course_manager(actor, course_id, session=db.session)
+    from backend.services.course_workflow_service import ensure_course_authoring
+
+    ensure_course_authoring(actor, course, session=db.session)
+    lesson = _resolve_lesson(lesson_id, session=db.session)
+    if lesson is None or lesson.course_id != course.id:
+        raise ResourceNotFoundError("Lesson not found.")
+
+    file = (
+        request.files.get("file")
+        or request.files.get("resource_file")
+        or request.files.get("media_file")
+    )
+    if not file or not file.filename:
+        raise ValidationError("No file provided.")
+
+    is_video = (file.content_type or "").lower().startswith("video/") or (
+        file.filename.lower().endswith((".mp4", ".webm", ".mkv", ".mov"))
+    )
+    existing_video_count = _lesson_uploaded_video_count(lesson) + len(
+        _extract_video_urls_from_markdown(lesson.markdown_content)
+    )
+    if is_video and existing_video_count >= 2:
+        raise ValidationError("Mỗi Lesson chỉ được có tối đa 2 video.")
+
+    label = request.form.get("label") or file.filename
+    try:
+        asset = store_file_stream(
+            actor=actor,
+            course_id=course.id,
+            file_stream=file.stream,
+            filename=file.filename,
+            content_type=file.content_type,
+            asset_type="RESOURCE",
+            title=label,
+            session=db.session,
+        )
+        if asset.virus_scan_status != "CLEAN":
+            clean_name = asset.original_filename or asset.display_name or file.filename or "Tệp tin"
+            if asset.virus_scan_status == "INFECTED":
+                raise FileInfectedError(
+                    f"Tệp '{clean_name}' bị từ chối do phát hiện mã độc hoặc cấu trúc nguy hiểm. "
+                    "Hệ thống đã tự động chặn tải lên và cách ly tệp này."
+                )
+            raise FileSecurityQuarantineError(
+                f"Tệp '{clean_name}' chưa vượt qua kiểm tra an ninh (trạng thái: {asset.virus_scan_status}). "
+                "Không thể đính kèm vào bài giảng."
+            )
+        resource = attach_resource_to_lesson(
+            actor=actor,
+            lesson_id=lesson.id,
+            asset_id=asset.id,
+            is_downloadable=True,
+            label=label,
+            session=db.session,
+        )
+        return jsonify(_serialize_lesson_resource(resource)), 201
+    except Exception:
+        raise
+
+
+@instructor_bp.route(
+    "/courses/<course_id>/lessons/<lesson_id>/resources/<resource_id>/delete",
+    methods=["POST"],
+)
+@instructor_bp.route(
+    "/courses/<course_id>/lessons/<lesson_id>/resources/<resource_id>",
+    methods=["DELETE"],
+)
+@instructor_required
+def detach_lesson_resource_route(course_id: str, lesson_id: str, resource_id: str) -> Any:
+    """Detach a resource link from a lesson."""
+    actor = require_authenticated_actor()
+    course = require_course_manager(actor, course_id, session=db.session)
+    from backend.services.course_workflow_service import ensure_course_authoring
+
+    ensure_course_authoring(actor, course, session=db.session)
+    lesson = _resolve_lesson(lesson_id, session=db.session)
+    if lesson is None or lesson.course_id != course.id:
+        raise ResourceNotFoundError("Lesson not found.")
+
+    try:
+        detach_resource_from_lesson(actor, lesson.id, resource_id, session=db.session)
+        db.session.commit()
+        return jsonify({"status": "ok", "message": "Resource detached successfully"}), 200
+    except Exception:
+        db.session.rollback()
+        raise
+
+
+@instructor_bp.route("/courses/<course_id>/lessons/<lesson_id>/delete", methods=["POST"])
+@instructor_required
+def delete_lesson_from_hub_route(course_id: str, lesson_id: str) -> Any:
+    """Soft-delete a lesson from the course management hub with admin approval gate."""
+    actor = require_authenticated_actor()
+    course = require_course_manager(actor, course_id, session=db.session)
+    lesson = _resolve_lesson(lesson_id, session=db.session)
+    if lesson is None or lesson.course_id != course.id:
+        raise ResourceNotFoundError("Lesson not found.")
+
+    result = trash_lesson(
+        actor, lesson.id, reason="Xóa bài giảng từ giáo trình", session=db.session
+    )
+    db.session.commit()
+    return jsonify(_authoring_response(actor, course, _serialize_lesson(result))), 200
+
+
+@instructor_bp.route("/courses/<course_id>/files", methods=["POST"])
+@instructor_required
+def upload_course_file_route(course_id: str) -> Any:
+    """Upload a file asset for a course or lesson with virus scanning."""
+    import io
+
+    actor = require_authenticated_actor()
+    course = require_course_manager(actor, course_id, session=db.session)
+
+    if course.status == "SUBMITTED_FOR_REVIEW" and not actor.is_admin:
+        raise CourseStateViolationError(
+            "Khóa học đang trong quá trình xét duyệt của Quản trị viên. Không thể tải lên tệp mới."
+        )
+
+    title = request.form.get("title")
+    lesson_id_str = request.form.get("lesson_id")
+    asset_type = str(request.form.get("asset_type") or "RESOURCE").strip().upper()
+    if asset_type not in {"RESOURCE", "COURSE_IMAGE"}:
+        raise ValidationError("This upload only accepts course images or lesson resources.")
+
+    if request.files and "file" in request.files:
+        upload = request.files["file"]
+        if not upload or not upload.filename:
+            return jsonify(
+                {"error": {"code": "VALIDATION_ERROR", "message": "Invalid filename."}}
+            ), 400
+        file_stream = upload.stream
+        filename = upload.filename
+        content_type = upload.mimetype or upload.content_type
+        if not title:
+            title = filename
+    elif request.data:
+        file_stream = io.BytesIO(request.get_data())
+        filename = request.headers.get("X-File-Name") or "unnamed_file"
+        content_type = request.content_type
+        if not title:
+            title = filename
+    else:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "No file uploaded."}}), 400
+
+    if asset_type == "COURSE_IMAGE":
+        if lesson_id_str:
+            raise ValidationError("A course image cannot be attached to a lesson.")
+        header = file_stream.read(16)
+        file_stream.seek(0)
+        is_png = header.startswith(b"\x89PNG\r\n\x1a\n")
+        is_jpeg = header.startswith(b"\xff\xd8\xff")
+        is_webp = header.startswith(b"RIFF") and header[8:12] == b"WEBP"
+        if not (is_png or is_jpeg or is_webp):
+            raise ValidationError("Choose a PNG, JPEG, or WebP image.")
+
+    lesson = None
+    if lesson_id_str:
+        lesson = _resolve_lesson(lesson_id_str, session=db.session)
+        if lesson is None or lesson.course_id != course.id:
+            raise ValidationError("Lesson does not belong to this course.")
+
+    try:
+        asset = store_file_stream(
+            actor=actor,
+            course_id=course.id,
+            file_stream=file_stream,
+            filename=filename,
+            content_type=content_type,
+            asset_type=asset_type,
+            title=title,
+            session=db.session,
+        )
+
+        if asset.virus_scan_status != "CLEAN":
+            clean_name = asset.original_filename or asset.display_name or filename or "Tệp tin"
+            if asset.virus_scan_status == "INFECTED":
+                raise FileInfectedError(
+                    f"Tệp '{clean_name}' bị từ chối do phát hiện mã độc hoặc cấu trúc nguy hiểm. "
+                    "Hệ thống đã tự động chặn tải lên và cách ly tệp này."
+                )
+            raise FileSecurityQuarantineError(
+                f"Tệp '{clean_name}' chưa vượt qua kiểm tra an ninh (trạng thái: {asset.virus_scan_status}). "
+                "Không thể tải lên khóa học."
+            )
+
+        if lesson is not None:
+            attach_resource_to_lesson(actor, lesson, asset, label=title, session=db.session)
+        db.session.commit()
+
+        return jsonify(_serialize_file_asset(asset)), 201
+
+    except Exception:
+        db.session.rollback()
+        raise
+
+
+@instructor_bp.route("/courses/<course_id>/files/<asset_id>/download", methods=["GET"])
+@instructor_required
+def download_course_file_route(course_id: str, asset_id: str) -> Any:
+    """Download a course file asset with direct authenticated streaming."""
+    actor = require_authenticated_actor()
+    require_course_manager(actor, course_id, session=db.session)
+    version_param = request.args.get("version")
+    revision_no = int(version_param) if version_param and version_param.isdigit() else None
+    asset, blob, physical_path = get_file_for_download(
+        actor, asset_id, revision_no=revision_no, session=db.session
+    )
+    disposition = request.args.get("disposition", "attachment").lower()
+    if disposition not in ("inline", "attachment"):
+        disposition = "attachment"
+    clean_filename = sanitize_filename(asset.original_filename or asset.display_name)
+    return send_file(
+        physical_path,
+        mimetype=blob.detected_mime_type,
+        as_attachment=(disposition == "attachment"),
+        download_name=clean_filename,
+        conditional=True,
+    )
+
+
+@instructor_bp.route("/files/<asset_id>/download", methods=["GET"])
+@instructor_required
+def download_instructor_file_direct_route(asset_id: str) -> Any:
+    """Download a course file asset directly for instructor view without requiring course_id in URL."""
+    actor = require_authenticated_actor()
+    version_param = request.args.get("version")
+    revision_no = int(version_param) if version_param and version_param.isdigit() else None
+    asset, blob, physical_path = get_file_for_download(
+        actor, asset_id, revision_no=revision_no, session=db.session
+    )
+    if asset.course_id:
+        require_course_manager(actor, asset.course_id, session=db.session)
+    disposition = request.args.get("disposition", "attachment").lower()
+    if disposition not in ("inline", "attachment"):
+        disposition = "attachment"
+    clean_filename = sanitize_filename(asset.original_filename or asset.display_name)
+    return send_file(
+        physical_path,
+        mimetype=blob.detected_mime_type,
+        as_attachment=(disposition == "attachment"),
+        download_name=clean_filename,
+        conditional=True,
+    )
+
+
+@instructor_bp.route("/courses/<course_id>/files/<asset_id>/rescan", methods=["POST"])
+@instructor_required
+def rescan_course_file_route(course_id: str, asset_id: str) -> Any:
+    """Trigger on-demand malware rescan of a file asset and redirect to materials tab."""
+    actor = require_authenticated_actor()
+    course = require_course_manager(actor, course_id, session=db.session)
+    try:
+        asset = rescan_file_asset(actor, asset_id, session=db.session)
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            from flask import flash, redirect, url_for
+
+            flash(f"Không thể quét lại: {str(exc)}", "danger")
+            return redirect(
+                url_for("instructor.manage_course_hub", course_id=course.public_id, tab="materials")
+            )
+        raise
+
+    asset_obj = locals().get("asset")
+    asset_status = getattr(asset_obj, "status", None) if asset_obj else None
+    virus_status = getattr(asset_obj, "virus_scan_status", None) if asset_obj else None
+    return (
+        jsonify(
+            {
+                "message": "Rescan completed",
+                "asset_id": str(asset_id),
+                "status": asset_status,
+                "virus_scan_status": virus_status,
+            }
+        ),
+        200,
+    )
+
+
+@instructor_bp.route("/courses/<course_id>/assessments", methods=["POST"])
+@instructor_required
+def create_course_assessment_route(course_id: str) -> Any:
+    """Create a new assessment for a course."""
+    actor = require_authenticated_actor()
+    course = require_course_manager(actor, course_id, session=db.session)
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    stable_id = None
+    if payload.get("client_assessment_id"):
+        try:
+            stable_id = uuid.UUID(str(payload["client_assessment_id"]))
+        except (ValueError, TypeError) as exc:
+            raise ValidationError("Invalid client assessment identifier.") from exc
+        existing = _resolve_assessment(stable_id, session=db.session)
+        if existing is not None:
+            if existing.course_id != course.id or existing.creator_user_id != actor.id:
+                raise ValidationError("Assessment creation identifier belongs to another context.")
+            return jsonify(_serialize_assessment(existing)), 200
+    try:
+        asm = create_assessment(actor, course.id, payload, session=db.session, public_id=stable_id)
+        return jsonify(_serialize_assessment(asm)), 201
+    except sa.exc.IntegrityError:
+        db.session.rollback()
+        if stable_id is not None:
+            existing = _resolve_assessment(stable_id, session=db.session)
+            if (
+                existing is not None
+                and existing.course_id == course.id
+                and existing.creator_user_id == actor.id
+            ):
+                return jsonify(_serialize_assessment(existing)), 200
+        raise
+    except Exception:
+        raise
+
+
+@instructor_bp.route("/lessons/<lesson_id>", methods=["GET"])
+@instructor_required
+def get_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
+    """View lesson detail for authoring with working draft if present."""
+    actor = require_authenticated_actor()
+
+    from backend.services.lesson_service import get_lesson_detail_with_draft
+
+    lesson, working_draft = get_lesson_detail_with_draft(actor, lesson_id, session=db.session)
+    data = _serialize_lesson(lesson)
+    data["working_draft"] = working_draft
+    if lesson.status == "HISTORICAL":
+        newer = (
+            db.session.query(Lesson)
+            .filter(
+                Lesson.course_id == lesson.course_id,
+                Lesson.position == lesson.position,
+                Lesson.status.in_(["ACTIVE", "PUBLISHED"]),
+                Lesson.deleted_at.is_(None),
+                Lesson.id != lesson.id,
+            )
+            .first()
+        )
+        data["is_historical"] = True
+        data["latest_lesson_id"] = str(newer.public_id) if newer else None
+    return jsonify(data), 200
+
+
+@instructor_bp.route("/lessons/<lesson_id>/draft/discard", methods=["POST"])
+@instructor_required
+def discard_lesson_draft_route(lesson_id: str) -> tuple[Response, int] | Response:
+    """Discard an active working draft for a lesson."""
+    actor = require_authenticated_actor()
+    from backend.services.lesson_service import discard_lesson_working_draft
+
+    discarded = discard_lesson_working_draft(actor, lesson_id, session=db.session)
+    return jsonify({"success": True, "discarded": discarded}), 200
+
+
+@instructor_bp.route("/lessons/<lesson_id>", methods=["PATCH", "PUT"])
+@instructor_required
+def update_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
+    """Update editable lesson fields with admin approval gate for published content."""
+    actor = require_authenticated_actor()
+
+    lesson = _resolve_lesson(lesson_id, session=db.session)
+    if lesson is None:
+        raise LessonValidationError("Lesson not found.")
+
+    course = require_course_manager(actor, lesson.course_id, session=db.session)
+
+    from backend.services.rate_limit_service import check_curriculum_mutation_rate_limit
+
+    check_curriculum_mutation_rate_limit(actor.id, course.id, limit=15, window_seconds=60)
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+
+    if "video_urls" in payload:
+        video_urls = _validate_video_urls(payload.pop("video_urls"))
+        payload.pop("video_url", None)
+        if len(video_urls) + _lesson_uploaded_video_count(lesson) > 2:
+            raise ValidationError("Mỗi Lesson chỉ được có tối đa 2 video.")
+        current_md = payload.get("markdown_content", lesson.markdown_content or "")
+        cleaned_md = re.sub(
+            r"<!--\s*video_urls?:.*?-->\s*", "", current_md or "", flags=re.DOTALL
+        ).strip()
+        payload["markdown_content"] = (
+            f"<!-- video_urls: {json.dumps(video_urls)} -->\n\n{cleaned_md}"
+            if video_urls
+            else cleaned_md
+        )
+    elif "video_url" in payload:
+        video_url = payload.pop("video_url")
+        current_md = (
+            payload.get("markdown_content")
+            if "markdown_content" in payload
+            else (lesson.markdown_content or "")
+        )
+        cleaned_md = re.sub(r"<!--\s*video_url:\s*\S+?\s*-->\n*", "", current_md or "").strip()
+        if video_url and str(video_url).strip():
+            payload["markdown_content"] = (
+                f"<!-- video_url: {str(video_url).strip()} -->\n\n{cleaned_md}"
+            )
+        else:
+            payload["markdown_content"] = cleaned_md
+
+    quiz_data = None
+    if "quiz" in payload:
+        quiz_data = payload.get("quiz")
+        current_md = (
+            payload.get("markdown_content")
+            if "markdown_content" in payload
+            else (lesson.markdown_content or "")
+        )
+        cleaned_md = re.sub(
+            r"<!--\s*mini_quiz:\s*.+?\s*-->\n*", "", current_md or "", flags=re.DOTALL
+        ).strip()
+        if quiz_data and isinstance(quiz_data, list) and len(quiz_data) > 0:
+            payload["markdown_content"] = (
+                f"{cleaned_md}\n\n<!-- mini_quiz: {json.dumps(quiz_data, ensure_ascii=False)} -->"
+            )
+        else:
+            payload["markdown_content"] = cleaned_md
+
+    from backend.models.course import CourseChangeRequest
+
+    # Check if course has an active PENDING changeset submitted to Admin
+    pending_cr = (
+        db.session.query(CourseChangeRequest)
+        .filter(
+            CourseChangeRequest.course_id == course.id,
+            CourseChangeRequest.status == "PENDING",
+            CourseChangeRequest.target_type == "COURSE",
+            sa.or_(
+                CourseChangeRequest.change_type == "COURSE_VERSION_CHANGESET",
+                CourseChangeRequest.proposed_payload_json.like(
+                    '%"action": "COURSE_VERSION_CHANGESET"%'
+                ),
+            ),
+        )
+        .first()
+    )
+    if pending_cr:
+        raise ConflictError(
+            "Khóa học hiện đang có 1 đợt cập nhật đang chờ Quản trị viên xét duyệt. "
+            "Vui lòng rút lại xét duyệt trước khi tiếp tục chỉnh sửa bài giảng."
+        )
+
+    payload.pop("quiz", None)
+
+    # If course is published/archived and lesson is already published/active, stage the change into DRAFT
+    if course.status in ("APPROVED", "PUBLISHED", "ARCHIVED") and lesson.status in (
+        "ACTIVE",
+        "PUBLISHED",
+    ):
+        existing_draft = (
+            db.session.query(Lesson)
+            .filter(
+                Lesson.course_id == course.id,
+                Lesson.previous_lesson_id == lesson.id,
+                Lesson.status == "DRAFT",
+                Lesson.deleted_at.is_(None),
+            )
+            .first()
+        )
+        # Check if incoming payload produces any actual difference from the live lesson
+        new_title = (payload.get("title") or lesson.title or "").strip()
+        new_summary = payload.get("summary") if "summary" in payload else (lesson.summary or "")
+        new_summary = (new_summary or "").strip()
+        new_content = (
+            payload.get("markdown_content")
+            if "markdown_content" in payload
+            else (lesson.markdown_content or "")
+        )
+        new_content = (new_content or "").strip()
+        new_dur = (
+            payload.get("estimated_duration_minutes")
+            if "estimated_duration_minutes" in payload
+            else lesson.estimated_duration_minutes
+        )
+        try:
+            new_dur_int = int(new_dur or 0)
+        except (ValueError, TypeError):
+            new_dur_int = 0
+
+        orig_title = (lesson.title or "").strip()
+        orig_summary = (lesson.summary or "").strip()
+        orig_content = (lesson.markdown_content or "").strip()
+        orig_dur_int = int(lesson.estimated_duration_minutes or 0)
+
+        orig_unit_public = str(lesson.learning_unit.public_id) if lesson.learning_unit else None
+        orig_unit_int = str(lesson.learning_unit_id) if lesson.learning_unit_id else None
+        raw_target_unit = (
+            str(payload["learning_unit_id"]).strip()
+            if "learning_unit_id" in payload and payload["learning_unit_id"] is not None
+            else None
+        )
+        unit_changed = (
+            raw_target_unit is not None
+            and raw_target_unit != ""
+            and raw_target_unit not in (orig_unit_public, orig_unit_int)
+        )
+        position_changed = (
+            "position" in payload
+            and payload["position"] is not None
+            and payload["position"] != lesson.position
+        )
+
+        rules_changed = (
+            (
+                "minimum_completion_seconds" in payload
+                and payload["minimum_completion_seconds"] != lesson.minimum_completion_seconds
+            )
+            or (
+                "viewed_fraction_required" in payload
+                and payload["viewed_fraction_required"] != lesson.viewed_fraction_required
+            )
+            or (
+                "required_for_periods_starting_at" in payload
+                and payload["required_for_periods_starting_at"]
+                != lesson.required_for_periods_starting_at
+            )
+            or unit_changed
+            or position_changed
+        )
+
+        has_resource_diff = False
+        if "resources" in payload and isinstance(payload["resources"], list):
+            live_resource_ids = {r.file_asset_id for r in lesson.resources}
+            from backend.services.file_service import _resolve_file_asset
+
+            payload_asset_ids = set()
+            for r in payload["resources"]:
+                if isinstance(r, dict):
+                    aid = r.get("asset_id") or r.get("file_asset_id") or r.get("resource_id") or r.get("id")
+                    if aid:
+                        asset = _resolve_file_asset(aid, session=db.session)
+                        if asset:
+                            payload_asset_ids.add(asset.id)
+            has_resource_diff = (live_resource_ids != payload_asset_ids)
+        elif existing_draft:
+            live_resource_ids = {r.file_asset_id for r in lesson.resources}
+            draft_resource_ids = {r.file_asset_id for r in existing_draft.resources}
+            has_resource_diff = (live_resource_ids != draft_resource_ids)
+
+        is_identical = (
+            not has_resource_diff
+            and not rules_changed
+            and new_title == orig_title
+            and new_summary == orig_summary
+            and new_content == orig_content
+            and new_dur_int == orig_dur_int
+        )
+
+        if is_identical:
+            if existing_draft:
+                from backend.models.types import utc_now
+
+                existing_draft.deleted_at = utc_now()
+                db.session.commit()
+            serialized = _serialize_lesson(lesson)
+            return jsonify(
+                {
+                    **serialized,
+                    "success": True,
+                    "message": "Nội dung bài giảng không có thay đổi so với bản đã ban hành. Hệ thống tự động bỏ qua.",
+                    "is_draft": False,
+                    "status": lesson.status,
+                    "lesson": serialized,
+                }
+            ), 200
+
+        if existing_draft:
+            updated = update_lesson(actor, existing_draft.id, payload, session=db.session)
+            db.session.commit()
+            serialized = _serialize_lesson(updated)
+            return jsonify(
+                {
+                    **serialized,
+                    "success": True,
+                    "message": "Đã lưu thay đổi vào bản nháp cập nhật của khóa học.",
+                    "is_draft": True,
+                    "status": "DRAFT",
+                    "lesson": serialized,
+                }
+            ), 200
+
+        # Create new staged draft revision
+        draft_data = dict(payload)
+        draft_data["title"] = draft_data.get("title") or lesson.title
+        draft_data["summary"] = (
+            draft_data.get("summary") if "summary" in draft_data else lesson.summary
+        )
+        draft_data["markdown_content"] = (
+            draft_data.get("markdown_content")
+            if "markdown_content" in draft_data
+            else lesson.markdown_content
+        )
+        draft_data["estimated_duration_minutes"] = (
+            draft_data.get("estimated_duration_minutes") or lesson.estimated_duration_minutes
+        )
+        draft_data["minimum_completion_seconds"] = (
+            draft_data.get("minimum_completion_seconds")
+            if "minimum_completion_seconds" in draft_data
+            else lesson.minimum_completion_seconds
+        )
+        draft_data["viewed_fraction_required"] = (
+            draft_data.get("viewed_fraction_required")
+            if "viewed_fraction_required" in draft_data
+            else lesson.viewed_fraction_required
+        )
+        draft_data["required_for_periods_starting_at"] = (
+            draft_data.get("required_for_periods_starting_at")
+            if "required_for_periods_starting_at" in draft_data
+            else lesson.required_for_periods_starting_at
+        )
+        draft_data["status"] = "DRAFT"
+        draft_data["position"] = (
+            payload.get("position") if "position" in payload else lesson.position
+        )
+        draft_data["learning_unit_id"] = (
+            payload.get("learning_unit_id")
+            if "learning_unit_id" in payload
+            else (str(lesson.learning_unit.public_id) if lesson.learning_unit else None)
+        )
+        draft_data["previous_lesson_id"] = lesson.id
+
+        staged = create_lesson(actor, course.id, draft_data, session=db.session)
+        staged.previous_lesson_id = lesson.id
+        staged.revision_no = (lesson.revision_no or 1) + 1
+        from backend.services.lesson_service import _copy_lesson_resources
+
+        _copy_lesson_resources(lesson.id, staged.id, session=db.session)
+        if "resources" in payload:
+            update_lesson(actor, staged.id, {"resources": payload["resources"]}, session=db.session)
+        db.session.commit()
+        serialized = _serialize_lesson(staged)
+        return jsonify(
+            {
+                **serialized,
+                "success": True,
+                "message": "Đã lưu thay đổi vào bản nháp cập nhật của khóa học.",
+                "is_draft": True,
+                "status": "DRAFT",
+                "lesson": serialized,
+            }
+        ), 200
+
+    # Otherwise (e.g. course in DRAFT or lesson already DRAFT)
+    updated_lesson = update_lesson(actor, lesson_id, payload, session=db.session)
+    db.session.commit()
+    serialized = _serialize_lesson(updated_lesson)
+    return jsonify(
+        {
+            **serialized,
+            "success": True,
+            "message": "Đã lưu thay đổi vào bản nháp cập nhật của khóa học.",
+            "is_draft": True,
+            "status": updated_lesson.status,
+            "lesson": serialized,
+        }
+    ), 200
+
+
+@instructor_bp.route("/courses/<course_id>/lessons/reorder", methods=["POST"])
+@instructor_required
+def reorder_lessons_route(course_id: str) -> tuple[Response, int] | Response:
+    """Reorder lessons within a course."""
+    actor = require_authenticated_actor()
+
+    course = _resolve_course(course_id, session=db.session)
+    if course is None:
+        raise ResourceNotFoundError("Khóa học không tồn tại.")
+    require_course_manager(actor, course.id, session=db.session)
+
+    from backend.services.rate_limit_service import check_curriculum_mutation_rate_limit
+
+    check_curriculum_mutation_rate_limit(actor.id, course.id, limit=15, window_seconds=60)
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    raw_ids = payload.get("ordered_lesson_ids")
+    if not isinstance(raw_ids, list):
+        raise LessonValidationError("ordered_lesson_ids must be a list of lesson IDs.")
+
+    ordered_ids: list[int | uuid.UUID | str] = [
+        item for item in raw_ids if isinstance(item, (int, uuid.UUID, str))
+    ]
+    move = payload.get("move")
+    if move is not None and not isinstance(move, dict):
+        raise LessonValidationError("move must be an object.")
+
+    reorder_lessons(
+        actor, course.id, ordered_ids, session=db.session, move=move, validate_only=True
+    )
+
+    try:
+        reordered = reorder_lessons(actor, course.id, ordered_ids, session=db.session, move=move)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+    return jsonify({"lessons": [_serialize_lesson(les) for les in reordered]}), 200
+
+
+@instructor_bp.route("/courses/<course_id>/changeset/status", methods=["GET"])
+@instructor_required
+def get_course_changeset_status_route(course_id: str) -> tuple[Response, int] | Response:
+    """Get the latest consolidated curriculum changeset status for a course."""
+    actor = require_authenticated_actor()
+    from backend.services.lesson_service import get_course_changeset_status
+
+    status_data = get_course_changeset_status(actor, course_id, session=db.session)
+    return jsonify(status_data), 200
+
+
+@instructor_bp.route("/courses/<course_id>/changeset/submit", methods=["POST"])
+@instructor_required
+def submit_course_changeset_route(course_id: str) -> tuple[Response, int] | Response:
+    """Submit a consolidated course version changeset for administrator approval."""
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+
+    from backend.services.lesson_service import submit_course_changeset
+
+    req = submit_course_changeset(actor, course_id, payload, session=db.session)
+    db.session.commit()
+    try:
+        from backend.services.realtime_service import broadcast_event
+        broadcast_event("changeset:submitted", {
+            "course_id": str(course_id),
+            "change_request_id": req.id,
+            "title": "Có khóa học mới gửi duyệt",
+            "message": "Giảng viên vừa gửi một đợt cập nhật giáo trình mới chờ xét duyệt.",
+        })
+    except Exception:
+        pass
+    return jsonify(
+        {
+            "status": "pending_approval",
+            "pending_approval": True,
+            "change_request_id": req.id,
+            "message": "Đợt cập nhật chương trình học đã được gửi tới Quản trị viên để xét duyệt.",
+        }
+    ), 202
+
+
+@instructor_bp.route("/courses/<course_id>/changeset/retract", methods=["POST"])
+@instructor_required
+def retract_course_changeset_route(course_id: str) -> tuple[Response, int] | Response:
+    """Retract an active PENDING changeset submitted for a course."""
+    actor = require_authenticated_actor()
+    from backend.services.lesson_service import retract_course_changeset
+
+    req = retract_course_changeset(
+        actor, course_id, session=db.session, expected_identity=request.get_json(silent=True) or {}
+    )
+    db.session.commit()
+    return jsonify(
+        {
+            "status": "CANCELLED",
+            "message": "Đã rút lại đợt cập nhật thành công.",
+            "change_request_id": req.id,
+        }
+    ), 200
+
+
+@instructor_bp.route("/courses/<course_id>/changeset/discard", methods=["POST"])
+@instructor_required
+def discard_course_changeset_route(course_id: str) -> tuple[Response, int] | Response:
+    """Discard active working draft / pending changeset for a course."""
+    actor = require_authenticated_actor()
+    from backend.services.lesson_service import discard_course_changeset
+
+    res = discard_course_changeset(actor, course_id, session=db.session)
+    db.session.commit()
+    return jsonify(res), 200
+
+
+@instructor_bp.route("/courses/<course_id>/changeset/diff", methods=["GET"])
+@instructor_required
+def get_course_changeset_diff_route(course_id: str) -> tuple[Response, int] | Response:
+    """Get the Before vs. After diff of the current course changeset."""
+    actor = require_authenticated_actor()
+    from backend.services.lesson_service import get_course_changeset_diff
+
+    diff_data = get_course_changeset_diff(actor, course_id, session=db.session)
+    return jsonify(diff_data), 200
+
+
+@instructor_bp.route("/lessons/<lesson_id>/status", methods=["POST"])
+@instructor_required
+def change_lesson_status_route(lesson_id: str) -> tuple[Response, int] | Response:
+    """Change status of a lesson (PUBLISHED, HIDDEN, DRAFT)."""
+    actor = require_authenticated_actor()
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    new_status = payload.get("status")
+    if not new_status or not isinstance(new_status, str):
+        raise LessonValidationError("status is required and must be a string.")
+
+    reason = payload.get("reason")
+    if reason is not None and not isinstance(reason, str):
+        reason = str(reason)
+
+    lesson = change_lesson_status(actor, lesson_id, new_status, reason=reason, session=db.session)
+    db.session.commit()
+    return jsonify(_authoring_response(actor, lesson.course, _serialize_lesson(lesson))), 200
+
+
+@instructor_bp.route("/lessons/<lesson_id>", methods=["DELETE"])
+@instructor_bp.route("/lessons/<lesson_id>/trash", methods=["POST", "DELETE"])
+@instructor_required
+def trash_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
+    """Soft-delete a lesson to TRASH with admin approval gate for published content."""
+    actor = require_authenticated_actor()
+
+    lesson = _resolve_lesson(lesson_id, session=db.session)
+    if lesson is None:
+        raise LessonValidationError("Lesson not found.")
+
+    course = require_course_manager(actor, lesson.course_id, session=db.session)
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = payload.get("reason")
+
+    trashed_lesson = trash_lesson(actor, lesson_id, reason=reason, session=db.session)
+    db.session.commit()
+    return jsonify(_authoring_response(actor, course, _serialize_lesson(trashed_lesson))), 200
+
+
+def _serialize_enrolled_student(e: Enrollment) -> dict[str, Any]:
+    return {
+        "enrollment_id": str(e.public_id),
+        "student_id": str(e.student.public_id) if e.student else None,
+        "student_name": e.student.display_name if e.student else None,
+        "student_email": e.student.email if e.student else None,
+        "status": e.status,
+        "period_no": e.current_period.period_no if e.current_period else None,
+        "current_progress_percent": float(e.current_progress_percent or 0.0),
+        "enrolled_at": e.enrolled_at.isoformat() if e.enrolled_at else None,
+        "left_at": e.left_at.isoformat() if e.left_at else None,
+    }
+
+
+def _serialize_prerequisite_course(c: Course) -> dict[str, Any]:
+    cid = str(c.public_id)
+    return {
+        "id": cid,
+        "course_id": cid,
+        "prerequisite_course_id": cid,
+        "course_code": c.course_code,
+        "title": c.title,
+        "category": c.category,
+        "difficulty": c.difficulty,
+        "status": c.status,
+    }
+
+
+@instructor_bp.route("/courses/<course_id>/students", methods=["GET"])
+@instructor_required
+def list_course_students_route(course_id: str) -> tuple[Response, int] | Response:
+    """List students enrolled in the managed course with pagination and filtering."""
+    actor = require_authenticated_actor()
+
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 20, type=int)
+    status = request.args.get("status")
+
+    items, total = get_course_enrollments(
+        actor=actor,
+        course_id=course_id,
+        status=status,
+        page=page,
+        per_page=per_page,
+        session=db.session,
+    )
+    return (
+        jsonify(
+            {
+                "items": [_serialize_enrolled_student(e) for e in items],
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "total_items": total,
+                    "total_pages": (total + per_page - 1) // per_page if per_page > 0 else 0,
+                },
+            }
+        ),
+        200,
+    )
+
+
+@instructor_bp.route("/courses/<course_id>/prerequisites", methods=["GET"])
+@instructor_required
+def list_course_prerequisites_route(course_id: str) -> tuple[Response, int] | Response:
+    """List direct prerequisite courses for a managed course with approval statuses."""
+    actor = require_authenticated_actor()
+
+    course = require_course_manager(actor, course_id, session=db.session)
+    links = (
+        db.session.query(CoursePrerequisite).filter(CoursePrerequisite.course_id == course.id).all()
+    )
+    result = []
+    for link in links:
+        c = link.prerequisite_course
+        if c:
+            result.append(
+                {
+                    "course_id": str(c.public_id),
+                    "prerequisite_course_id": str(c.public_id),
+                    "course_code": c.course_code,
+                    "title": c.title,
+                    "category": c.category,
+                    "difficulty": c.difficulty,
+                    "status": c.status,
+                    "approval_status": link.approval_status,
+                    "requested_at": link.requested_at.isoformat() if link.requested_at else None,
+                    "reviewed_at": link.reviewed_at.isoformat() if link.reviewed_at else None,
+                    "review_note": link.review_note or "",
+                }
+            )
+    from backend.services.course_workflow_service import (
+        active_changeset,
+        effective_prerequisites,
+        payload_for,
+    )
+
+    record = active_changeset(course.id, db.session)
+    changes = (payload_for(record).get("prerequisites") or {}) if record else {}
+    existing = {item["course_id"]: item for item in result}
+    projected = []
+    for candidate in effective_prerequisites(course, actor, db.session):
+        item = existing.get(
+            str(candidate.public_id),
+            {
+                "course_id": str(candidate.public_id),
+                "prerequisite_course_id": str(candidate.public_id),
+                "course_code": candidate.course_code,
+                "title": candidate.title,
+                "category": candidate.category,
+                "difficulty": candidate.difficulty,
+                "status": candidate.status,
+                "review_note": "",
+            },
+        )
+        if str(candidate.public_id) in changes.get("add", []):
+            item = {**item, "is_draft": True, "approval_status": "DRAFT"}
+        projected.append(item)
+    return jsonify({"prerequisites": projected}), 200
+
+
+@instructor_bp.route("/courses/<course_id>/prerequisites", methods=["POST"])
+@instructor_required
+def add_course_prerequisite_route(course_id: str) -> Any:
+    """Add a prerequisite course dependency with publication gate and ownership check."""
+    actor = require_authenticated_actor()
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    return _add_course_prerequisite_operation(actor, course_id, payload)
+
+
+def _add_course_prerequisite_operation(
+    actor: User, course_id: str, payload: dict[str, Any], *, commit: bool = True
+) -> Any:
+    prerequisite_course_id = payload.get("prerequisite_course_id")
+    if not prerequisite_course_id:
+        raise CourseValidationError("prerequisite_course_id is required.")
+    course = require_course_manager(actor, course_id, session=db.session)
+    link = add_course_prerequisite(actor, course.id, prerequisite_course_id, session=db.session)
+    from backend.services.course_workflow_service import should_stage
+
+    direct = not should_stage(actor, course, db.session)
+    if commit:
+        db.session.commit()
+    return jsonify(
+        _authoring_response(
+            actor,
+            course,
+            {
+                "success": True,
+                "direct": direct,
+                "status": "success" if direct else "draft",
+                "approval_status": link.approval_status,
+                "prerequisite_course_id": str(prerequisite_course_id),
+            },
+        )
+    ), (201 if direct else 200)
+
+
+@instructor_bp.route("/prerequisites/incoming-requests", methods=["GET"])
+@instructor_required
+def list_prerequisite_incoming_requests_route() -> tuple[Response, int] | Response:
+    """List incoming requests to use actor's courses as prerequisites."""
+    actor = require_authenticated_actor()
+    from backend.services.enrollment_service import get_incoming_prerequisite_requests
+
+    incoming = get_incoming_prerequisite_requests(actor, session=db.session)
+    return jsonify({"success": True, "incoming": incoming}), 200
+
+
+@instructor_bp.route("/prerequisites/incoming-requests/count", methods=["GET"])
+@instructor_required
+def count_prerequisite_incoming_requests_route() -> tuple[Response, int] | Response:
+    """Return count of PENDING_APPROVAL prerequisite requests for actor."""
+    actor = require_authenticated_actor()
+    from backend.services.enrollment_service import count_incoming_prerequisite_requests
+
+    count = count_incoming_prerequisite_requests(actor, session=db.session)
+    return jsonify({"success": True, "count": count}), 200
+
+
+@instructor_bp.route(
+    "/prerequisites/incoming-requests/<course_id>/<prereq_id>/review",
+    methods=["POST"],
+)
+@instructor_required
+def review_incoming_prerequisite_request_route(
+    course_id: str, prereq_id: str
+) -> tuple[Response, int] | Response:
+    """Approve or reject a prerequisite request by prerequisite course owner."""
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    action = payload.get("action", "APPROVE")
+    note = payload.get("note") or payload.get("reason")
+
+    from backend.services.enrollment_service import review_prerequisite_request
+
+    link = review_prerequisite_request(
+        actor=actor,
+        requesting_course_id=course_id,
+        prerequisite_course_id=prereq_id,
+        action=action,
+        note=note,
+        session=db.session,
+    )
+    return jsonify(
+        {
+            "success": True,
+            "approval_status": link.approval_status,
+            "message": f"Đã {link.approval_status.lower()} yêu cầu môn tiên quyết.",
+        }
+    ), 200
+
+
+@instructor_bp.route("/courses/<course_id>/prerequisites/<prereq_id>", methods=["DELETE"])
+@instructor_bp.route(
+    "/courses/<course_id>/prerequisites/<prereq_id>/delete", methods=["POST", "DELETE"]
+)
+@instructor_required
+def remove_course_prerequisite_route(course_id: str, prereq_id: str) -> Any:
+    """Remove a prerequisite dependency."""
+    actor = require_authenticated_actor()
+    return _remove_course_prerequisite_operation(actor, course_id, prereq_id)
+
+
+def _remove_course_prerequisite_operation(
+    actor: User, course_id: str, prereq_id: str, *, commit: bool = True
+) -> Any:
+    course = require_course_manager(actor, course_id, session=db.session)
+    removed = remove_course_prerequisite(actor, course.id, prereq_id, session=db.session)
+    if commit:
+        db.session.commit()
+    return jsonify(_authoring_response(actor, course, {"removed": removed})), 200
+
+
+@instructor_bp.route("/prerequisite-requests", methods=["GET"])
+@instructor_required
+def list_instructor_prerequisite_requests_route() -> tuple[Response, int] | Response:
+    """List incoming and outgoing prerequisite course change requests for the instructor."""
+    actor = require_authenticated_actor()
+
+    owned_course_ids = [
+        c.id
+        for c in db.session.query(Course.id).filter(Course.owner_instructor_id == actor.id).all()
+    ]
+
+    incoming = []
+    if owned_course_ids:
+        in_reqs = (
+            db.session.query(CourseChangeRequest)
+            .filter(
+                CourseChangeRequest.change_type == "PREREQUISITE",
+                CourseChangeRequest.target_id.in_(owned_course_ids),
+                CourseChangeRequest.status == "PENDING",
+            )
+            .order_by(CourseChangeRequest.created_at.desc())
+            .all()
+        )
+        for r in in_reqs:
+            try:
+                p_data = json.loads(r.proposed_payload_json) if r.proposed_payload_json else {}
+            except Exception:
+                p_data = {}
+            incoming.append(
+                {
+                    "id": r.id,
+                    "course_id": r.course_id,
+                    "course_title": p_data.get("target_course_title")
+                    or (r.course.title if r.course else None),
+                    "course_code": p_data.get("target_course_code")
+                    or (r.course.course_code if r.course else None),
+                    "prerequisite_course_id": r.target_id,
+                    "prerequisite_course_title": p_data.get("prerequisite_course_title"),
+                    "prerequisite_course_code": p_data.get("prerequisite_course_code"),
+                    "requested_by_name": r.requested_by.display_name if r.requested_by else None,
+                    "reason": p_data.get("reason"),
+                    "created_at": r.created_at.isoformat(),
+                    "status": r.status,
+                }
+            )
+
+    out_reqs = (
+        db.session.query(CourseChangeRequest)
+        .filter(
+            CourseChangeRequest.change_type == "PREREQUISITE",
+            CourseChangeRequest.requested_by_user_id == actor.id,
+        )
+        .order_by(CourseChangeRequest.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    outgoing = []
+    for r in out_reqs:
+        try:
+            p_data = json.loads(r.proposed_payload_json) if r.proposed_payload_json else {}
+        except Exception:
+            p_data = {}
+        outgoing.append(
+            {
+                "id": r.id,
+                "course_id": r.course_id,
+                "course_title": p_data.get("target_course_title")
+                or (r.course.title if r.course else None),
+                "prerequisite_course_id": r.target_id,
+                "prerequisite_course_title": p_data.get("prerequisite_course_title"),
+                "status": r.status,
+                "review_reason": r.review_reason,
+                "created_at": r.created_at.isoformat(),
+            }
+        )
+
+    return jsonify({"incoming": incoming, "outgoing": outgoing}), 200
+
+
+@instructor_bp.route("/prerequisite-requests/<int:req_id>/review", methods=["POST"])
+@instructor_required
+def review_instructor_prerequisite_request_route(req_id: int) -> tuple[Response, int] | Response:
+    """Approve or reject an incoming prerequisite request by the prerequisite course owner."""
+    actor = require_authenticated_actor()
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    action = str(payload.get("action", "")).strip().lower()
+
+    if action not in ("approve", "reject"):
+        raise ValidationError("Action must be 'approve' or 'reject'.")
+
+    req_record = db.session.get(CourseChangeRequest, req_id)
+    if req_record is None or req_record.change_type != "PREREQUISITE":
+        raise ResourceNotFoundError("Prerequisite change request not found.")
+
+    prereq_course = db.session.get(Course, req_record.target_id)
+    if prereq_course is None:
+        raise ResourceNotFoundError("Prerequisite course not found.")
+
+    if prereq_course.owner_instructor_id != actor.id and not actor.is_admin:
+        raise ForbiddenError("You are not authorized to review this prerequisite request.")
+
+    raise ConflictError(
+        "Yêu cầu môn tiên quyết riêng lẻ đã ngừng áp dụng. Hãy gửi toàn bộ bản nháp khóa học để Quản trị viên duyệt."
+    )
+
+
+def _serialize_completion_rule(course: Course, rule: Any) -> dict[str, Any]:
+    req_data: dict[str, Any] = {}
+    if course.completion_requirements:
+        try:
+            parsed = json.loads(course.completion_requirements)
+            if isinstance(parsed, dict):
+                req_data = parsed
+        except Exception:
+            req_data = {}
+
+    from backend.services.course_workflow_service import active_changeset, payload_for
+
+    active = active_changeset(course.id, db.session)
+    overrides = (payload_for(active).get("completion_rules") or {}) if active else {}
+    return {
+        "course_id": str(course.public_id),
+        "course_code": course.course_code,
+        "title": course.title,
+        "require_all_required_lessons": bool(rule.require_all_required_lessons),
+        "require_required_assessments": bool(rule.require_required_assessments),
+        "minimum_progress_percent": (
+            float(rule.minimum_progress_percent)
+            if rule.minimum_progress_percent is not None
+            else None
+        ),
+        "minimum_grade_score": req_data.get("minimum_grade_score", 5.0),
+        "allow_certificate": req_data.get("allow_certificate", True),
+        "completion_grace_days": req_data.get("completion_grace_days", 14),
+        "updated_at": rule.updated_at.isoformat() if rule.updated_at else None,
+        **overrides,
+    }
+
+
+@instructor_bp.route("/courses/<course_id>/completion-rules", methods=["GET"])
+@instructor_required
+def get_course_completion_rules_route(course_id: str) -> tuple[Response, int] | Response:
+    """Retrieve completion rule criteria for a managed course."""
+    actor = require_authenticated_actor()
+
+    course = require_course_manager(actor, course_id, session=db.session)
+    rule = get_or_create_default_completion_rule(course.id, session=db.session)
+    return jsonify(_serialize_completion_rule(course, rule)), 200
+
+
+@instructor_bp.route("/courses/<course_id>/completion-rules", methods=["POST", "PUT"])
+@instructor_required
+def set_course_completion_rules_route(course_id: str) -> tuple[Response, int] | Response:
+    """Set or update completion rule criteria for a managed course."""
+    actor = require_authenticated_actor()
+
+    payload = dict(request.get_json(silent=True) or request.form.to_dict() or {})
+    course = require_course_manager(actor, course_id, session=db.session)
+
+    if "min_progress_percent" in payload and "minimum_progress_percent" not in payload:
+        payload["minimum_progress_percent"] = payload["min_progress_percent"]
+    if "min_score" in payload and "minimum_grade_score" not in payload:
+        payload["minimum_grade_score"] = payload["min_score"]
+    if "require_all_mandatory_lessons" in payload and "require_all_required_lessons" not in payload:
+        payload["require_all_required_lessons"] = payload["require_all_mandatory_lessons"]
+
+    rule = set_course_completion_rule(
+        actor=actor,
+        course_id=course.id,
+        payload=payload,
+        session=db.session,
+    )
+    db.session.commit()
+    return jsonify(_serialize_completion_rule(course, rule)), 200
+
+
+@instructor_bp.route("/courses/<course_id>/academic-settings", methods=["PUT"])
+@instructor_required
+def save_course_academic_settings_route(course_id: str) -> Any:
+    """Atomically persist academic edits and their existing review requests."""
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        raise CourseValidationError("Academic settings must be a JSON object.")
+    rules = payload.get("completion_rules")
+    prerequisites = payload.get("prerequisites", {})
+    if not isinstance(rules, dict) or not isinstance(prerequisites, dict):
+        raise CourseValidationError("Completion rules and prerequisites must be objects.")
+    additions = prerequisites.get("add", [])
+    removals = prerequisites.get("remove", [])
+    if not isinstance(additions, list) or not isinstance(removals, list):
+        raise CourseValidationError("Prerequisite additions/removals must be arrays.")
+    if len(additions) + len(removals) > 100:
+        raise CourseValidationError("At most 100 prerequisite edits can be saved at once.")
+    if any(not isinstance(item, dict) for item in additions):
+        raise CourseValidationError("Prerequisite additions must be objects.")
+    if any(not isinstance(item, str) or not item.strip() for item in removals):
+        raise CourseValidationError("Prerequisite removals must contain course identifiers.")
+    try:
+        if additions or removals:
+            from backend.services.course_workflow_service import lock_prerequisite_graph
+
+            lock_prerequisite_graph(db.session)
+        course = require_course_manager(actor, course_id, session=db.session)
+        course = (
+            db.session.query(Course)
+            .filter_by(id=course.id)
+            .with_hint(Course, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
+            .with_for_update()
+            .populate_existing()
+            .one()
+        )
+        metadata = _normalize_course_metadata_payload(
+            actor, course_id, payload.get("course_metadata") or {}
+        )
+        if "learning_objectives" in payload:
+            metadata["learning_objectives"] = payload["learning_objectives"]
+        updated = update_course(actor, course_id, metadata, session=db.session)
+        pending = False
+        rule = set_course_completion_rule(actor, course.id, rules, session=db.session)
+        for prereq_id in removals:
+            response, _ = _remove_course_prerequisite_operation(
+                actor, course_id, prereq_id, commit=False
+            )
+            pending = pending or bool(response.get_json().get("pending_approval"))
+        for addition in additions:
+            response, _ = _add_course_prerequisite_operation(
+                actor, course_id, addition, commit=False
+            )
+            pending = pending or response.get_json().get("status") == "pending_approval"
+        db.session.commit()
+        return jsonify(
+            {
+                "success": True,
+                "data": {
+                    "pending_approval": pending,
+                    "is_draft": isinstance(updated, CourseChangeRequest),
+                    "course": _serialize_course(course),
+                    "completion_rules": _serialize_completion_rule(course, rule),
+                },
+                "error": None,
+            }
+        ), 202 if pending else 200
+    except Exception:
+        db.session.rollback()
+        raise
+
+
+# ============================================================================
+# INSTRUCTOR ASSESSMENT BUILDER & MANAGEMENT ROUTES
+# ============================================================================
+
+
+@instructor_bp.route("/courses/<course_id>/assessments", methods=["GET"])
+@instructor_required
+def list_instructor_course_assessments_route(course_id: str) -> tuple[Response, int] | Response:
+    """List assessments for a course in instructor view."""
+    actor = require_authenticated_actor()
+
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 20, type=int)
+    filters = {
+        "assessment_type": request.args.get("assessment_type") or request.args.get("type"),
+        "status": request.args.get("status"),
+    }
+
+    items, total, p, pp, total_pages = list_course_assessments(
+        actor=actor,
+        course_id=course_id,
+        filters=filters,
+        page=page,
+        per_page=per_page,
+        session=db.session,
+    )
+
+    data = {
+        "items": items,
+        "total": total,
+        "page": p,
+        "per_page": pp,
+        "total_pages": total_pages,
+    }
+    return jsonify(data), 200
+
+
+@instructor_bp.route("/assessments/<assessment_id>", methods=["GET"])
+@instructor_required
+def get_instructor_assessment_detail_route(assessment_id: str) -> Any:
+    """Retrieve detailed assessment configuration or render assessment builder page."""
+    actor = require_authenticated_actor()
+    asm_obj = _resolve_assessment(assessment_id, session=db.session)
+    if asm_obj is None:
+        raise ResourceNotFoundError(f"Assessment '{assessment_id}' not found.")
+
+    data = get_assessment_detail(actor, assessment_id, session=db.session)
+    data["public_id"] = str(asm_obj.public_id)
+    data["assessment_id"] = str(asm_obj.public_id)
+    data["question_assignments"] = data.get("questions", [])
+
+    return jsonify(data), 200
+
+
+@instructor_bp.route("/assessments/<assessment_id>", methods=["PATCH", "PUT", "POST"])
+@instructor_required
+def update_instructor_assessment_route(assessment_id: str) -> Any:
+    """Update assessment configuration."""
+    actor = require_authenticated_actor()
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    try:
+        assessment = update_assessment(actor, assessment_id, payload, session=db.session)
+        return jsonify(_serialize_assessment(assessment, full=False)), 200
+    except Exception:
+        raise
+
+
+@instructor_bp.route("/assessments/<assessment_id>/publish", methods=["POST"])
+@instructor_bp.route("/courses/<course_id>/assessments/<assessment_id>/publish", methods=["POST"])
+@instructor_required
+def publish_instructor_assessment_route(assessment_id: str, course_id: str | None = None) -> Any:
+    """Publish assessment (DRAFT -> PUBLISHED)."""
+    actor = require_authenticated_actor()
+
+    try:
+        payload = request.get_json(silent=True) or {}
+        if not isinstance(payload, dict):
+            raise ValidationError("Publish options must be an object.")
+        assessment = publish_assessment(
+            actor,
+            assessment_id,
+            session=db.session,
+            expected_authoring_token=payload.get("expected_authoring_token"),
+        )
+        return jsonify(_serialize_assessment(assessment, full=False)), 200
+    except Exception:
+        raise
+
+
+@instructor_bp.route("/assessments/<assessment_id>/cancel", methods=["POST"])
+@instructor_required
+def cancel_instructor_assessment_route(assessment_id: str) -> Any:
+    """Cancel a published assessment."""
+    actor = require_authenticated_actor()
+
+    body = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = body.get("reason", "Giảng viên chủ động hủy đợt thi")
+
+    try:
+        assessment = cancel_assessment(actor, assessment_id, reason=reason, session=db.session)
+        return jsonify(
+            {
+                "message": "Assessment cancelled.",
+                "assessment": _serialize_assessment(assessment, full=False),
+            }
+        ), 200
+    except Exception:
+        raise
+
+
+@instructor_bp.route("/assessments/<assessment_id>/trash", methods=["POST"])
+@instructor_required
+def trash_instructor_assessment_route(assessment_id: str) -> Any:
+    """Move assessment to TRASH."""
+    actor = require_authenticated_actor()
+
+    body = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = body.get("reason", "Xóa bởi Giảng viên")
+
+    try:
+        assessment = trash_assessment(actor, assessment_id, reason=reason, session=db.session)
+        return jsonify(
+            {
+                "message": "Assessment moved to trash.",
+                "assessment": _serialize_assessment(assessment, full=False),
+            }
+        ), 200
+    except Exception:
+        raise
+
+
+@instructor_bp.route("/assessments/<assessment_id>/restore", methods=["POST"])
+@instructor_required
+def restore_instructor_assessment_route(assessment_id: str) -> Any:
+    """Restore assessment from TRASH."""
+    actor = require_authenticated_actor()
+
+    try:
+        assessment = restore_assessment(actor, assessment_id, session=db.session)
+        return jsonify(
+            {
+                "message": "Assessment restored from trash.",
+                "assessment": _serialize_assessment(assessment, full=False),
+            }
+        ), 200
+    except Exception:
+        raise
+
+
+@instructor_bp.route("/assessments/<assessment_id>/sections", methods=["POST"])
+@instructor_required
+def create_instructor_section_route(assessment_id: str) -> tuple[Response, int] | Response:
+    """Create a new section in assessment."""
+    actor = require_authenticated_actor()
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    section = create_section(actor, assessment_id, payload, session=db.session)
+
+    return jsonify(_serialize_section(section)), 201
+
+
+@instructor_bp.route("/assessments/<assessment_id>/sections/<section_id>", methods=["DELETE"])
+@instructor_required
+def delete_instructor_section_route(
+    assessment_id: str, section_id: str
+) -> tuple[Response, int] | Response:
+    """Delete a section from assessment."""
+    actor = require_authenticated_actor()
+
+    delete_section(actor, assessment_id, section_id, session=db.session)
+
+    return jsonify({"message": "Section deleted successfully."}), 200
+
+
+@instructor_bp.route("/assessments/<assessment_id>/questions", methods=["POST"])
+@instructor_required
+def assign_instructor_question_route(assessment_id: str) -> Any:
+    """Assign a fixed question to assessment."""
+    actor = require_authenticated_actor()
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    try:
+        assignment = assign_question(actor, assessment_id, payload, session=db.session)
+        return jsonify(_serialize_assignment(assignment)), 201
+    except Exception:
+        raise
+
+
+@instructor_bp.route("/assessments/<assessment_id>/questions/<question_id>", methods=["DELETE"])
+@instructor_bp.route(
+    "/assessments/<assessment_id>/questions/<question_id>/remove", methods=["POST"]
+)
+@instructor_required
+def remove_instructor_question_route(assessment_id: str, question_id: str) -> Any:
+    """Remove a fixed question from assessment."""
+    actor = require_authenticated_actor()
+
+    try:
+        remove_question_assignment(actor, assessment_id, question_id, session=db.session)
+        return jsonify({"message": "Question unassigned successfully."}), 200
+    except Exception:
+        raise
+
+
+@instructor_bp.route("/assessments/<assessment_id>/questions/reorder", methods=["POST", "PUT"])
+@instructor_required
+def reorder_instructor_assessment_questions_route(assessment_id: str) -> Any:
+    """Reorder question assignments within an assessment."""
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    ordered_question_ids = (
+        payload.get("ordered_question_ids")
+        or payload.get("question_ids")
+        or payload.get("ordered_ids")
+    )
+    if not isinstance(ordered_question_ids, list) or not ordered_question_ids:
+        raise ValidationError(
+            "Danh sách thứ tự câu hỏi 'ordered_question_ids' không được để trống."
+        )
+
+    assignments = reorder_assessment_questions(
+        actor=actor,
+        assessment_id=assessment_id,
+        ordered_question_ids=ordered_question_ids,
+        session=db.session,
+    )
+    return jsonify(
+        {
+            "success": True,
+            "message": f"Successfully reordered {len(assignments)} questions.",
+            "assignments": assignments,
+        }
+    ), 200
+
+
+@instructor_bp.route("/assessments/<assessment_id>/questions/create", methods=["POST"])
+@instructor_required
+def create_instructor_assessment_question_route(assessment_id: str) -> Any:
+    """Directly author and assign a question to an assessment from the assessment builder."""
+    actor = require_authenticated_actor()
+    asm_obj = _resolve_assessment(assessment_id, session=db.session)
+    if asm_obj is None:
+        raise ResourceNotFoundError(f"Assessment '{assessment_id}' not found.")
+
+    require_course_manager(actor, asm_obj.course_id, session=db.session)
+    asm_obj = _lock_assessment_for_mutation(asm_obj, db.session)
+
+    try:
+        payload = request.get_json(silent=True) or request.form.to_dict() or {}
+
+        if asm_obj.first_attempt_started_at is not None:
+            from backend.models.assessment import AssessmentQuestionAssignment
+
+            try:
+                retry_id = uuid.UUID(str(payload.get("client_question_id")))
+            except (ValueError, TypeError):
+                raise AssessmentLockedError(
+                    "Cấu trúc đề thi và phân bổ điểm số đã bị khóa (Invariant 14)."
+                ) from None
+            retry_question = _resolve_question(retry_id, session=db.session)
+            if retry_question is None or (
+                db.session.query(AssessmentQuestionAssignment)
+                .filter_by(assessment_id=asm_obj.id, question_id=retry_question.id)
+                .one_or_none()
+                is None
+            ):
+                raise AssessmentLockedError(
+                    "Cấu trúc đề thi và phân bổ điểm số đã bị khóa (Invariant 14)."
+                )
+
+        raw_type = payload.get("question_type") or payload.get("type") or "SINGLE_CHOICE"
+        q_type = str(raw_type).strip().upper()
+        if q_type not in (
+            "SINGLE_CHOICE",
+            "MULTIPLE_CHOICE",
+            "TRUE_FALSE",
+            "SHORT_ANSWER",
+            "ESSAY",
+        ):
+            raise ValidationError(
+                f"Loại câu hỏi '{q_type}' không hợp lệ. "
+                "Chỉ hỗ trợ SINGLE_CHOICE, MULTIPLE_CHOICE, TRUE_FALSE, SHORT_ANSWER, ESSAY."
+            )
+
+        raw_content = payload.get("content") or payload.get("prompt") or payload.get("stem") or ""
+        content = str(raw_content).strip()
+        if not content:
+            raise ValidationError("Nội dung câu hỏi không được để trống.")
+
+        difficulty = (
+            str(payload.get("difficulty") or payload.get("bloom_difficulty") or "UNDERSTAND")
+            .strip()
+            .upper()
+        )
+        if difficulty not in ("REMEMBER", "UNDERSTAND", "APPLY"):
+            raise ValidationError(
+                f"Mức độ Bloom '{difficulty}' không hợp lệ. Chỉ hỗ trợ REMEMBER, UNDERSTAND, APPLY."
+            )
+
+        raw_points = payload.get("points")
+        if raw_points is None:
+            raw_points = payload.get("default_points", 1.0)
+        try:
+            if raw_points is None:
+                raise ValueError()
+            points = float(raw_points)
+            if not isfinite(points) or points <= 0:
+                raise ValueError()
+        except (ValueError, TypeError) as err:
+            raise ValidationError("Điểm phân bổ phải là một số lớn hơn 0.") from err
+
+        raw_explanation = payload.get("explanation")
+        explanation = str(raw_explanation).strip() if raw_explanation else None
+
+        q_payload: dict[str, Any] = {
+            "question_type": q_type,
+            "difficulty": difficulty,
+            "content": content,
+            "default_points": points,
+            "explanation": explanation,
+            "provenance": {
+                "source_type": "MANUAL",
+                "notes": f"Directly authored in assessment builder {asm_obj.public_id}",
+            },
+        }
+
+        # Choices / Accepted answers parsing
+        if q_type in ("SINGLE_CHOICE", "MULTIPLE_CHOICE", "TRUE_FALSE"):
+            choices: list[dict[str, Any]] = []
+            raw_choices = payload.get("choices")
+
+            if isinstance(raw_choices, str):
+                with contextlib.suppress(Exception):
+                    raw_choices = json.loads(raw_choices)
+
+            if isinstance(raw_choices, list) and raw_choices:
+                for idx, c in enumerate(raw_choices, start=1):
+                    if isinstance(c, dict):
+                        c_text = str(c.get("content") or c.get("text") or "").strip()
+                        is_corr = bool(c.get("is_correct", False))
+                        if c_text:
+                            choices.append(
+                                {
+                                    "content": c_text,
+                                    "is_correct": is_corr,
+                                    "position": int(c.get("position", idx)),
+                                }
+                            )
+            elif "choice_content" in request.form or request.form.getlist("choice_content[]"):
+                choice_list = request.form.getlist("choice_content") or request.form.getlist(
+                    "choice_content[]"
+                )
+                if q_type == "SINGLE_CHOICE":
+                    correct_idx = request.form.get("correct_choice", "0")
+                    for idx, c_text in enumerate(choice_list):
+                        t = c_text.strip()
+                        if t:
+                            choices.append(
+                                {
+                                    "content": t,
+                                    "is_correct": (str(idx) == str(correct_idx)),
+                                    "position": idx + 1,
+                                }
+                            )
+                elif q_type == "MULTIPLE_CHOICE":
+                    correct_indices = set(
+                        request.form.getlist("correct_choices")
+                        or request.form.getlist("correct_choices[]")
+                    )
+                    for idx, c_text in enumerate(choice_list):
+                        t = c_text.strip()
+                        if t:
+                            choices.append(
+                                {
+                                    "content": t,
+                                    "is_correct": (str(idx) in correct_indices),
+                                    "position": idx + 1,
+                                }
+                            )
+            elif q_type == "TRUE_FALSE":
+                tf_correct_val = str(
+                    request.form.get("tf_correct") or payload.get("tf_correct") or "true"
+                ).lower()
+                tf_is_true = tf_correct_val in ("true", "1", "dung", "đúng")
+                choices = [
+                    {"content": "Đúng", "is_correct": tf_is_true, "position": 1},
+                    {"content": "Sai", "is_correct": not tf_is_true, "position": 2},
+                ]
+
+            q_payload["choices"] = choices
+
+        elif q_type == "SHORT_ANSWER":
+            accepted_answers: list[dict[str, Any]] = []
+            raw_answers = payload.get("accepted_answers")
+
+            if isinstance(raw_answers, str):
+                with contextlib.suppress(Exception):
+                    raw_answers = json.loads(raw_answers)
+
+            if isinstance(raw_answers, list) and raw_answers:
+                for idx, a in enumerate(raw_answers, start=1):
+                    if isinstance(a, str) and a.strip():
+                        accepted_answers.append({"answer_text": a.strip(), "position": idx})
+                    elif isinstance(a, dict):
+                        a_text = str(a.get("answer_text") or a.get("text") or "").strip()
+                        if a_text:
+                            accepted_answers.append({"answer_text": a_text, "position": idx})
+            else:
+                ans_str = str(
+                    request.form.get("accepted_answers")
+                    or payload.get("accepted_answers")
+                    or request.form.get("short_answers")
+                    or ""
+                )
+                parsed_lines = [
+                    line.strip() for line in re.split(r"[\r\n,]+", ans_str) if line.strip()
+                ]
+                for idx, text in enumerate(parsed_lines, start=1):
+                    accepted_answers.append({"answer_text": text, "position": idx})
+
+            if not accepted_answers:
+                raise ValidationError(
+                    "Câu hỏi SHORT_ANSWER phải có ít nhất 1 đáp án được chấp nhận."
+                )
+
+            q_payload["accepted_answers"] = accepted_answers
+
+        stable_uuid = None
+        if payload.get("client_question_id"):
+            try:
+                stable_uuid = uuid.UUID(str(payload["client_question_id"]))
+            except (TypeError, ValueError) as exc:
+                raise ValidationError("Invalid client question identifier.") from exc
+        existing = _resolve_question(stable_uuid, session=db.session) if stable_uuid else None
+        if existing is not None:
+            from backend.models.assessment import AssessmentQuestionAssignment
+            from backend.services.exceptions import AssessmentStateViolationError
+
+            prior = (
+                db.session.query(AssessmentQuestionAssignment)
+                .filter_by(assessment_id=asm_obj.id, question_id=existing.id)
+                .one_or_none()
+            )
+            saved = _serialize_question(existing, include_answers=True)
+            expected_choices = [
+                (choice["content"], bool(choice["is_correct"]))
+                for choice in sorted(
+                    q_payload.get("choices", []), key=lambda item: item["position"]
+                )
+            ]
+            expected_answers = list(
+                dict.fromkeys(
+                    answer["answer_text"].lower()
+                    for answer in q_payload.get("accepted_answers", [])
+                )
+            )
+            if (
+                existing.course_id != asm_obj.course_id
+                or prior is None
+                or saved["question_type"] != q_type
+                or saved["content"] != content
+                or saved["difficulty"] != difficulty
+                or saved["explanation"] != explanation
+                or prior.points
+                != Decimal(str(points)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+                or [(c["content"], c["is_correct"]) for c in saved["choices"]] != expected_choices
+                or [a["answer_text"].lower() for a in saved["accepted_answers"]] != expected_answers
+            ):
+                raise AssessmentStateViolationError(
+                    "Mã yêu cầu đã được dùng cho câu hỏi khác. Hãy tải lại đề trước khi tiếp tục."
+                )
+            response = {
+                "status": "ok",
+                "message": "Question already created and assigned.",
+                "question": saved,
+                "assignment": _serialize_assignment(prior),
+            }
+            db.session.commit()
+            return jsonify(response), 200
+
+        if asm_obj.first_attempt_started_at is not None:
+            raise AssessmentLockedError(
+                "Cấu trúc đề thi đã bị khóa do đã có thí sinh bắt đầu làm bài "
+                "(Structural Freeze - Invariant 14)."
+            )
+        created_q = create_question(
+            actor=actor,
+            course_id=asm_obj.course_id,
+            payload=q_payload,
+            session=db.session,
+            commit=False,
+            public_id=stable_uuid,
+        )
+
+        assignment = assign_question(
+            actor=actor,
+            assessment_id=asm_obj.id,
+            payload={"question_id": created_q.id, "points": points, "source_type": "MANUAL"},
+            session=db.session,
+            commit=False,
+        )
+        db.session.commit()
+
+        return jsonify(
+            {
+                "status": "ok",
+                "message": "Question created and assigned successfully.",
+                "question": _serialize_question(created_q, include_answers=True),
+                "assignment": _serialize_assignment(assignment),
+            }
+        ), 201
+    except Exception:
+        db.session.rollback()
+        raise
+
+
+@instructor_bp.route("/assessments/<assessment_id>/questions/batch", methods=["POST"])
+@instructor_required
+def batch_create_instructor_assessment_questions_route(assessment_id: str) -> Any:
+    """Batch create questions and assign them atomically to an assessment."""
+    actor = require_authenticated_actor()
+    asm_obj = _resolve_assessment(assessment_id, session=db.session)
+    if asm_obj is None:
+        raise ResourceNotFoundError(f"Assessment '{assessment_id}' not found.")
+
+    require_course_manager(actor, asm_obj.course_id, session=db.session)
+
+    if asm_obj.first_attempt_started_at is not None:
+        raise AssessmentLockedError(
+            "Cấu trúc đề thi đã bị khóa do đã có thí sinh bắt đầu làm bài "
+            "(Structural Freeze - Invariant 14)."
+        )
+
+    payload = request.get_json(silent=True) or {}
+    questions_data = payload.get("questions") or payload.get("items")
+    if not isinstance(questions_data, list) or not questions_data:
+        raise ValidationError("Danh sách câu hỏi 'questions' không được để trống.")
+
+    created_items: list[dict[str, Any]] = []
+    try:
+        for idx, item in enumerate(questions_data, start=1):
+            if not isinstance(item, dict):
+                raise ValidationError(f"Câu hỏi #{idx} phải là một đối tượng JSON hợp lệ.")
+
+            raw_type = item.get("question_type") or item.get("type") or "SINGLE_CHOICE"
+            q_type = str(raw_type).strip().upper()
+            if q_type not in (
+                "SINGLE_CHOICE",
+                "MULTIPLE_CHOICE",
+                "TRUE_FALSE",
+                "SHORT_ANSWER",
+                "ESSAY",
+            ):
+                raise ValidationError(
+                    f"Câu hỏi #{idx}: Loại câu hỏi '{q_type}' không hợp lệ. "
+                    "Chỉ hỗ trợ SINGLE_CHOICE, MULTIPLE_CHOICE, TRUE_FALSE, SHORT_ANSWER, ESSAY."
+                )
+
+            raw_content = item.get("content") or item.get("prompt") or item.get("stem") or ""
+            content = str(raw_content).strip()
+            if not content:
+                raise ValidationError(f"Câu hỏi #{idx}: Nội dung câu hỏi không được để trống.")
+
+            difficulty = (
+                str(item.get("difficulty") or item.get("bloom_difficulty") or "UNDERSTAND")
+                .strip()
+                .upper()
+            )
+            if difficulty not in ("REMEMBER", "UNDERSTAND", "APPLY"):
+                raise ValidationError(
+                    f"Câu hỏi #{idx}: Mức độ Bloom '{difficulty}' không hợp lệ. Chỉ hỗ trợ REMEMBER, UNDERSTAND, APPLY."
+                )
+
+            raw_points = item.get("points") or item.get("default_points") or 1.0
+            try:
+                points = float(raw_points)
+                if points <= 0:
+                    raise ValueError()
+            except (ValueError, TypeError) as err:
+                raise ValidationError(
+                    f"Câu hỏi #{idx}: Điểm phân bổ phải là số lớn hơn 0."
+                ) from err
+
+            raw_explanation = item.get("explanation")
+            explanation = str(raw_explanation).strip() if raw_explanation else None
+
+            q_payload: dict[str, Any] = {
+                "question_type": q_type,
+                "difficulty": difficulty,
+                "content": content,
+                "default_points": points,
+                "explanation": explanation,
+                "provenance": {
+                    "source_type": "MANUAL",
+                    "notes": f"Batch imported into assessment {asm_obj.public_id}",
+                },
+            }
+
+            raw_lesson = item.get("lesson_id")
+            if raw_lesson:
+                les_obj = _resolve_lesson(raw_lesson, session=db.session)
+                if les_obj and les_obj.course_id == asm_obj.course_id:
+                    q_payload["lesson_id"] = les_obj.id
+
+            if q_type in ("SINGLE_CHOICE", "MULTIPLE_CHOICE", "TRUE_FALSE"):
+                choices: list[dict[str, Any]] = []
+                raw_choices = item.get("choices")
+                if isinstance(raw_choices, list) and raw_choices:
+                    for c_idx, c in enumerate(raw_choices, start=1):
+                        if isinstance(c, dict):
+                            c_text = str(c.get("content") or c.get("text") or "").strip()
+                            is_corr = bool(c.get("is_correct", False))
+                            if c_text:
+                                choices.append(
+                                    {
+                                        "content": c_text,
+                                        "is_correct": is_corr,
+                                        "position": int(c.get("position", c_idx)),
+                                    }
+                                )
+                q_payload["choices"] = choices
+
+            elif q_type == "SHORT_ANSWER":
+                accepted_answers: list[dict[str, Any]] = []
+                raw_answers = item.get("accepted_answers")
+                if isinstance(raw_answers, list) and raw_answers:
+                    for a_idx, a in enumerate(raw_answers, start=1):
+                        if isinstance(a, str) and a.strip():
+                            accepted_answers.append({"answer_text": a.strip(), "position": a_idx})
+                        elif isinstance(a, dict):
+                            a_text = str(a.get("answer_text") or a.get("text") or "").strip()
+                            if a_text:
+                                accepted_answers.append({"answer_text": a_text, "position": a_idx})
+                if not accepted_answers:
+                    raise ValidationError(
+                        f"Câu hỏi #{idx}: Câu hỏi SHORT_ANSWER phải có ít nhất 1 đáp án được chấp nhận."
+                    )
+                q_payload["accepted_answers"] = accepted_answers
+
+            if "resources" in item:
+                q_payload["resources"] = item["resources"]
+            elif "image_asset_ids" in item:
+                q_payload["image_asset_ids"] = item["image_asset_ids"]
+            elif "image_asset_id" in item:
+                q_payload["image_asset_id"] = item["image_asset_id"]
+
+            created_q = create_question(
+                actor=actor,
+                course_id=asm_obj.course_id,
+                payload=q_payload,
+                session=db.session,
+                commit=False,
+            )
+
+            raw_image_asset_id = item.get("image_asset_id")
+            if raw_image_asset_id and not created_q.current_revision.resources:
+                image_asset_uuid = None
+                try:
+                    image_asset_uuid = uuid.UUID(str(raw_image_asset_id))
+                except (TypeError, ValueError):
+                    _logger.warning(
+                        "Question #%s: image_asset_id '%s' is not a valid UUID, skipping image link.",
+                        idx,
+                        raw_image_asset_id,
+                    )
+
+                if image_asset_uuid is not None:
+                    image_asset = (
+                        db.session.query(FileAsset)
+                        .filter(
+                            FileAsset.public_id == image_asset_uuid,
+                            FileAsset.course_id == asm_obj.course_id,
+                            FileAsset.deleted_at.is_(None),
+                        )
+                        .first()
+                    )
+                    if image_asset is not None and (image_asset.mime_type or "").lower() in {
+                        "image/jpeg",
+                        "image/png",
+                        "image/webp",
+                        "image/gif",
+                    }:
+                        db.session.add(
+                            QuestionRevisionResource(
+                                question_revision_id=created_q.current_revision.id,
+                                file_asset_id=image_asset.id,
+                                position=1,
+                                resource_role="IMAGE",
+                            )
+                        )
+
+            assignment = assign_question(
+                actor=actor,
+                assessment_id=asm_obj.id,
+                payload={"question_id": created_q.id, "points": points, "source_type": "MANUAL"},
+                session=db.session,
+                commit=False,
+            )
+
+            created_items.append(
+                {
+                    "question_id": str(created_q.public_id),
+                    "assignment_id": _serialize_assignment(assignment)["assignment_id"],
+                    "points": points,
+                }
+            )
+
+        db.session.commit()
+        return jsonify(
+            {
+                "success": True,
+                "status": "ok",
+                "message": f"Successfully created and assigned {len(created_items)} questions.",
+                "created_count": len(created_items),
+                "questions": created_items,
+                "data": created_items,
+            }
+        ), 201
+    except Exception:
+        db.session.rollback()
+        raise
+
+
+@instructor_bp.route("/assessments/<assessment_id>/authoring", methods=["POST"])
+@instructor_required
+def save_instructor_assessment_authoring_route(assessment_id: str) -> Any:
+    """Commit settings and the complete question manifest atomically."""
+    from backend.models.assessment import Assessment, AssessmentQuestionAssignment
+
+    actor = require_authenticated_actor()
+    assessment = _resolve_assessment(assessment_id, session=db.session)
+    if assessment is None:
+        raise ResourceNotFoundError("Assessment not found.")
+    require_course_manager(actor, assessment.course_id, session=db.session)
+    body = request.get_json(silent=True) or {}
+    settings = body.get("assessment", {})
+    questions = body.get("questions")
+    if not isinstance(settings, dict) or not isinstance(questions, list):
+        raise ValidationError("Assessment settings and question manifest are required.")
+    try:
+        db.session.query(Assessment).filter_by(id=assessment.id).update(
+            {"updated_at": Assessment.updated_at}, synchronize_session=False
+        )
+        db.session.refresh(assessment)
+        if assessment.first_attempt_started_at is not None:
+            raise AssessmentLockedError("Assessment structure is locked after the first attempt.")
+        update_assessment(actor, assessment.id, settings, session=db.session, commit=False)
+        existing = {
+            assignment.question_id: assignment
+            for assignment in db.session.query(AssessmentQuestionAssignment)
+            .filter_by(assessment_id=assessment.id)
+            .all()
+        }
+        retained: set[int] = set()
+        saved = []
+        ordered_ids: list[int | uuid.UUID | str] = []
+        for item in questions:
+            if not isinstance(item, dict):
+                raise ValidationError("Each question must be an object.")
+            question_ref = item.get("question_id")
+            client_ref = item.get("client_question_id")
+            stable_uuid = None
+            if client_ref:
+                try:
+                    stable_uuid = uuid.UUID(str(client_ref))
+                except (TypeError, ValueError) as exc:
+                    raise ValidationError("Invalid client question identifier.") from exc
+            question = None
+            if question_ref:
+                question = _resolve_question(str(question_ref), session=db.session)
+            elif stable_uuid is not None:
+                question = _resolve_question(stable_uuid, session=db.session)
+            if question_ref and question is None:
+                raise ResourceNotFoundError("Assigned question not found.")
+            q_payload = dict(item)
+            q_payload["change_reason"] = "Lưu cập nhật nội dung bài thi"
+            if question is not None:
+                if question.id not in existing or question.course_id != assessment.course_id:
+                    raise ValidationError("Question does not belong to this assessment.")
+                if question.id in retained:
+                    raise ValidationError("Question manifest contains duplicate questions.")
+                update_question(actor, question.id, q_payload, session=db.session, commit=False)
+                update_question_assignment(
+                    actor,
+                    assessment.id,
+                    question.id,
+                    {"points": item.get("points", item.get("points_assigned", 1))},
+                    session=db.session,
+                    commit=False,
+                )
+            else:
+                question = create_question(
+                    actor,
+                    assessment.course_id,
+                    q_payload,
+                    session=db.session,
+                    commit=False,
+                    public_id=stable_uuid,
+                )
+                assign_question(
+                    actor,
+                    assessment.id,
+                    {
+                        "question_id": question.id,
+                        "points": item.get("points", item.get("points_assigned", 1)),
+                    },
+                    session=db.session,
+                    commit=False,
+                )
+            retained.add(question.id)
+            ordered_ids.append(str(question.public_id))
+            saved.append(
+                {
+                    "question_id": str(question.public_id),
+                    "client_question_id": str(stable_uuid) if stable_uuid else None,
+                }
+            )
+        for question_id in existing.keys() - retained:
+            remove_question_assignment(
+                actor, assessment.id, question_id, session=db.session, commit=False
+            )
+        db.session.flush()
+        if saved:
+            reorder_assessment_questions(
+                actor,
+                assessment.id,
+                ordered_ids,
+                session=db.session,
+                commit=False,
+            )
+        assignments = [
+            _serialize_assignment(assignment)
+            for assignment in db.session.query(AssessmentQuestionAssignment)
+            .filter_by(assessment_id=assessment.id)
+            .order_by(AssessmentQuestionAssignment.position)
+            .all()
+        ]
+        authoring_token = assessment_authoring_token(assessment, db.session)
+        db.session.commit()
+        return jsonify(
+            {
+                "success": True,
+                "data": {
+                    "assessment_id": str(assessment.public_id),
+                    "questions": saved,
+                    "question_assignments": assignments,
+                    "authoring_token": authoring_token,
+                },
+                "error": None,
+            }
+        ), 200
+    except Exception:
+        db.session.rollback()
+        raise
+
+
+@instructor_bp.route("/assessments/<assessment_id>/questions/<question_id>/edit", methods=["POST"])
+@instructor_required
+def edit_instructor_assessment_question_route(assessment_id: str, question_id: str) -> Any:
+    """Direct in-place editing of question content, choices, answers, or assigned points."""
+    actor = require_authenticated_actor()
+    asm_obj = _resolve_assessment(assessment_id, session=db.session)
+    if asm_obj is None:
+        raise ResourceNotFoundError(f"Assessment '{assessment_id}' not found.")
+
+    require_course_manager(actor, asm_obj.course_id, session=db.session)
+
+    if asm_obj.first_attempt_started_at is not None:
+        raise AssessmentLockedError("Cấu trúc đề thi và phân bổ điểm số đã bị khóa (Invariant 14).")
+
+    question = _resolve_question(question_id, session=db.session)
+    if question is None:
+        raise ResourceNotFoundError(f"Question '{question_id}' not found.")
+
+    try:
+        payload = request.get_json(silent=True) or request.form.to_dict() or {}
+
+        # 1. Check points modification
+        if "points" in payload or "points" in request.form:
+            raw_points = payload.get("points") or request.form.get("points")
+            if raw_points is not None and str(raw_points).strip():
+                try:
+                    pts = float(raw_points)
+                    if pts <= 0:
+                        raise ValueError()
+                    update_question_assignment(
+                        actor=actor,
+                        assessment_id=asm_obj.id,
+                        question_id=question.id,
+                        payload={"points": pts},
+                        session=db.session,
+                    )
+                except (ValueError, TypeError) as err:
+                    raise ValidationError("Điểm phân bổ phải là một số lớn hơn 0.") from err
+
+        # 2. Check question content / choices / explanation / accepted answers modification
+        content_keys = (
+            "content",
+            "prompt",
+            "stem",
+            "choices",
+            "choice_content",
+            "accepted_answers",
+            "short_answers",
+            "explanation",
+            "difficulty",
+            "tf_correct",
+        )
+        has_content_updates = any(k in payload or k in request.form for k in content_keys)
+
+        if has_content_updates:
+            q_payload: dict[str, Any] = {
+                "change_reason": payload.get("change_reason")
+                or request.form.get("change_reason")
+                or "Direct edit from assessment builder",
+            }
+
+            if "content" in payload or "prompt" in payload or "stem" in payload:
+                content_val = str(
+                    payload.get("content") or payload.get("prompt") or payload.get("stem") or ""
+                ).strip()
+                if content_val:
+                    q_payload["content"] = content_val
+
+            if "difficulty" in payload:
+                diff_val = str(payload["difficulty"]).strip().upper()
+                if diff_val not in ("REMEMBER", "UNDERSTAND", "APPLY"):
+                    raise ValidationError(
+                        f"Mức độ Bloom '{diff_val}' không hợp lệ. Chỉ hỗ trợ REMEMBER, UNDERSTAND, APPLY."
+                    )
+                q_payload["difficulty"] = diff_val
+
+            if "explanation" in payload:
+                q_payload["explanation"] = payload["explanation"]
+
+            q_type = (
+                question.current_revision.question_type
+                if question.current_revision
+                else "SINGLE_CHOICE"
+            )
+
+            if q_type in ("SINGLE_CHOICE", "MULTIPLE_CHOICE", "TRUE_FALSE"):
+                choices: list[dict[str, Any]] = []
+                raw_choices = payload.get("choices")
+                if isinstance(raw_choices, str):
+                    with contextlib.suppress(Exception):
+                        raw_choices = json.loads(raw_choices)
+
+                if isinstance(raw_choices, list) and raw_choices:
+                    for idx, c in enumerate(raw_choices, start=1):
+                        if isinstance(c, dict):
+                            c_text = str(c.get("content") or c.get("text") or "").strip()
+                            is_corr = bool(c.get("is_correct", False))
+                            if c_text:
+                                choices.append(
+                                    {
+                                        "content": c_text,
+                                        "is_correct": is_corr,
+                                        "position": int(c.get("position", idx)),
+                                    }
+                                )
+                    q_payload["choices"] = choices
+                elif "choice_content" in request.form or request.form.getlist("choice_content[]"):
+                    choice_list = request.form.getlist("choice_content") or request.form.getlist(
+                        "choice_content[]"
+                    )
+                    if q_type == "SINGLE_CHOICE":
+                        correct_idx = request.form.get("correct_choice", "0")
+                        for idx, c_text in enumerate(choice_list):
+                            t = c_text.strip()
+                            if t:
+                                choices.append(
+                                    {
+                                        "content": t,
+                                        "is_correct": (str(idx) == str(correct_idx)),
+                                        "position": idx + 1,
+                                    }
+                                )
+                    elif q_type == "MULTIPLE_CHOICE":
+                        correct_indices = set(
+                            request.form.getlist("correct_choices")
+                            or request.form.getlist("correct_choices[]")
+                        )
+                        for idx, c_text in enumerate(choice_list):
+                            t = c_text.strip()
+                            if t:
+                                choices.append(
+                                    {
+                                        "content": t,
+                                        "is_correct": (str(idx) in correct_indices),
+                                        "position": idx + 1,
+                                    }
+                                )
+                    q_payload["choices"] = choices
+                elif q_type == "TRUE_FALSE" and (
+                    "tf_correct" in request.form or "tf_correct" in payload
+                ):
+                    tf_val = str(
+                        request.form.get("tf_correct") or payload.get("tf_correct") or "true"
+                    ).lower()
+                    tf_is_true = tf_val in ("true", "1", "dung", "đúng")
+                    q_payload["choices"] = [
+                        {"content": "Đúng", "is_correct": tf_is_true, "position": 1},
+                        {"content": "Sai", "is_correct": not tf_is_true, "position": 2},
+                    ]
+
+            elif q_type == "SHORT_ANSWER":
+                accepted_answers: list[dict[str, Any]] = []
+                raw_answers = payload.get("accepted_answers")
+                if isinstance(raw_answers, str):
+                    with contextlib.suppress(Exception):
+                        raw_answers = json.loads(raw_answers)
+
+                if isinstance(raw_answers, list) and raw_answers:
+                    for idx, a in enumerate(raw_answers, start=1):
+                        if isinstance(a, str) and a.strip():
+                            accepted_answers.append({"answer_text": a.strip(), "position": idx})
+                        elif isinstance(a, dict):
+                            a_text = str(a.get("answer_text") or a.get("text") or "").strip()
+                            if a_text:
+                                accepted_answers.append({"answer_text": a_text, "position": idx})
+                    q_payload["accepted_answers"] = accepted_answers
+                elif "accepted_answers" in request.form or "short_answers" in request.form:
+                    ans_str = str(
+                        request.form.get("accepted_answers")
+                        or request.form.get("short_answers")
+                        or ""
+                    )
+                    parsed_lines = [
+                        line.strip() for line in re.split(r"[\r\n,]+", ans_str) if line.strip()
+                    ]
+                    for idx, text in enumerate(parsed_lines, start=1):
+                        accepted_answers.append({"answer_text": text, "position": idx})
+                    q_payload["accepted_answers"] = accepted_answers
+
+            update_question(
+                actor=actor,
+                question_id=question.id,
+                payload=q_payload,
+                session=db.session,
+            )
+
+        return jsonify({"message": "Question updated successfully."}), 200
+    except ValidationError:
+        raise
+
+
+@instructor_bp.route("/assessments/<assessment_id>/import", methods=["POST"])
+@instructor_required
+def import_assessment_document_route(assessment_id: str) -> Any:
+    """Upload DOCX/PDF to extract, validate, and assign questions to this assessment."""
+    actor = require_authenticated_actor()
+    asm_obj = _resolve_assessment(assessment_id, session=db.session)
+    if asm_obj is None:
+        raise ResourceNotFoundError(f"Assessment '{assessment_id}' not found.")
+
+    require_course_manager(actor, asm_obj.course_id, session=db.session)
+
+    if asm_obj.first_attempt_started_at is not None:
+        raise AssessmentLockedError(
+            "Cấu trúc đề thi đã bị khóa (Structural Freeze - Invariant 14). "
+            "Không thể import câu hỏi mới."
+        )
+
+    try:
+        if not request.files or "file" not in request.files:
+            raise ValidationError("Vui lòng chọn file DOCX hoặc PDF để tải lên.")
+
+        upload = request.files["file"]
+        if not upload or not upload.filename:
+            raise ValidationError("Tên file không hợp lệ.")
+
+        filename = upload.filename.lower()
+        if not (filename.endswith(".docx") or filename.endswith(".pdf")):
+            raise ValidationError("Chỉ hỗ trợ định dạng tài liệu Word (.docx) hoặc PDF (.pdf).")
+
+        # Store file stream with fail-closed security pipeline
+        asset = store_file_stream(
+            actor=actor,
+            course_id=asm_obj.course_id,
+            file_stream=upload.stream,
+            filename=upload.filename,
+            content_type=upload.mimetype or request.content_type,
+            asset_type="IMPORT_SOURCE",
+            session=db.session,
+        )
+
+        # Create import job bound to target assessment
+        job = create_import_job(
+            actor=actor,
+            course_id=asm_obj.course_id,
+            file_asset_id=asset.id,
+            draft_assessment_id=asm_obj.id,
+            session=db.session,
+        )
+
+        # Parse and detect questions
+        job = process_import_job(
+            actor=actor,
+            job_id=job.public_id,
+            session=db.session,
+        )
+
+        # Auto-accept ready and needs-review questions
+        for iq in job.questions:
+            if iq.review_state in ("READY", "NEEDS_REVIEW"):
+                iq.review_state = "ACCEPTED"
+        db.session.commit()
+
+        # Commit approved questions and automatically assign into draft assessment
+        commit_res = commit_import_job(
+            actor=actor,
+            job_id=job.public_id,
+            session=db.session,
+        )
+        db.session.commit()
+        imported_count = commit_res.get("imported_count", 0)
+
+        return jsonify(
+            {
+                "message": f"Successfully imported and assigned {imported_count} questions.",
+                "job_id": str(job.public_id),
+                "imported_count": imported_count,
+                "commit": commit_res,
+            }
+        ), 201
+    except (ValidationError, DocumentParsingError):
+        raise
+
+
+@instructor_bp.route("/assessments/<assessment_id>/blueprint", methods=["POST"])
+@instructor_required
+def configure_instructor_blueprint_route(assessment_id: str) -> tuple[Response, int] | Response:
+    """Configure assessment blueprint rules."""
+    actor = require_authenticated_actor()
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    blueprint = configure_blueprint(actor, assessment_id, payload, session=db.session)
+
+    return jsonify(_serialize_blueprint(blueprint)), 200
+
+
+@instructor_bp.route("/assessments/<assessment_id>/blueprint/materialize", methods=["POST"])
+@instructor_required
+def materialize_instructor_blueprint_route(assessment_id: str) -> tuple[Response, int] | Response:
+    """Materialize candidate question pool from blueprint rules (Algorithm 05)."""
+    actor = require_authenticated_actor()
+
+    pool = materialize_blueprint_pool(actor, assessment_id, session=db.session)
+
+    return jsonify(
+        {
+            "message": "Candidate pool materialized successfully.",
+            "pool_count": len(pool),
+        }
+    ), 200
+
+
+@instructor_bp.route("/assessments/<assessment_id>/attempts", methods=["GET"])
+@instructor_required
+def list_instructor_assessment_attempts_route(
+    assessment_id: str,
+) -> tuple[Response, int] | Response:
+    """List all candidate attempts and objective exam results for an assessment."""
+    from backend.services.attempt_service import list_assessment_student_results
+
+    actor = require_authenticated_actor()
+    try:
+        page = int(request.args.get("page", 1))
+        per_page = int(request.args.get("per_page", 50))
+    except ValueError as exc:
+        from backend.services.exceptions import ValidationError
+
+        raise ValidationError("page and per_page must be integers.") from exc
+    results = list_assessment_student_results(
+        actor,
+        assessment_id,
+        page=page,
+        per_page=per_page,
+        status=request.args.get("status") or None,
+        student_id=request.args.get("student_id") or None,
+        session=db.session,
+    )
+    return jsonify(results), 200
+
+
+@instructor_bp.route("/assessments/<assessment_id>/gradebook.pdf", methods=["GET"])
+@instructor_required
+def export_instructor_assessment_gradebook_pdf_route(
+    assessment_id: str,
+) -> Response:
+    """Download full class gradebook & proctoring report as PDF (Instructor)."""
+    import io
+    import re
+    import urllib.parse
+
+    from flask import send_file
+
+    from backend.services.attempt_service import _resolve_assessment, list_assessment_student_results
+    from backend.services.authorization_service import require_course_manager
+    from backend.services.exceptions import ResourceNotFoundError
+    from backend.services.file_service import sanitize_filename
+    from backend.services.result_pdf_service import build_assessment_gradebook_pdf
+
+    actor = require_authenticated_actor()
+    assessment = _resolve_assessment(assessment_id, session=db.session)
+    if assessment is None:
+        raise ResourceNotFoundError("Bài khảo thí không tồn tại.")
+
+    require_course_manager(actor, assessment.course_id, session=db.session)
+
+    # The results service caps each page at 100; export the complete roster.
+    data = list_assessment_student_results(
+        actor,
+        assessment.id,
+        page=1,
+        per_page=100,
+        session=db.session,
+    )
+    attempts = data.get("attempts") or []
+    for page in range(2, int(data.get("pages") or 1) + 1):
+        attempts.extend(
+            list_assessment_student_results(
+                actor, assessment.id, page=page, per_page=100, session=db.session
+            ).get("attempts")
+            or []
+        )
+    released = [a for a in attempts if a.get("score_status") == "RELEASED"]
+
+    total_candidates = len(attempts)
+    submitted_count = sum(1 for a in attempts if a.get("submitted_at"))
+    passed_count = sum(1 for a in released if a.get("is_passed") or a.get("passed"))
+    failed_count = len(released) - passed_count
+    pass_rate = round((passed_count / len(released)) * 100, 2) if released else 0.0
+
+    scores = [
+        float(
+            a.get("percentage")
+            if a.get("percentage") is not None
+            else (
+                a.get("percent_score")
+                if a.get("percent_score") is not None
+                else (a.get("score") or 0)
+            )
+        )
+        for a in released
+    ]
+    avg_score = round(sum(scores) / len(scores), 1) if scores else None
+    highest_score = max(scores) if scores else None
+    lowest_score = min(scores) if scores else None
+
+    roster = []
+    for a in attempts:
+        user_obj = a.get("user") or a.get("student") or {}
+        st_code = a.get("student_code") or user_obj.get("username") or "-"
+        st_name = (
+            a.get("student_name")
+            or user_obj.get("display_name")
+            or a.get("student_email")
+            or "Thí sinh"
+        )
+        roster.append(
+            {
+                "student_code": st_code,
+                "student_name": st_name,
+                "submitted_at": a.get("submitted_at") or a.get("created_at"),
+                "violation_count": int(a.get("violation_count") or a.get("focus_lost_count") or 0),
+                "score": a.get("percentage")
+                if a.get("percentage") is not None
+                else (
+                    a.get("percent_score")
+                    if a.get("percent_score") is not None
+                    else (a.get("score") or 0)
+                ),
+                "is_passed": bool(a.get("is_passed") or a.get("passed")),
+                "score_status": a.get("score_status"),
+            }
+        )
+
+    assess_type = getattr(assessment, "assessment_type", None)
+    type_name = str(getattr(assess_type, "name", assess_type) or "")
+
+    gradebook_payload = {
+        "assessment_title": assessment.title,
+        "assessment_type": type_name,
+        "course_title": assessment.course.title if assessment.course else "Khóa học",
+        "course_code": assessment.course.course_code if assessment.course else "-",
+        "instructor_name": actor.display_name or actor.email,
+        "duration_minutes": assessment.time_limit_minutes,
+        "total_candidates": total_candidates,
+        "submitted_count": submitted_count,
+        "passed_count": passed_count,
+        "failed_count": failed_count,
+        "pass_rate_pct": pass_rate,
+        "average_score": avg_score,
+        "highest_score": highest_score,
+        "lowest_score": lowest_score,
+        "attempts": roster,
+    }
+
+    pdf_bytes = build_assessment_gradebook_pdf(gradebook_payload)
+    safe_title = sanitize_filename(
+        f"Bang-diem-{assessment.course.course_code if assessment.course else 'PWD301'}-{assessment.title}.pdf"
+    )
+    if not safe_title.lower().endswith(".pdf"):
+        safe_title = f"{safe_title}.pdf"
+
+    import unicodedata
+
+    ascii_clean = (
+        unicodedata.normalize("NFKD", safe_title).encode("ascii", "ignore").decode("ascii")
+    )
+    ascii_fallback = re.sub(r"[^a-zA-Z0-9\.\-_]", "_", ascii_clean).strip("_") or "bang-diem.pdf"
+    if not ascii_fallback.lower().endswith(".pdf"):
+        ascii_fallback = f"{ascii_fallback}.pdf"
+    encoded_name = urllib.parse.quote(safe_title.encode("utf-8"))
+
+    response = send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=ascii_fallback,
+        conditional=False,
+    )
+    response.headers["Content-Disposition"] = (
+        f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded_name}"
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+@instructor_bp.route("/attempts/<attempt_id>/focus-events", methods=["GET"])
+@instructor_required
+def get_instructor_attempt_focus_events_route(attempt_id: str) -> Any:
+    from backend.services.attempt_service import get_instructor_attempt_focus_events
+
+    result = get_instructor_attempt_focus_events(
+        require_authenticated_actor(),
+        attempt_id,
+        session=db.session,
+    )
+    return jsonify(result), 200
+
+
+@instructor_bp.route("/attempts/<attempt_id>/results", methods=["GET"])
+@instructor_required
+def get_instructor_attempt_results_route(attempt_id: str) -> tuple[Response, int] | Response:
+    """Retrieve question-by-question objective exam evaluation for an attempt."""
+    from backend.services.attempt_service import get_instructor_attempt_evaluation
+
+    actor = require_authenticated_actor()
+    evaluation = get_instructor_attempt_evaluation(
+        actor,
+        attempt_id,
+        reason=request.args.get("reason"),
+        session=db.session,
+    )
+    return jsonify(evaluation), 200
+
+
+@instructor_bp.route("/grading", methods=["GET"])
+@instructor_required
+def instructor_grading_overview() -> Any:
+    """Overview of pending grading attempts across courses for the instructor."""
+    from backend.services.attempt_service import list_pending_grading_overview
+
+    actor = require_authenticated_actor()
+    pending_attempts = list_pending_grading_overview(actor, session=db.session)
+    return jsonify({"pending_attempts": pending_attempts, "total": len(pending_attempts)}), 200
+
+
+@instructor_bp.route("/assessments/<assessment_id>/grading/pending", methods=["GET"])
+@instructor_required
+def list_instructor_pending_grading_route(assessment_id: str) -> Any:
+    """List attempts for an assessment requiring manual grading."""
+    from backend.services.attempt_service import list_pending_grading_attempts
+
+    actor = require_authenticated_actor()
+    attempts = list_pending_grading_attempts(actor, assessment_id, session=db.session)
+    return jsonify({"attempts": attempts, "total": len(attempts)}), 200
+
+
+@instructor_bp.route("/attempts/<attempt_id>/grading", methods=["GET"])
+@instructor_required
+def get_instructor_attempt_grading_route(attempt_id: str) -> Any:
+    """Retrieve detailed attempt answers for grading evaluation."""
+    from backend.services.attempt_service import get_attempt_grading_detail
+
+    actor = require_authenticated_actor()
+    detail = get_attempt_grading_detail(
+        actor,
+        attempt_id,
+        reason=request.args.get("reason"),
+        session=db.session,
+    )
+    return jsonify(detail), 200
+
+
+@instructor_bp.route("/attempts/<attempt_id>/grades/<attempt_question_id>", methods=["POST"])
+@instructor_required
+def grade_instructor_essay_route(
+    attempt_id: str,
+    attempt_question_id: str,
+) -> Any:
+    """Grade or revise manual score for an essay question."""
+    from backend.services.attempt_service import grade_essay_question
+
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    awarded_points = payload.get("awarded_points")
+    if awarded_points is None:
+        raise ValidationError("awarded_points is required.")
+    reason = payload.get("reason") or payload.get("feedback")
+    expected_row_version = payload.get("row_version")
+    result = grade_essay_question(
+        actor=actor,
+        attempt_id=attempt_id,
+        attempt_question_id=attempt_question_id,
+        awarded_points=awarded_points,
+        reason=reason,
+        expected_row_version=expected_row_version,
+        session=db.session,
+    )
+    return jsonify(result), 200
+
+
+@instructor_bp.route("/attempts/<attempt_id>/appeal/review", methods=["POST"])
+@instructor_required
+def review_instructor_attempt_appeal_route(attempt_id: str) -> tuple[Response, int] | Response:
+    """Approve or reject a student attempt appeal with score adjustment."""
+    import json
+    from decimal import Decimal
+
+    from backend.models.attempt_regrade import (
+        AssessmentResult,
+        AssessmentResultHistory,
+    )
+    from backend.models.notification_audit import AuditEvent
+    from backend.models.types import utc_now
+    from backend.services.attempt_service import _resolve_attempt
+
+    actor = require_authenticated_actor()
+    attempt = _resolve_attempt(attempt_id, session=db.session)
+    if attempt is None:
+        raise ResourceNotFoundError("Lượt thi không tồn tại.")
+
+    from backend.services.authorization_service import require_course_manager
+
+    # Check that instructor owns or manages the course
+    if attempt.assessment and attempt.assessment.course_id:
+        require_course_manager(actor, attempt.assessment.course_id, session=db.session)
+
+    raw_payload = request.get_json(silent=True) if request.is_json else request.form.to_dict()
+    payload = raw_payload if isinstance(raw_payload, dict) else {}
+    decision = str(payload.get("decision", "APPROVED")).upper()
+    reviewer_note = str(payload.get("reviewer_note", "")).strip()
+    score_delta = payload.get("score_delta")
+    new_raw_score = payload.get("new_score")
+
+    now = utc_now()
+    result = (
+        db.session.query(AssessmentResult).filter(AssessmentResult.attempt_id == attempt.id).first()
+    )
+
+    if (
+        decision == "APPROVED"
+        and result is not None
+        and (score_delta is not None or new_raw_score is not None)
+    ):
+        old_score = result.raw_score
+        old_pct = result.percent_score
+        if new_raw_score is not None:
+            new_score = Decimal(str(new_raw_score))
+        else:
+            new_score = old_score + Decimal(str(score_delta))
+        new_score = max(Decimal("0"), min(new_score, result.max_score))
+        new_pct = (new_score / result.max_score) * Decimal("100")
+        passing_percent = (
+            Decimal(str(attempt.assessment.passing_percent or "50.0"))
+            if attempt.assessment
+            else Decimal("50.0")
+        )
+        passed = new_pct >= passing_percent
+
+        result.raw_score = new_score
+        result.percent_score = new_pct
+        result.passed = passed
+        result.updated_at = now
+
+        history = AssessmentResultHistory(
+            attempt_id=attempt.id,
+            old_score=old_score,
+            new_score=new_score,
+            old_percent=old_pct,
+            new_percent=new_pct,
+            reason_code="MANUAL",
+            reason=f"Phúc khảo khảo thí: {reviewer_note}"[:1000],
+            actor_user_id=actor.id,
+            created_at=now,
+        )
+        db.session.add(history)
+
+    from backend.models.attempt_regrade import AssessmentAppeal
+    pending_appeal = (
+        db.session.query(AssessmentAppeal)
+        .filter(
+            AssessmentAppeal.assessment_attempt_id == attempt.id,
+            AssessmentAppeal.status == "PENDING",
+        )
+        .first()
+    )
+    if pending_appeal:
+        pending_appeal.status = "RESOLVED" if decision == "APPROVED" else "REJECTED"
+        pending_appeal.instructor_feedback = reviewer_note
+        pending_appeal.final_score = float(result.raw_score) if (result and decision == "APPROVED") else float(pending_appeal.original_score or 0.0)
+        pending_appeal.reviewed_by_user_id = actor.id
+        pending_appeal.reviewed_at = now
+        pending_appeal.updated_at = now
+
+    audit_entry = AuditEvent(
+        actor_user_id=actor.id,
+        actor_roles_snapshot="INSTRUCTOR",
+        action="INSTRUCTOR_APPEAL_DECISION",
+        target_type="ASSESSMENT_ATTEMPT",
+        target_id=attempt.id,
+        reason=f"Giảng viên {decision} đơn phúc khảo: {reviewer_note}"[:1000],
+        after_json=json.dumps(
+            {
+                "status": decision,
+                "reviewer_note": reviewer_note,
+                "score_delta": float(score_delta) if score_delta is not None else None,
+                "new_score": float(result.raw_score) if result is not None else None,
+                "reviewed_at": now.isoformat(),
+            },
+            ensure_ascii=False,
+        ),
+        created_at=now,
+    )
+    db.session.add(audit_entry)
+    db.session.commit()
+
+    decision_label = "phê duyệt" if decision == "APPROVED" else "từ chối"
+    return jsonify(
+        {
+            "message": f"Đã {decision_label} đơn phúc khảo thành công.",
+            "status": decision,
+        }
+    ), 200
+
+
+@instructor_bp.route("/attempts/<attempt_id>/appeal", methods=["GET"])
+@instructor_required
+def get_instructor_attempt_appeal_route(attempt_id: str) -> tuple[Response, int] | Response:
+    """Retrieve appeal for an attempt from instructor view (avoids 403 on student route)."""
+    actor = require_authenticated_actor()
+    from backend.models.attempt_regrade import AssessmentAppeal
+    from backend.services.attempt_service import _resolve_attempt
+    from backend.services.authorization_service import require_course_manager
+
+    attempt = _resolve_attempt(attempt_id, session=db.session)
+    if attempt is None:
+        raise ResourceNotFoundError("Lượt thi không tồn tại.")
+    if attempt.assessment and attempt.assessment.course_id:
+        require_course_manager(actor, attempt.assessment.course_id, session=db.session)
+
+    appeal = (
+        db.session.query(AssessmentAppeal)
+        .filter(AssessmentAppeal.assessment_attempt_id == attempt.id)
+        .order_by(AssessmentAppeal.id.desc())
+        .first()
+    )
+    if appeal:
+        ser = appeal.serialize()
+        return jsonify({"success": True, "appeal": ser, "data": ser}), 200
+    return jsonify({"success": True, "appeal": None, "data": None}), 200
+
+
+@instructor_bp.route("/assessments/<assessment_id>/regrade", methods=["POST"])
+@instructor_required
+def trigger_instructor_regrade_route(assessment_id: str) -> tuple[Response, int] | Response:
+    """Trigger regrade job for an assessment from instructor view."""
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    result = trigger_assessment_regrade(actor, assessment_id, payload=payload, session=db.session)
+    return jsonify(result), 200
+
+
+@instructor_bp.route("/regrade-jobs/<job_id>", methods=["GET"])
+@instructor_required
+def get_instructor_regrade_job_route(job_id: str) -> tuple[Response, int] | Response:
+    """Retrieve regrade job progress for instructor view."""
+    actor = require_authenticated_actor()
+    result = get_regrade_job_detail(actor, job_id, session=db.session)
+    return jsonify(result), 200
+
+
+@instructor_bp.route("/regrade-jobs/<job_id>/retry", methods=["POST"])
+@instructor_required
+def retry_instructor_regrade_job_route(job_id: str) -> tuple[Response, int] | Response:
+    """Retry failed items in a regrade job for instructor view."""
+    actor = require_authenticated_actor()
+    result = retry_regrade_job(job_id, actor=actor, session=db.session)
+    return jsonify(result), 200
+
+
+@instructor_bp.route("/courses/<course_id>/files", methods=["GET"])
+@instructor_required
+def instructor_list_course_files(course_id: str) -> tuple[Response, int] | Response:
+    """List FileAssets belonging to a course for Instructor Web portal."""
+    from backend.services.file_service import _serialize_file_asset, list_course_files
+
+    actor = require_authenticated_actor()
+    status = request.args.get("status", "ACTIVE")
+    files = list_course_files(actor=actor, course_id=course_id, status=status, session=db.session)
+    return jsonify({"items": [_serialize_file_asset(f) for f in files]}), 200
+
+
+@instructor_bp.route("/files/<asset_id>", methods=["DELETE"])
+@instructor_bp.route("/files/<asset_id>/trash", methods=["POST"])
+@instructor_required
+def instructor_trash_file(asset_id: str) -> tuple[Response, int] | Response:
+    """Soft-delete a course file asset from Instructor Web portal."""
+    from backend.services.file_service import _serialize_file_asset, trash_file_asset
+
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = payload.get("reason")
+    asset = trash_file_asset(actor=actor, asset_id=asset_id, reason=reason, session=db.session)
+    return jsonify(_serialize_file_asset(asset)), 200
+
+
+@instructor_bp.route("/files/<asset_id>/restore", methods=["POST"])
+@instructor_required
+def instructor_restore_file(asset_id: str) -> tuple[Response, int] | Response:
+    """Restore a soft-deleted course file asset from Instructor Web portal."""
+    from backend.services.file_service import _serialize_file_asset, restore_file_asset
+
+    actor = require_authenticated_actor()
+    asset = restore_file_asset(actor=actor, asset_id=asset_id, session=db.session)
+    return jsonify(_serialize_file_asset(asset)), 200
+
+
+@instructor_bp.route("/courses/<course_id>/imports", methods=["POST"])
+@instructor_required
+def instructor_create_course_import(course_id: str) -> tuple[Response, int] | Response:
+    """Start DOCX/PDF import job from Instructor Web portal."""
+    from backend.services.exceptions import ValidationError
+    from backend.services.import_service import (
+        create_import_job,
+        get_import_job_detail,
+        process_import_job,
+    )
+
+    actor = require_authenticated_actor()
+    data = request.get_json(silent=True) or request.form.to_dict()
+    file_asset_id = data.get("file_asset_id")
+
+    if (not file_asset_id) and request.files and "file" in request.files:
+        from backend.services.file_service import store_file_stream
+
+        upload = request.files["file"]
+        asset = store_file_stream(
+            actor=actor,
+            course_id=course_id,
+            file_stream=upload.stream,
+            filename=upload.filename or "import.docx",
+            content_type=upload.mimetype or request.content_type,
+            asset_type="IMPORT_SOURCE",
+            session=db.session,
+        )
+        file_asset_id = str(asset.public_id)
+
+    if not file_asset_id:
+        raise ValidationError("Field 'file_asset_id' or uploaded 'file' is required.")
+
+    auto_process = data.get("auto_process", True)
+    if isinstance(auto_process, str):
+        auto_process = auto_process.lower() in ("true", "1", "yes")
+
+    job = create_import_job(
+        actor=actor,
+        course_id=course_id,
+        file_asset_id=file_asset_id,
+        session=db.session,
+    )
+
+    if auto_process:
+        job = process_import_job(
+            actor=actor,
+            job_id=job.public_id,
+            session=db.session,
+        )
+
+    detail = get_import_job_detail(actor, job.public_id, session=db.session)
+    return jsonify(detail), 202
+
+
+@instructor_bp.route("/courses/<course_id>/imports", methods=["GET"])
+@instructor_required
+def instructor_list_course_imports(course_id: str) -> tuple[Response, int] | Response:
+    """List import jobs for a course in Instructor Web portal."""
+    from backend.models.file_import import DocumentImportJob
+    from backend.services.import_service import _resolve_course, get_import_job_detail
+
+    actor = require_authenticated_actor()
+    course = _resolve_course(course_id, session=db.session)
+    require_course_manager(actor, course.id, session=db.session)
+
+    jobs = (
+        db.session.query(DocumentImportJob)
+        .filter(DocumentImportJob.course_id == course.id)
+        .order_by(DocumentImportJob.created_at.desc())
+        .all()
+    )
+    return (
+        jsonify(
+            {"items": [get_import_job_detail(actor, j.public_id, session=db.session) for j in jobs]}
+        ),
+        200,
+    )
+
+
+@instructor_bp.route("/imports/<job_id>", methods=["GET"])
+@instructor_required
+def instructor_get_import_detail(job_id: str) -> tuple[Response, int] | Response:
+    """View details of an import job in Instructor Web portal."""
+    from backend.services.import_service import get_import_job_detail
+
+    actor = require_authenticated_actor()
+    detail = get_import_job_detail(actor, job_id, session=db.session)
+    return jsonify(detail), 200
+
+
+@instructor_bp.route("/imports/<job_id>/questions/<temp_id>", methods=["PATCH"])
+@instructor_required
+def instructor_update_import_question(job_id: str, temp_id: str) -> tuple[Response, int] | Response:
+    """Update question draft in Instructor Web portal."""
+    from backend.services.import_service import (
+        set_import_question_decision,
+        update_import_question,
+    )
+
+    actor = require_authenticated_actor()
+    data = request.get_json(silent=True) or request.form.to_dict() or {}
+
+    decision = data.get("decision") or data.get("action")
+    if decision:
+        set_import_question_decision(
+            actor=actor,
+            job_id=job_id,
+            temp_id=temp_id,
+            decision=str(decision),
+            session=db.session,
+        )
+
+    updated = update_import_question(
+        actor=actor,
+        job_id=job_id,
+        temp_id=temp_id,
+        payload=data,
+        session=db.session,
+    )
+    return jsonify(updated), 200
+
+
+@instructor_bp.route("/imports/<job_id>/questions/<temp_id>/decision", methods=["POST"])
+@instructor_required
+def instructor_set_import_decision(job_id: str, temp_id: str) -> tuple[Response, int] | Response:
+    """Accept or reject question draft in Instructor Web portal."""
+    from backend.services.exceptions import ValidationError
+    from backend.services.import_service import set_import_question_decision
+
+    actor = require_authenticated_actor()
+    data = request.get_json(silent=True) or request.form.to_dict() or {}
+    decision = data.get("action") or data.get("decision")
+    if not decision:
+        raise ValidationError("Field 'action' or 'decision' is required (ACCEPTED / REJECTED).")
+
+    updated = set_import_question_decision(
+        actor=actor,
+        job_id=job_id,
+        temp_id=temp_id,
+        decision=str(decision),
+        session=db.session,
+    )
+    return jsonify(updated), 200
+
+
+@instructor_bp.route("/imports/<job_id>/commit", methods=["POST"])
+@instructor_required
+def instructor_commit_import(job_id: str) -> tuple[Response, int] | Response:
+    """Commit accepted import questions to Question Bank in Instructor Web portal."""
+    from backend.services.import_service import commit_import_job
+
+    actor = require_authenticated_actor()
+    result = commit_import_job(actor, job_id, session=db.session)
+    db.session.commit()
+    return jsonify(result), 200
+
+
+@instructor_bp.route("/imports/<job_id>/cancel", methods=["POST"])
+@instructor_required
+def instructor_cancel_import(job_id: str) -> tuple[Response, int] | Response:
+    """Cancel import job in Instructor Web portal."""
+    from backend.services.import_service import cancel_import_job, get_import_job_detail
+
+    actor = require_authenticated_actor()
+    data = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = data.get("reason")
+    job = cancel_import_job(actor, job_id, reason=reason, session=db.session)
+    detail = get_import_job_detail(actor, job.public_id, session=db.session)
+    return jsonify(detail), 200
+
+
+@instructor_bp.route("/exams/parse-file", methods=["POST"])
+@instructor_required
+def instructor_parse_exam_file_route() -> tuple[Response, int] | Response:
+    """Extract text from an uploaded exam document for the exam editor."""
+    import contextlib
+    import logging
+    import tempfile
+    from pathlib import Path
+
+    from backend.services.exceptions import ValidationError
+    from backend.services.import_service import extract_text_from_pdf
+
+    _logger = logging.getLogger(__name__)
+    actor = require_authenticated_actor()
+    if not request.files or "file" not in request.files:
+        raise ValidationError("Vui lòng chọn tệp (.docx, .pdf, .txt) để tải lên.")
+
+    upload = request.files["file"]
+    if not upload or not upload.filename:
+        raise ValidationError("Tên tệp không hợp lệ.")
+
+    filename = upload.filename
+    ext = Path(filename).suffix.lower()
+
+    if ext not in (".docx", ".pdf", ".txt", ".md"):
+        raise ValidationError("Chỉ hỗ trợ các định dạng tệp: .docx, .pdf, .txt, .md")
+
+    if ext in (".txt", ".md"):
+        try:
+            content = upload.stream.read().decode("utf-8", errors="replace")
+            return jsonify(
+                {
+                    "success": True,
+                    "raw_text": content,
+                    "text": content,
+                    "filename": filename,
+                    "format": ext.lstrip("."),
+                }
+            ), 200
+        except Exception as err:
+            raise ValidationError(f"Không thể đọc tệp văn bản: {err}") from err
+
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+        upload.stream.seek(0)
+        tmp.write(upload.stream.read())
+
+    try:
+        extracted_images: list[dict[str, Any]] = []
+        if ext == ".docx":
+            from backend.services.import_service import extract_docx_with_resources
+
+            lines, extracted_images = extract_docx_with_resources(tmp_path)
+        else:
+            lines = extract_text_from_pdf(tmp_path)
+
+        raw_text = "\n".join(lines)
+        saved_images: list[dict[str, Any]] = []
+
+        if extracted_images:
+            import io
+
+            from backend.models.course import Course
+            from backend.services.file_service import store_file_stream
+
+            raw_course_id = request.form.get("course_id") or request.args.get("course_id")
+            target_course: Course | None = None
+            if raw_course_id:
+                try:
+                    target_course = require_course_manager(actor, raw_course_id, session=db.session)
+                except Exception:
+                    pass
+            if target_course is None:
+                target_course = (
+                    db.session.query(Course)
+                    .filter(
+                        Course.owner_instructor_id == actor.id,
+                        Course.deleted_at.is_(None),
+                    )
+                    .order_by(Course.created_at.desc())
+                    .first()
+                )
+
+            if target_course is not None:
+                for img in extracted_images:
+                    try:
+                        stream = io.BytesIO(img["data"])
+                        asset = store_file_stream(
+                            actor=actor,
+                            course_id=target_course.id,
+                            file_stream=stream,
+                            filename=img["filename"],
+                            content_type=img["mime_type"],
+                            asset_type="RESOURCE",
+                            title=f"Ảnh đề thi: {img['filename']}",
+                            session=db.session,
+                        )
+                        token = img["token"]
+                        new_marker = f"[[PWD301:IMAGE:{asset.public_id}]]"
+                        raw_text = raw_text.replace(token, new_marker)
+                        saved_images.append(
+                            {
+                                "asset_id": str(asset.public_id),
+                                "url": f"/instructor/files/{asset.public_id}/download?disposition=inline",
+                                "mime_type": img["mime_type"],
+                                "filename": img["filename"],
+                            }
+                        )
+                    except Exception as img_err:
+                        _logger.warning("Failed to store extracted exam image: %s", img_err)
+                db.session.commit()
+
+        return jsonify(
+            {
+                "success": True,
+                "raw_text": raw_text,
+                "text": raw_text,
+                "filename": filename,
+                "format": ext.lstrip("."),
+                "lines_count": len(lines),
+                "extracted_images": saved_images,
+            }
+        ), 200
+    except Exception as err:
+        _logger.warning("Error parsing uploaded exam file %s: %s", filename, err)
+        raise ValidationError(f"Lỗi khi trích xuất nội dung từ tệp {filename}: {err}") from err
+    finally:
+        with contextlib.suppress(Exception):
+            if tmp_path.exists():
+                tmp_path.unlink()
+
+
+@instructor_bp.route("/exams/excel-template", methods=["GET"])
+@instructor_required
+def instructor_get_excel_template_route() -> Response:
+    """Download standardized Excel exam question template (.xlsx)."""
+    import io
+
+    from backend.services.excel_exam_service import generate_excel_exam_template
+
+    data = generate_excel_exam_template()
+    return send_file(
+        io.BytesIO(data),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name="De_thi_mau_chuan_hoa.xlsx",
+    )
+
+
+@instructor_bp.route("/exams/parse-excel", methods=["POST"])
+@instructor_required
+def instructor_parse_excel_exam_route() -> tuple[Response, int] | Response:
+    """Parse an uploaded Excel workbook (.xlsx, .xls) into exam questions."""
+    from backend.services.excel_exam_service import parse_excel_exam
+    from backend.services.exceptions import ValidationError
+
+    if "file" not in request.files:
+        raise ValidationError("Vui lòng đính kèm tệp Excel (.xlsx) để tải lên.")
+
+    upload = request.files["file"]
+    if not upload or not upload.filename:
+        raise ValidationError("Tên tệp Excel không hợp lệ.")
+
+    try:
+        content = upload.stream.read()
+        res = parse_excel_exam(content)
+        res["filename"] = upload.filename
+        return jsonify(res), 200
+    except Exception as err:
+        raise ValidationError(f"Không thể xử lý tệp Excel: {err}") from err
+
+
+@instructor_bp.route("/exams/parse-moodle-xml", methods=["POST"])
+@instructor_required
+def instructor_parse_moodle_xml_route() -> tuple[Response, int] | Response:
+    """Parse Moodle XML into standardized exam questions."""
+    import base64
+    import io
+
+    from backend.extensions import db
+    from backend.models.course import Course
+    from backend.services.exceptions import ValidationError
+    from backend.services.file_service import store_file_stream
+    from backend.services.moodle_exam_service import parse_moodle_xml
+
+    actor = require_authenticated_actor()
+    course_id = request.form.get("course_id") or request.args.get("course_id")
+    xml_text = ""
+    if "file" in request.files:
+        upload = request.files["file"]
+        if upload and upload.filename:
+            xml_text = upload.stream.read().decode("utf-8", errors="replace")
+    else:
+        json_data = request.get_json(silent=True) or {}
+        xml_text = json_data.get("xml") or json_data.get("content") or ""
+        if not course_id:
+            course_id = json_data.get("course_id")
+
+    if not xml_text.strip():
+        raise ValidationError("Vui lòng cung cấp tệp Moodle XML hoặc chuỗi XML hợp lệ.")
+
+    res = parse_moodle_xml(xml_text)
+
+    # If course_id is provided and there are extracted_files, save them to FileAsset
+    if course_id and res.get("questions") and actor:
+        target_course: Course | None = None
+        try:
+            target_course = require_course_manager(actor, course_id, session=db.session)
+        except Exception:
+            target_course = None
+
+        if target_course is None:
+            if str(course_id).isdigit():
+                target_course = db.session.query(Course).filter_by(id=int(course_id)).first()
+            else:
+                with contextlib.suppress(Exception):
+                    import uuid
+
+                    target_course = (
+                        db.session.query(Course)
+                        .filter_by(public_id=uuid.UUID(str(course_id)))
+                        .first()
+                    )
+
+        if target_course:
+            for q in res["questions"]:
+                ext_files = q.get("extracted_files", [])
+                for f_info in ext_files:
+                    try:
+                        raw_data = base64.b64decode(f_info["data_base64"])
+                        fname = f_info["filename"]
+                        mime = "image/png" if fname.lower().endswith(".png") else "image/jpeg"
+                        stream = io.BytesIO(raw_data)
+                        asset = store_file_stream(
+                            actor=actor,
+                            course_id=target_course.id,
+                            file_stream=stream,
+                            filename=fname,
+                            content_type=mime,
+                            asset_type="RESOURCE",
+                            title=f"Ảnh Moodle XML: {fname}",
+                            session=db.session,
+                        )
+                        tok = f_info["token"]
+                        new_marker = f"[[PWD301:IMAGE:{asset.public_id}]]"
+                        if tok in q["stem"]:
+                            q["stem"] = q["stem"].replace(tok, new_marker)
+                        else:
+                            q["stem"] += f"\n{new_marker}"
+                        q["question_text"] = q["stem"]
+                        if not q.get("resources"):
+                            q["resources"] = []
+                        q["resources"].append(
+                            {
+                                "asset_id": str(asset.public_id),
+                                "position": len(q["resources"]) + 1,
+                                "resource_role": "IMAGE",
+                                "download_url": f"/instructor/files/{asset.public_id}/download?disposition=inline",
+                            }
+                        )
+                        if not q.get("image_asset_id"):
+                            q["image_asset_id"] = str(asset.public_id)
+                    except Exception as err:
+                        _logger.warning("Failed to store Moodle XML file asset: %s", err)
+            db.session.commit()
+
+    return jsonify(res), 200
+
+
+@instructor_bp.route("/exams/parse-json", methods=["POST"])
+@instructor_required
+def instructor_parse_exam_json_route() -> tuple[Response, int] | Response:
+    """Parse JSON question data into standardized exam questions."""
+    from backend.services.exceptions import ValidationError
+    from backend.services.moodle_exam_service import parse_moodle_json
+
+    json_str = ""
+    if "file" in request.files:
+        upload = request.files["file"]
+        if upload and upload.filename:
+            json_str = upload.stream.read().decode("utf-8", errors="replace")
+    else:
+        json_data = request.get_json(silent=True)
+        if json_data is not None:
+            if isinstance(json_data, dict) and "json_content" in json_data:
+                json_str = str(json_data["json_content"])
+            else:
+                json_str = json.dumps(json_data, ensure_ascii=False)
+
+    if not json_str.strip():
+        raise ValidationError("Vui lòng cung cấp tệp JSON hoặc chuỗi JSON hợp lệ.")
+
+    res = parse_moodle_json(json_str)
+    return jsonify(res), 200
+
+
+@instructor_bp.route("/exams/samples/moodle-xml", methods=["GET"])
+@instructor_required
+def instructor_get_moodle_xml_sample_route() -> Response:
+    """Download sample Moodle XML file."""
+    import io
+
+    from backend.services.moodle_exam_service import generate_moodle_sample_xml
+
+    sample_xml = generate_moodle_sample_xml()
+    return send_file(
+        io.BytesIO(sample_xml.encode("utf-8")),
+        mimetype="application/xml",
+        as_attachment=True,
+        download_name="moodle_sample_questions.xml",
+    )
+
+
+@instructor_bp.route("/exams/samples/json", methods=["GET"])
+@instructor_required
+def instructor_get_json_sample_route() -> Response:
+    """Download sample JSON questions file."""
+    import io
+
+    from backend.services.moodle_exam_service import generate_sample_json
+
+    sample_json = generate_sample_json()
+    return send_file(
+        io.BytesIO(sample_json.encode("utf-8")),
+        mimetype="application/json",
+        as_attachment=True,
+        download_name="exam_sample_questions.json",
+    )
+
+
+@instructor_bp.route("/check-youtube-link", methods=["POST"])
+@instructor_required
+def check_youtube_link_route() -> Any:
+    """Validate YouTube URL embeddability, availability, and active status."""
+    data = request.get_json(silent=True) or {}
+    url = (data.get("url") or "").strip()
+    if not url:
+        return jsonify({"valid": False, "reason": "Vui lòng nhập liên kết YouTube."}), 400
+
+    from backend.services.youtube_validator_service import verify_youtube_embeddability
+
+    result = verify_youtube_embeddability(url)
+    return jsonify(result), 200
+
+
+@instructor_bp.route("/courses/<course_id>/scan-videos", methods=["POST"])
+@instructor_required
+def scan_course_videos_route(course_id: str) -> Any:
+    """Scan all YouTube videos in a managed course and notify instructor if broken."""
+    actor = require_authenticated_actor()
+    course = require_course_manager(actor, course_id, session=db.session)
+
+    from backend.services.youtube_validator_service import scan_and_notify_broken_youtube_videos
+
+    reports = scan_and_notify_broken_youtube_videos(course_id=course.id)
+    return jsonify({"success": True, "broken_count": len(reports), "reports": reports}), 200
+
+
+@instructor_bp.route("/ai/questions/draft", methods=["POST"])
+@instructor_required
+def instructor_ai_draft_questions() -> Any:
+    """Generate draft questions with AI for course instructor (session authenticated)."""
+    actor = require_authenticated_actor()
+    data = request.get_json(silent=True) or {}
+
+    course_id = data.get("course_id")
+    if not course_id:
+        from backend.services.ai_service import AIValidationError
+
+        raise AIValidationError("Field 'course_id' is required.")
+
+    topic = data.get("topic") or data.get("learning_objective")
+    if not topic:
+        from backend.services.ai_service import AIValidationError
+
+        raise AIValidationError("Field 'topic' or 'learning_objective' is required.")
+
+    difficulty = data.get("difficulty", "UNDERSTAND")
+
+    q_types = data.get("question_types")
+    if q_types is None and "question_type" in data:
+        q_types = [data["question_type"]]
+    elif isinstance(q_types, str):
+        q_types = [t.strip() for t in q_types.split(",")]
+
+    try:
+        count = int(data.get("count", 3))
+    except (ValueError, TypeError):
+        count = 3
+
+    lesson_id = data.get("lesson_id")
+
+    from backend.services.ai_service import draft_course_questions
+
+    drafts = draft_course_questions(
+        actor=actor,
+        course_id=course_id,
+        topic=topic,
+        difficulty=difficulty,
+        question_types=q_types,
+        count=count,
+        lesson_id=lesson_id,
+        session=db.session,
+    )
+
+    return (
+        jsonify(
+            {
+                "success": True,
+                "drafts": [d.to_dict() for d in drafts],
+                "count": len(drafts),
+            }
+        ),
+        201,
+    )
+
+
+# =========================================================================
+# Grade Appeals (Phúc khảo) Instructor Management Endpoints
+# =========================================================================
+
+@instructor_bp.route("/appeals", methods=["GET"])
+@instructor_required
+def list_instructor_appeals_route() -> Any:
+    """List student grade appeals for instructor-managed courses."""
+    actor = require_authenticated_actor()
+    from backend.models.attempt_regrade import AssessmentAppeal
+    from backend.models.course import Course
+
+    sess = db.session
+    if actor.is_admin:
+        managed_course_ids = [row[0] for row in sess.query(Course.id).filter(Course.deleted_at.is_(None)).all()]
+    else:
+        managed_course_ids = [
+            row[0] for row in sess.query(Course.id)
+            .filter(Course.owner_instructor_id == actor.id, Course.deleted_at.is_(None))
+            .all()
+        ]
+
+    if not managed_course_ids:
+        return jsonify({"success": True, "items": [], "pending_count": 0, "total_count": 0}), 200
+
+    query = sess.query(AssessmentAppeal).filter(AssessmentAppeal.course_id.in_(managed_course_ids))
+    status_filter = request.args.get("status")
+    if status_filter and status_filter.upper() != "ALL":
+        query = query.filter(AssessmentAppeal.status == status_filter.upper())
+
+    course_filter = request.args.get("course_id")
+    if course_filter:
+        from backend.services.course_service import _resolve_course
+        c_obj = _resolve_course(course_filter, session=sess)
+        if c_obj:
+            query = query.filter(AssessmentAppeal.course_id == c_obj.id)
+
+    appeals = query.order_by(
+        sa.case((AssessmentAppeal.status == "PENDING", 0), else_=1),
+        AssessmentAppeal.created_at.desc(),
+    ).all()
+
+    pending_count = sess.query(sa.func.count(AssessmentAppeal.id)).filter(
+        AssessmentAppeal.course_id.in_(managed_course_ids),
+        AssessmentAppeal.status == "PENDING",
+    ).scalar() or 0
+
+    serialized_appeals = [a.serialize() for a in appeals]
+    return jsonify({
+        "success": True,
+        "items": serialized_appeals,
+        "appeals": serialized_appeals,
+        "data": {
+            "appeals": serialized_appeals,
+            "items": serialized_appeals,
+            "total": len(appeals),
+            "pending_count": pending_count,
+        },
+        "pending_count": pending_count,
+        "total_count": len(appeals),
+    }), 200
+
+
+@instructor_bp.route("/appeals/<appeal_id>", methods=["GET"])
+@instructor_required
+def get_instructor_appeal_detail_route(appeal_id: str) -> Any:
+    """Get full details of a specific grade appeal including attempt submission questions and answers."""
+    actor = require_authenticated_actor()
+    from backend.models.attempt_regrade import AssessmentAppeal
+    sess = db.session
+
+    appeal = None
+    try:
+        app_uuid = uuid.UUID(str(appeal_id))
+        appeal = sess.query(AssessmentAppeal).filter(AssessmentAppeal.public_id == app_uuid).first()
+    except (ValueError, TypeError, AttributeError):
+        if str(appeal_id).isdigit():
+            appeal = sess.query(AssessmentAppeal).filter(AssessmentAppeal.id == int(appeal_id)).first()
+
+    if appeal is None:
+        raise ResourceNotFoundError("Đơn phúc khảo không tồn tại.")
+
+    # Check authorization
+    if not actor.is_admin and appeal.course.owner_instructor_id != actor.id:
+        raise ForbiddenError("Bạn không có quyền quản lý đơn phúc khảo của khóa học này.")
+
+    attempt = appeal.attempt
+    attempt_data = None
+    if attempt:
+        from backend.services.attempt_service import _serialize_attempt
+        attempt_data = _serialize_attempt(attempt)
+
+    serialized_appeal = appeal.serialize()
+    return jsonify({
+        "success": True,
+        "appeal": serialized_appeal,
+        "attempt": attempt_data,
+        "data": {
+            **serialized_appeal,
+            "attempt": attempt_data,
+        }
+    }), 200
+
+
+@instructor_bp.route("/appeals/<appeal_id>/evidence", methods=["GET"])
+@instructor_required
+def download_instructor_appeal_evidence_route(appeal_id: str):
+    """Download/view uploaded evidence attachment for an appeal as an instructor."""
+    from pathlib import Path
+    from flask import current_app, send_file
+    from backend.models.attempt_regrade import AssessmentAppeal
+    from backend.services.authorization_service import require_authenticated_actor
+    from backend.services.exceptions import ForbiddenError, ResourceNotFoundError
+
+    actor = require_authenticated_actor()
+    sess = db.session
+    appeal = None
+    try:
+        val_uuid = uuid.UUID(str(appeal_id))
+        appeal = sess.query(AssessmentAppeal).filter(AssessmentAppeal.public_id == val_uuid).first()
+    except (ValueError, TypeError):
+        if str(appeal_id).isdigit():
+            appeal = sess.query(AssessmentAppeal).filter(AssessmentAppeal.id == int(appeal_id)).first()
+
+    if appeal is None:
+        raise ResourceNotFoundError("Đơn phúc khảo không tồn tại.")
+
+    if not actor.is_admin and (not appeal.course or appeal.course.owner_instructor_id != actor.id) and not actor.has_role("INSTRUCTOR"):
+        raise ForbiddenError("Bạn không có quyền quản lý đơn phúc khảo này.")
+
+    if not appeal.evidence_filename:
+        raise ResourceNotFoundError("Đơn phúc khảo này không có tệp minh chứng đính kèm.")
+
+    storage_root = Path(current_app.config.get("FILE_STORAGE_ROOT", "./storage")).resolve()
+    file_path = storage_root / "appeals" / str(appeal.public_id) / appeal.evidence_filename
+    if not file_path.exists():
+        raise ResourceNotFoundError("Tệp minh chứng không tồn tại trên hệ thống lưu trữ.")
+
+    return send_file(
+        file_path,
+        as_attachment=False,
+        download_name=appeal.evidence_filename,
+    )
+
+
+@instructor_bp.route("/appeals/<appeal_id>/resolve", methods=["POST"])
+@instructor_required
+def resolve_instructor_appeal_route(appeal_id: str) -> Any:
+    """Resolve an appeal by inputting the direct final score, updating AssessmentResult, and notifying student."""
+    actor = require_authenticated_actor()
+    from backend.models.attempt_regrade import AssessmentAppeal, AssessmentResultHistory
+    from backend.models.types import utc_now
+    sess = db.session
+
+    appeal = None
+    try:
+        app_uuid = uuid.UUID(str(appeal_id))
+        appeal = sess.query(AssessmentAppeal).filter(AssessmentAppeal.public_id == app_uuid).first()
+    except (ValueError, TypeError, AttributeError):
+        if str(appeal_id).isdigit():
+            appeal = sess.query(AssessmentAppeal).filter(AssessmentAppeal.id == int(appeal_id)).first()
+
+    if appeal is None:
+        raise ResourceNotFoundError("Đơn phúc khảo không tồn tại.")
+
+    if not actor.is_admin and appeal.course.owner_instructor_id != actor.id:
+        raise ForbiddenError("Bạn không có quyền xử lý đơn phúc khảo của khóa học này.")
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    action = str(payload.get("action") or "RESOLVE").upper()
+    target_status = "REJECTED" if action == "REJECT" else "RESOLVED"
+    feedback = str(
+        payload.get("instructor_feedback")
+        or payload.get("feedback")
+        or payload.get("resolution_note")
+        or payload.get("reviewer_note")
+        or ""
+    ).strip()
+
+    now = utc_now()
+    attempt = appeal.attempt
+    old_score = float(appeal.original_score or 0.0)
+
+    if target_status == "REJECTED":
+        final_score = old_score
+    else:
+        raw_final_score = payload.get("final_score")
+        if raw_final_score is None:
+            raise ValidationError("Vui lòng nhập điểm số cuối cùng sau phúc khảo (final_score).")
+        try:
+            final_score = round(float(raw_final_score), 2)
+            if final_score < 0.0:
+                raise ValidationError("Điểm số không được âm.")
+        except (ValueError, TypeError):
+            raise ValidationError("Điểm số cuối cùng phải là số hợp lệ.") from None
+
+    # Invariant: Score entered by instructor is the final score of the student
+    if target_status == "RESOLVED" and attempt:
+        max_points = 10.0
+        passing_pct = 50.0
+        if attempt.assessment:
+            passing_pct = float(attempt.assessment.passing_percent or 50.0)
+            assigned_points = sum(
+                (float(q.points or 1.0) for q in attempt.assessment.question_assignments),
+                0.0
+            )
+            if assigned_points > 0:
+                max_points = assigned_points
+
+        if final_score > max_points:
+            raise ValidationError(f"Điểm số không được vượt quá thang điểm tối đa ({max_points} điểm).")
+
+        percent_score = round((final_score / max_points) * 100.0, 2) if max_points > 0 else 0.0
+        is_passed = percent_score >= passing_pct
+
+        if attempt.result:
+            old_result_score = float(attempt.result.raw_score or attempt.result.score or 0.0)
+            old_percent = float(attempt.result.percent_score or 0.0)
+            attempt.result.raw_score = final_score
+            attempt.result.score = final_score
+            attempt.result.percent_score = percent_score
+            attempt.result.passed = is_passed
+            attempt.result.status = "FINAL"
+            attempt.result.updated_at = now
+
+            res_hist = AssessmentResultHistory(
+                attempt_id=attempt.id,
+                old_score=old_result_score,
+                new_score=final_score,
+                old_percent=old_percent,
+                new_percent=percent_score,
+                reason_code="MANUAL",
+                reason=f"Phúc khảo bởi giảng viên: {feedback}" if feedback else "Chấm phúc khảo bài thi",
+                actor_user_id=actor.id,
+                created_at=now,
+            )
+            sess.add(res_hist)
+
+        attempt.total_score = final_score
+        attempt.status = "GRADED"
+        attempt.updated_at = now
+
+    appeal.final_score = final_score if target_status == "RESOLVED" else old_score
+    appeal.status = target_status
+    appeal.instructor_feedback = feedback
+    appeal.reviewed_by_user_id = actor.id
+    appeal.reviewed_at = now
+    appeal.updated_at = now
+
+    # Dispatch notification to student
+    try:
+        from backend.services.notification_service import dispatch_notification
+        exam_title = attempt.assessment.title if attempt and attempt.assessment else "Bài thi"
+        if target_status == "RESOLVED":
+            notif_msg = (
+                f"Đơn phúc khảo bài thi '{exam_title}' đã được Giảng viên phê duyệt. "
+                f"Điểm số cuối cùng của bạn là: {final_score} điểm."
+            )
+        else:
+            notif_msg = (
+                f"Đơn phúc khảo bài thi '{exam_title}' đã được Giảng viên xem xét và giữ nguyên điểm số ban đầu. "
+                f"Lời nhận xét: {feedback or 'Không có'}"
+            )
+
+        dispatch_notification(
+            recipient_user=appeal.student_user_id,
+            event_type="INSTRUCTOR_APPEAL_DECISION",
+            title="Kết quả phúc khảo bài thi",
+            body=notif_msg,
+            action_url=f"#/student/assessments/results?attempt_id={attempt.public_id}" if attempt else "#/student/assessments",
+            category="GRADE",
+            target_role="STUDENT",
+            session=sess,
+        )
+    except Exception:
+        pass
+
+    sess.commit()
+
+    ser = appeal.serialize()
+    return jsonify({
+        "success": True,
+        "message": "Đã hoàn tất xử lý đơn phúc khảo thành công.",
+        "appeal": ser,
+        "data": ser,
+    }), 200
+
+
+@instructor_bp.route("/courses/<course_id>/trailer/stream", methods=["GET"])
+def instructor_course_trailer_stream(course_id: str) -> Response:
+    """Public streaming endpoint for course intro trailer video."""
+    from backend.blueprints.api_courses.routes import get_course_trailer_stream_api
+    return get_course_trailer_stream_api(course_id)
+
+

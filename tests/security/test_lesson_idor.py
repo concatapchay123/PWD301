@@ -7,13 +7,13 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import Course, Lesson
-from pwd301.models.identity import Role, User
-from pwd301.services.course_service import change_course_status, create_course
-from pwd301.services.jwt_auth_service import create_token_pair
-from pwd301.services.lesson_service import change_lesson_status, create_lesson
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.extensions import db
+from backend.models.course import Course, Lesson
+from backend.models.identity import Role, User
+from backend.services.course_service import change_course_status, create_course
+from backend.services.jwt_auth_service import create_token_pair
+from backend.services.lesson_service import change_lesson_status, create_lesson
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture

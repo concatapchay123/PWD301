@@ -8,17 +8,17 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.identity import Role
-from pwd301.services.course_service import create_course
-from pwd301.services.file_service import store_file_stream
-from pwd301.services.question_bank_service import (
+from backend.extensions import db
+from backend.models.identity import Role
+from backend.services.course_service import create_course
+from backend.services.file_service import store_file_stream
+from backend.services.question_bank_service import (
     create_question,
     create_question_revision,
     get_question_detail,
     update_question,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 def test_question_multi_resources_create_clone_and_update(app: Flask) -> None:
@@ -112,7 +112,7 @@ def test_question_multi_resources_create_clone_and_update(app: Flask) -> None:
 
 
 def test_batch_create_assessment_questions_with_resources(app: Flask, client: FlaskClient) -> None:
-    from pwd301.services.assessment_service import create_assessment
+    from backend.services.assessment_service import create_assessment
     from tests.conftest import login_web_user
 
     sess: Session = db.session

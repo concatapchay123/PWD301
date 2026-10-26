@@ -1,786 +1,1665 @@
-<!DOCTYPE html>
-<html lang="vi" class="h-full">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>PPTQ LMS - Học Tập Và Bài Thi</title>
-  <link rel="icon" type="image/x-icon" href="/frontend/favicon.ico">
-  <link rel="icon" type="image/png" sizes="32x32" href="/frontend/assets/img/favicon.png">
-  <link rel="apple-touch-icon" href="/frontend/assets/img/pptq_icon.png">
-
-  <!-- Pre-paint Theme Restoration to prevent white flash (FOUC) -->
-  <script>
-    if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  </script>
-
-  <!-- Fonts & Material Symbols Setup (Warm Editorial Typography) -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
-  <!-- KaTeX for Visual Math Formula Rendering -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-
-  <!-- Tailwind CSS CDN with Warm Editorial / Notion-like Design Tokens -->
-  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-  <script>
-    tailwind.config = {
-      darkMode: "class",
-      theme: {
-        extend: {
-          colors: {
-            // Remap slate palette to cohesive Warm Charcoal / Notion shades
-            slate: {
-              50: '#FAF9F5',
-              100: '#F4F1EA',
-              200: '#E8E6DF',
-              300: '#D3D0C8',
-              400: '#9E9D99',
-              500: '#6D6C68',
-              600: '#3E3D3A',
-              700: '#2E2D2B',
-              800: '#262524',
-              850: '#222120',
-              900: '#202020',
-              950: '#141414',
-            },
-            "primary": "#2563EB",
-            "primary-hover": "#1D4ED8",
-            "primary-subtle": "#EFF4FE",
-            "primary-contrast": "#FAF9F5",
-            "surface-canvas": "#FAF9F5",
-            "surface-card": "#FAF9F5",
-            "surface-subtle": "#F4F1EA",
-            "surface-muted": "#ECE8DF",
-            "border-subtle": "#E8E6DF",
-            "border-strong": "#D3D0C8",
-            "text-primary": "#222120",
-            "text-secondary": "#5C5B57",
-            "text-muted": "#8F8E8A",
-            "success-emerald": "#15803D",
-            "warning-amber": "#B45309",
-            "danger-rose": "#BE123C",
-            "info-sky": "#0369A1",
-            // Semantic Warm Dark Tokens
-            "dark-canvas": "#101925",
-            "dark-card": "#223248",
-            "dark-surface": "#2D4058",
-            "dark-border": "#526881",
-            "dark-border-strong": "#91A9C2",
-            "dark-text-primary": "#F0F5FA",
-            "dark-text-secondary": "#C6D2E1",
-            "dark-text-muted": "#AEBED0",
-          },
-          fontFamily: {
-            sans: ["Plus Jakarta Sans", "Inter", "-apple-system", "BlinkMacSystemFont", "sans-serif"],
-            mono: ["JetBrains Mono", "SFMono-Regular", "Menlo", "monospace"],
-          },
-          boxShadow: {
-            "2xs": "0 1px 2px 0 rgba(34, 33, 32, 0.03)",
-            "xs": "0 1px 3px 0 rgba(34, 33, 32, 0.04), 0 1px 2px -1px rgba(34, 33, 32, 0.04)",
-            "subtle": "0 2px 6px -1px rgba(34, 33, 32, 0.05), 0 1px 4px -2px rgba(34, 33, 32, 0.03)",
-            "elevated": "0 8px 16px -2px rgba(34, 33, 32, 0.06), 0 3px 6px -3px rgba(34, 33, 32, 0.04)",
-          }
-        }
-      }
-    };
-  </script>
-
-  <style>
-    * { box-sizing: border-box; }
-    html, body {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-      background-color: #FAF9F5;
-      color: #222120;
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
-    }
-    .dark body {
-      background-color: #191919;
-      color: #EDEDEB;
-    }
-
-    body.fullscreen-focus-mode #app-topbar {
-      display: none !important;
-    }
-
-    /* Automatic Dark Mode Guard for Pastel Light Colors & Glare Elimination */
-    .dark .bg-primary-subtle {
-      background-color: rgba(37, 99, 235, 0.16) !important;
-      color: #60A5FA !important;
-      border-color: rgba(37, 99, 235, 0.28) !important;
-    }
-    .dark .bg-emerald-50 {
-      background-color: rgba(16, 185, 129, 0.14) !important;
-      color: #34D399 !important;
-      border-color: rgba(16, 185, 129, 0.28) !important;
-    }
-    .dark .bg-indigo-50 {
-      background-color: rgba(99, 102, 241, 0.14) !important;
-      color: #818CF8 !important;
-      border-color: rgba(99, 102, 241, 0.28) !important;
-    }
-    .dark .bg-purple-50 {
-      background-color: rgba(168, 85, 247, 0.14) !important;
-      color: #C084FC !important;
-      border-color: rgba(168, 85, 247, 0.28) !important;
-    }
-    .dark .bg-blue-50 {
-      background-color: rgba(59, 130, 246, 0.14) !important;
-      color: #60A5FA !important;
-      border-color: rgba(59, 130, 246, 0.28) !important;
-    }
-    .dark .bg-amber-50 {
-      background-color: rgba(245, 158, 11, 0.14) !important;
-      color: #FBBF24 !important;
-      border-color: rgba(245, 158, 11, 0.28) !important;
-    }
-    .dark .bg-rose-50 {
-      background-color: rgba(244, 63, 94, 0.14) !important;
-      color: #FB7185 !important;
-      border-color: rgba(244, 63, 94, 0.28) !important;
-    }
-
-    /* Core Warm Editorial Utility Classes */
-    .c-btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.375rem;
-      font-weight: 600;
-      font-size: 0.8125rem;
-      line-height: 1.25rem;
-      border-radius: 0.625rem;
-      transition: all 120ms ease;
-      cursor: pointer;
-      user-select: none;
-      white-space: nowrap;
-      border: 1px solid transparent;
-      padding: 0.4375rem 0.875rem;
-    }
-    .c-btn:disabled {
-      opacity: 0.45;
-      cursor: not-allowed;
-      pointer-events: none;
-    }
-    .c-btn:active {
-      transform: scale(0.985);
-    }
-    .c-btn-primary {
-      background-color: #222120;
-      color: #FAF9F5;
-      border-color: #222120;
-      box-shadow: 0 1px 2px 0 rgba(34, 33, 32, 0.12);
-    }
-    .dark .c-btn-primary {
-      background-color: #EDEDEB;
-      color: #191919;
-      border-color: #EDEDEB;
-    }
-    .c-btn-primary:hover {
-      background-color: #37352F;
-      border-color: #37352F;
-    }
-    .dark .c-btn-primary:hover {
-      background-color: #FAF9F5;
-      border-color: #FAF9F5;
-    }
-    .c-btn-accent {
-      background-color: #2563EB;
-      color: #FAF9F5;
-      border-color: #2563EB;
-    }
-    .c-btn-accent:hover {
-      background-color: #1D4ED8;
-      border-color: #1D4ED8;
-    }
-    .c-btn-secondary {
-      background-color: #FAF9F5;
-      color: #37352F;
-      border-color: #E8E6DF;
-      box-shadow: 0 1px 2px 0 rgba(34, 33, 32, 0.03);
-    }
-    .dark .c-btn-secondary {
-      background-color: #202020;
-      color: #EDEDEB;
-      border-color: #2E2D2B;
-    }
-    .c-btn-secondary:hover {
-      background-color: #F4F1EA;
-      border-color: #D3D0C8;
-    }
-    .dark .c-btn-secondary:hover {
-      background-color: #282726;
-      border-color: #3E3D3A;
-    }
-    .c-btn-ghost {
-      background-color: transparent;
-      color: #5C5B57;
-      border-color: transparent;
-    }
-    .dark .c-btn-ghost {
-      color: #9E9D99;
-    }
-    .c-btn-ghost:hover {
-      background-color: #F4F1EA;
-      color: #222120;
-    }
-    .dark .c-btn-ghost:hover {
-      background-color: #262524;
-      color: #EDEDEB;
-    }
-    .c-btn-danger {
-      background-color: #BE123C;
-      color: #FAF9F5;
-      border-color: #BE123C;
-    }
-    .c-btn-danger:hover {
-      background-color: #9F1239;
-    }
-    .c-btn-sm {
-      padding: 0.25rem 0.625rem;
-      font-size: 0.75rem;
-      border-radius: 0.5rem;
-      min-height: 30px;
-    }
-    .c-btn-md {
-      padding: 0.4375rem 0.875rem;
-      font-size: 0.8125rem;
-      min-height: 36px;
-    }
-    .c-btn-lg {
-      padding: 0.625rem 1.25rem;
-      font-size: 0.9375rem;
-      min-height: 44px;
-    }
-
-    /* Standard Warm Editorial Card */
-    .c-card {
-      background-color: #FAF9F5;
-      border: 1px solid #E8E6DF;
-      border-radius: 0.75rem;
-      box-shadow: 0 1px 3px 0 rgba(34, 33, 32, 0.02);
-      transition: border-color 150ms ease, box-shadow 150ms ease;
-    }
-    .dark .c-card {
-      background-color: #202020;
-      border-color: #2E2D2B;
-      box-shadow: none;
-    }
-    .c-card-hover:hover {
-      border-color: #D3D0C8;
-      box-shadow: 0 3px 8px -2px rgba(34, 33, 32, 0.06);
-    }
-    .dark .c-card-hover:hover {
-      border-color: #3E3D3A;
-    }
-
-    /* Standard Form Inputs */
-    .c-input {
-      width: 100%;
-      padding: 0.5rem 0.75rem;
-      font-size: 0.8125rem;
-      border-radius: 0.625rem;
-      border: 1px solid #E8E6DF;
-      background-color: #FAF9F5;
-      color: #222120;
-      transition: border-color 120ms ease, box-shadow 120ms ease;
-      outline: none;
-    }
-    .dark .c-input {
-      background-color: #202020;
-      border-color: #2E2D2B;
-      color: #EDEDEB;
-    }
-    .c-input:focus {
-      border-color: #222120;
-      box-shadow: 0 0 0 2px rgba(34, 33, 32, 0.08);
-    }
-    .dark .c-input:focus {
-      border-color: #EDEDEB;
-      box-shadow: 0 0 0 2px rgba(237, 237, 235, 0.12);
-    }
-    .c-input-error {
-      border-color: #BE123C !important;
-    }
-    .c-input-error:focus {
-      box-shadow: 0 0 0 2px rgba(190, 18, 60, 0.15) !important;
-    }
-
-    /* Standard Table */
-    .c-table-wrapper {
-      overflow-x: auto;
-      border-radius: 0.75rem;
-      border: 1px solid #E8E6DF;
-      background-color: #FAF9F5;
-    }
-    .dark .c-table-wrapper {
-      border-color: #2E2D2B;
-      background-color: #202020;
-    }
-    .c-table {
-      width: 100%;
-      text-align: left;
-      font-size: 0.8125rem;
-      border-collapse: collapse;
-    }
-    .c-table-th {
-      padding: 0.625rem 0.875rem;
-      font-size: 0.6875rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: #8F8E8A;
-      background-color: #F4F1EA;
-      border-bottom: 1px solid #E8E6DF;
-    }
-    .dark .c-table-th {
-      color: #9E9D99;
-      background-color: #262524;
-      border-bottom-color: #2E2D2B;
-    }
-    .c-table-td {
-      padding: 0.75rem 0.875rem;
-      border-bottom: 1px solid #F4F1EA;
-      color: #37352F;
-    }
-    .dark .c-table-td {
-      border-bottom-color: #282726;
-      color: #EDEDEB;
-    }
-    .c-table-tr:hover .c-table-td {
-      background-color: #FAF9F5;
-    }
-    .dark .c-table-tr:hover .c-table-td {
-      background-color: #242423;
-    }
-
-    /* Subtle custom scrollbars */
-    ::-webkit-scrollbar {
-      width: 5px;
-      height: 5px;
-    }
-    ::-webkit-scrollbar-track {
-      background: transparent;
-    }
-    ::-webkit-scrollbar-thumb {
-      background: rgba(143, 142, 138, 0.28);
-      border-radius: 9999px;
-    }
-    ::-webkit-scrollbar-thumb:hover {
-      background: rgba(143, 142, 138, 0.45);
-    }
-
-    /* Minimal Top Progress Bar Animation */
-    @keyframes pulseProgress {
-      0% { opacity: 0.6; }
-      50% { opacity: 1; }
-      100% { opacity: 0.6; }
-    }
-    .animate-progress-pulse {
-      animation: pulseProgress 1s infinite ease-in-out;
-    }
-    /* Shared dark surfaces: Warm Editorial & Notion-like tokens */
-    html.dark body,
-    html.dark #app-viewport,
-    html.dark [class~="dark:bg-slate-950"],
-    html.dark [class~="dark:bg-[#191919]"],
-    html.dark [class~="dark:bg-[#151515]"],
-    html.dark [class~="dark:bg-[#18181b]"],
-    html.dark [class~="dark:bg-[#1A1918]"],
-    html.dark [class~="dark:bg-[#1E1E1E]"],
-    html.dark [class~="dark:bg-[#1E1D1B]"] {
-      background-color: #18181b !important;
-      color: #EDEDEB;
-    }
-    html.dark #app-topbar,
-    html.dark [class~="dark:bg-slate-900"],
-    html.dark [class~="dark:bg-[#202020]"],
-    html.dark [class~="dark:bg-[#222120]"],
-    html.dark [class~="dark:bg-[#252525]"],
-    html.dark [class~="dark:bg-[#2A2928]"],
-    html.dark .c-card,
-    html.dark .c-table-wrapper {
-      background-color: #202020 !important;
-      border-color: #2E2D2B !important;
-    }
-    html.dark [class~="dark:bg-slate-800"],
-    html.dark [class~="dark:bg-[#262524]"],
-    html.dark [class~="dark:bg-[#242423]"],
-    html.dark [class~="dark:bg-[#2E2D2B]"],
-    html.dark .c-table-th {
-      background-color: #262524 !important;
-    }
-    html.dark [class~="dark:border-slate-800"],
-    html.dark [class~="dark:border-slate-700"],
-    html.dark [class~="dark:border-[#2E2D2B]"],
-    html.dark [class~="dark:border-[#353432]"],
-    html.dark [class~="dark:border-[#37352F]"],
-    html.dark [class~="dark:border-[#3D3C3A]"],
-    html.dark [class~="dark:border-[#3E3D3A]"] {
-      border-color: #2E2D2B !important;
-    }
-    html.dark [class~="dark:text-white"],
-    html.dark [class~="dark:text-slate-100"],
-    html.dark [class~="dark:text-[#EDEDEB]"] { color: #EDEDEB !important; }
-    html.dark [class~="dark:text-slate-300"],
-    html.dark [class~="dark:text-slate-400"],
-    html.dark [class~="dark:text-[#9E9D99]"],
-    html.dark [class~="dark:text-[#6D6C68]"],
-    html.dark [class~="dark:text-[#A8A6A0]"] { color: #9E9D99 !important; }
-    html.dark [class~="dark:bg-[#32312F]"],
-    html.dark [class~="dark:bg-[#3E3D3A]"] { background-color: #2A2928 !important; }
-    html.dark [class~="text-slate-400"],
-    html.dark [class~="text-slate-500"],
-    html.dark [class~="text-slate-600"],
-    html.dark [class~="text-[#8F8E8A]"],
-    html.dark [class~="text-[#5C5B57]"] { color: #9E9D99 !important; }
-    html.dark .c-input,
-    html.dark input:not([type="checkbox"]):not([type="radio"]),
-    html.dark textarea,
-    html.dark select {
-      background-color: #18181b !important;
-      border-color: #2E2D2B !important;
-      color: #EDEDEB !important;
-    }
-    html.dark input::placeholder,
-    html.dark textarea::placeholder { color: #8F8E8A; }
-    html.dark .c-btn-secondary {
-      background-color: #262524;
-      border-color: #2E2D2B;
-      color: #EDEDEB;
-    }
-    html.dark .c-btn-secondary:hover { background-color: #2A2928; }
-    html.dark .c-table-td { border-bottom-color: #2E2D2B; color: #EDEDEB; }
-    html.dark .modal-layer { background-color: rgba(0, 0, 0, 0.65) !important; }
-    html.dark .modal-layer .modal-dialog,
-    html.dark #confirm-dialog-card {
-      background-color: #202020 !important;
-      border: 1px solid #2E2D2B !important;
-      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5) !important;
-      color: #EDEDEB;
-    }
-    html.dark .modal-dialog > div:first-child,
-    html.dark .modal-dialog > div:last-child:not(:first-child) {
-      background-color: #262524 !important;
-      border-color: #2E2D2B !important;
-    }
-    html.dark .modal-dialog > div:nth-child(2),
-    html.dark #confirm-dialog-card > div:nth-child(2) { color: #EDEDEB !important; }
-  </style>
-</head>
-<body class="bg-[#FAF9F5] dark:bg-[#191919] text-[#222120] dark:text-[#EDEDEB] antialiased h-full w-full flex flex-col selection:bg-[#ECE8DF] selection:text-[#222120] dark:selection:bg-[#37352F] dark:selection:text-[#EDEDEB]">
-
-  <!-- Minimal Instant Top Micro Progress Bar -->
-  <div id="top-micro-loader" class="fixed top-0 left-0 right-0 h-[2.5px] z-50 pointer-events-none opacity-0 transition-opacity duration-150">
-    <div id="top-micro-loader-bar" class="h-full bg-[#222120] dark:bg-[#EDEDEB] w-0 transition-all duration-150 ease-out"></div>
-  </div>
-
-  <!-- Application Shell Root Container -->
-  <div id="app-root" class="w-full h-full flex flex-col overflow-hidden">
-    
-    <!-- Modern Warm Editorial Top Navigation Bar -->
-    <header id="app-topbar" class="relative h-14 px-4 sm:px-6 bg-[#FAF9F5]/90 dark:bg-[#191919]/90 backdrop-blur-md border-b border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-between shrink-0 z-30 select-none">
-      
-      <!-- Left: Brand -->
-      <div class="flex items-center shrink-0 z-10">
-        <a href="#/" class="flex items-center gap-2.5 shrink-0 group py-1" title="PPTQ - Nền tảng Đào tạo và Khảo thí Trực tuyến">
-          <img src="/frontend/assets/img/pptq_icon.png" alt="PPTQ Logo" class="h-8 w-8 object-contain rounded-lg shadow-2xs group-hover:scale-105 transition-transform" />
-          <span class="font-black text-lg tracking-tight text-[#222120] dark:text-[#EDEDEB] group-hover:opacity-85 transition-opacity">PPTQ</span>
-        </a>
-      </div>
-
-      <!-- Center: Desktop Navigation Items (Responsive flex center, prevents overlap with bell or logo on zoom) -->
-      <div class="hidden md:flex items-center justify-center flex-1 min-w-0 mx-2 z-10">
-        <nav id="topbar-navigation-items" class="flex items-center gap-1 bg-[#F4F1EA] dark:bg-[#202020] p-1 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] shadow-2xs max-w-full overflow-x-auto no-scrollbar whitespace-nowrap">
-          <!-- Populated dynamically based on role -->
-        </nav>
-      </div>
-
-      <!-- Right: Controls (Notifications, Theme, User Avatar & Role Switcher, Mobile Menu) -->
-      <div class="flex items-center gap-2 shrink-0 z-10">
-        
-        <!-- Topbar Wallet Quick Action & Dropdown (TASK-121) -->
-        <div class="relative" id="topbar-wallet-wrapper">
-          <button
-            type="button"
-            id="topbar-wallet-btn"
-            class="group flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#202020] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] hover:border-emerald-500 text-[#222120] dark:text-[#EDEDEB] text-xs font-bold transition-all shadow-2xs select-none cursor-pointer"
-            title="Ví tài khoản & Nạp tiền"
-            aria-expanded="false"
-            aria-haspopup="true"
-            aria-controls="topbar-wallet-dropdown"
-          >
-            <span class="material-symbols-outlined text-[17px] text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform">account_balance_wallet</span>
-            <span>Ví</span>
-            <span class="material-symbols-outlined text-[15px] text-[#8F8E8A] dark:text-[#6D6C68] transition-transform duration-200" id="topbar-wallet-chevron">expand_more</span>
-          </button>
-
-          <!-- Minimalist Wallet Dropdown Menu -->
-          <div
-            id="topbar-wallet-dropdown"
-            class="hidden absolute right-0 mt-2 w-56 rounded-2xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E] shadow-xl p-3.5 space-y-3 z-50 animate-scale-in"
-            role="menu"
-          >
-            <div class="space-y-1">
-              <div class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Số dư hiện có</div>
-              <div class="text-lg font-black font-mono text-emerald-600 dark:text-emerald-400" id="topbar-wallet-balance-val">
-                0 đ
-              </div>
-            </div>
-            <button
-              type="button"
-              id="topbar-wallet-deposit-action"
-              class="w-full c-btn c-btn-primary py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-sm hover:shadow-md transition-all"
-            >
-              <span class="material-symbols-outlined text-[16px]">add_circle</span>
-              <span>Nạp tiền</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Notification Bell Button & Dropdown Popover -->
-        <div class="relative" id="topbar-notifications-wrapper">
-          <button
-            type="button"
-            id="topbar-notifications-btn"
-            class="relative w-8 h-8 rounded-lg border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#202020] text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] flex items-center justify-center transition-colors select-none"
-            title="Thông báo"
-            aria-expanded="false"
-            aria-haspopup="true"
-          >
-            <span class="material-symbols-outlined text-[17px]">notifications</span>
-            <span id="topbar-notifications-badge" class="hidden absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-rose-600 text-white text-[9px] font-bold items-center justify-center ring-2 ring-[#FAF9F5] dark:ring-[#191919]">
-              0
-            </span>
-          </button>
-
-          <!-- Notifications Dropdown Menu Popover -->
-          <div
-            id="topbar-notifications-dropdown"
-            class="hidden absolute right-0 top-11 w-84 sm:w-96 max-w-[calc(100vw-1.5rem)] bg-[#FAF9F5] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl shadow-elevated z-50 flex flex-col text-xs overflow-hidden transition-all duration-150"
-            role="dialog"
-            aria-label="Bảng thông báo"
-          >
-            <!-- Dynamic Content Mounted by NotificationManager -->
-          </div>
-        </div>
-
-        <!-- Dark/Light Theme Toggle Button -->
-        <button
-          type="button"
-          id="topbar-theme-toggle"
-          class="w-8 h-8 rounded-lg border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#202020] text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] flex items-center justify-center transition-colors"
-          title="Đổi giao diện Sáng / Tối"
-        >
-          <span class="material-symbols-outlined text-[17px]" id="theme-toggle-icon">dark_mode</span>
-        </button>
-
-        <!-- User Profile Avatar & Multi-Role Switcher -->
-        <div class="relative">
-          <button
-            type="button"
-            id="topbar-avatar-btn"
-            class="group flex items-center gap-2 pl-2.5 pr-2 py-1 rounded-full border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#202020] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] hover:border-[#D3D0C8] dark:hover:border-[#3E3D3A] transition-all shadow-2xs select-none"
-            title="Hồ sơ tài khoản & Chuyển góc nhìn"
-            aria-expanded="false"
-            aria-haspopup="true"
-            aria-controls="topbar-role-dropdown"
-          >
-            <div class="text-right hidden sm:block leading-none">
-              <div id="topbar-user-name" class="font-bold text-xs text-[#222120] dark:text-[#EDEDEB] max-w-[110px] truncate leading-tight">Học viên</div>
-              <div class="mt-0.5 flex items-center justify-end">
-                <span id="topbar-role-badge" class="px-1.5 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider bg-[#ECE8DF] dark:bg-[#2E2D2B] text-[#5C5B57] dark:text-[#EDEDEB]">HỌC VIÊN</span>
-              </div>
-            </div>
-            <div class="relative">
-              <div class="w-7 h-7 rounded-full bg-[#222120] dark:bg-[#2A2928] text-[#FAF9F5] dark:text-[#EDEDEB] border border-[#E8E6DF] dark:border-[#3E3D3A] font-bold flex items-center justify-center text-[11px] shadow-xs transition-transform group-hover:scale-105" id="topbar-avatar-initials">
-                SV
-              </div>
-            </div>
-            <span class="material-symbols-outlined text-[16px] text-[#8F8E8A] dark:text-[#6D6C68] group-hover:text-[#222120] dark:group-hover:text-[#EDEDEB] transition-transform duration-200" id="topbar-avatar-chevron">expand_more</span>
-          </button>
-
-          <!-- User Dropdown & Role Switcher Popover -->
-          <div id="topbar-role-dropdown" class="hidden absolute right-0 top-11 w-64 bg-[#FAF9F5] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-xl shadow-elevated z-50 divide-y divide-[#F4F1EA] dark:divide-[#2E2D2B] text-xs">
-            <!-- Populated dynamically by AppRouter -->
-          </div>
-        </div>
-
-        <!-- Mobile Menu Toggle Button -->
-        <button
-          type="button"
-          id="topbar-mobile-menu-btn"
-          class="md:hidden w-8 h-8 rounded-lg border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#202020] text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] flex items-center justify-center transition-colors"
-          title="Mở menu điều hướng"
-          aria-expanded="false"
-          aria-haspopup="true"
-          aria-controls="mobile-nav-drawer"
-        >
-          <span class="material-symbols-outlined text-[19px]">menu</span>
-        </button>
-
-      </div>
-    </header>
-
-    <!-- Mobile Navigation Drawer Overlay -->
-    <div id="mobile-nav-backdrop" class="hidden fixed inset-0 bg-[#222120]/30 backdrop-blur-sm z-40 transition-opacity md:hidden"></div>
-    <div id="mobile-nav-drawer" class="hidden fixed inset-y-0 left-0 w-72 bg-[#FAF9F5] dark:bg-[#191919] z-50 flex flex-col shadow-elevated transition-transform md:hidden border-r border-[#E8E6DF] dark:border-[#2E2D2B]">
-      <div class="h-14 px-5 border-b border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-between shrink-0">
-        <div class="flex items-center">
-          <span class="font-bold text-base tracking-tight text-[#222120] dark:text-[#EDEDEB]">PPTQ LMS</span>
-        </div>
-        <button type="button" id="mobile-nav-close-btn" class="p-1 rounded-md text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB]">
-          <span class="material-symbols-outlined text-[18px]">close</span>
-        </button>
-      </div>
-      <nav class="flex-1 overflow-y-auto p-3 space-y-1" id="mobile-navigation-items">
-        <!-- Injected dynamically -->
-      </nav>
-      <div class="p-4 border-t border-[#E8E6DF] dark:border-[#2E2D2B] shrink-0 text-xs text-[#8F8E8A] flex items-center justify-between">
-        <span class="font-mono text-[11px]">v3.0.0 Unified</span>
-        <span class="inline-flex items-center gap-1 text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
-          <span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span> Trực tuyến
-        </span>
-      </div>
-    </div>
-
-    <!-- Hidden compatibility container for any legacy querySelector('#app-sidebar') -->
-    <div id="app-sidebar" class="hidden">
-      <nav id="sidebar-navigation-items"></nav>
-    </div>
-
-    <!-- Dynamic Single-DOM Viewport Mounting Target (Warm Editorial Canvas) -->
-    <main id="app-viewport" class="spa-viewport flex-1 overflow-y-auto relative bg-[#FAF9F5] dark:bg-[#191919]">
-      <div class="h-full flex items-center justify-center text-[#8F8E8A]">
-        <div class="flex items-center gap-2 text-xs font-medium">
-          <span class="w-2 h-2 rounded-full bg-[#222120] dark:bg-[#EDEDEB] animate-ping"></span>
-          <span>Khởi tạo hệ thống...</span>
-        </div>
-      </div>
-    </main>
-
-  </div>
-
-  <!-- Global Floating Toast Notification Container (Top Right) -->
-  <div id="toast-container" class="fixed top-5 right-5 z-[9999] flex flex-col gap-2.5 pointer-events-none max-w-sm w-full"></div>
-
-  <!-- Global Modal Container -->
-  <div id="modal-container" class="hidden z-50"></div>
-
-  <!-- Global Multi-Directional Drawer -->
-  <div id="app-drawer-backdrop" class="hidden fixed inset-0 bg-[#222120]/30 backdrop-blur-sm z-50 transition-opacity duration-150"></div>
-  <div id="app-drawer-container" class="hidden fixed inset-y-0 z-50 flex shadow-elevated transition-all duration-200"></div>
-
-  <!-- Global Floating Circular AI Tutor Widget (Warm Editorial Style) -->
-  <div id="floating-ai-container" class="fixed bottom-5 right-5 z-40 flex flex-col items-end pointer-events-none">
-    <!-- Flyout Chat Drawer -->
-    <div id="floating-ai-drawer" class="hidden pointer-events-auto w-96 max-w-[calc(100vw-2.5rem)] h-[520px] max-h-[calc(100vh-2.5rem)] bg-[#FAF9F5] dark:bg-[#202020] rounded-2xl shadow-elevated border border-[#E8E6DF] dark:border-[#2E2D2B] flex flex-col overflow-hidden">
-      <!-- Drawer Header -->
-      <div class="px-4 py-3 bg-[#F4F1EA] dark:bg-[#262524] border-b border-[#E8E6DF] dark:border-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] flex items-center justify-between shrink-0">
-        <div class="flex items-center gap-2.5">
-          <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc" class="w-8 h-8 rounded-lg object-cover border border-[#E8E6DF] dark:border-[#3E3D3A] shadow-xs" />
-          <div>
-            <div class="font-bold text-xs text-[#222120] dark:text-[#EDEDEB] flex items-center gap-1.5">
-              <span>Bạch tuộc trợ lí AI</span>
-              <span class="text-[9px] px-1.5 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-semibold border border-indigo-200 dark:border-indigo-800">AI Assistant</span>
-            </div>
-            <div class="text-[10px] text-[#8F8E8A] dark:text-[#9E9D99] flex items-center gap-1">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span> Sẵn sàng giải đáp
-            </div>
-          </div>
-        </div>
-        <div class="flex items-center gap-1 shrink-0 z-10">
-          <button type="button" id="floating-ai-reset-btn" title="Làm mới cuộc trò chuyện" class="w-7 h-7 flex items-center justify-center rounded-md text-[#8F8E8A] hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-[#E8E6DF] dark:hover:bg-[#2E2D2B] transition-colors cursor-pointer">
-            <span class="material-symbols-outlined text-[16px]">refresh</span>
-          </button>
-          <button type="button" id="floating-ai-close-btn" title="Đóng cửa sổ" class="w-7 h-7 flex items-center justify-center rounded-md text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#E8E6DF] dark:hover:bg-[#2E2D2B] transition-colors cursor-pointer">
-            <span class="material-symbols-outlined text-[16px]">close</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Drawer Chat Messages Container -->
-      <div id="floating-ai-messages" class="flex-1 p-4 overflow-y-auto space-y-3 text-xs leading-relaxed">
-        <div class="flex gap-2.5 items-start">
-          <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc" class="w-7 h-7 rounded-lg object-cover shrink-0 border border-[#E8E6DF] dark:border-[#2E2D2B] shadow-2xs" />
-          <div class="bg-[#F4F1EA] dark:bg-[#262524] text-[#222120] dark:text-[#EDEDEB] p-3 rounded-xl rounded-tl-none max-w-[85%] border border-[#E8E6DF] dark:border-[#2E2D2B]">
-            Xin chào bạn! Mình là Bạch Tuột, trợ lí AI của hệ thống PPTQ. Mình có thể giúp được gì cho bạn?
-          </div>
-        </div>
-      </div>
-
-      <!-- Drawer Input Box -->
-      <div class="p-3 border-t border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#191919] shrink-0">
-        <form id="floating-ai-form" class="flex items-center gap-2">
-          <input
-            type="text"
-            id="floating-ai-input"
-            aria-label="Đặt câu hỏi cho Bạch tuộc trợ lí AI"
-            class="flex-1 px-3 py-1.5 rounded-lg text-xs border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#202020] text-[#222120] dark:text-[#EDEDEB] focus:outline-none focus:border-[#222120] dark:focus:border-[#EDEDEB] placeholder-[#8F8E8A]"
-            placeholder="Đặt câu hỏi cho Bạch tuộc..."
-            autocomplete="off"
-          />
-          <button
-            type="submit"
-            id="floating-ai-send-btn"
-            class="w-8 h-8 rounded-lg bg-[#222120] dark:bg-[#EDEDEB] text-[#FAF9F5] dark:text-[#191919] hover:opacity-90 flex items-center justify-center transition-opacity shrink-0"
-          >
-            <span class="material-symbols-outlined text-[15px]">send</span>
-          </button>
-        </form>
-      </div>
-    </div>
-
-    <!-- Circular Floating Button (Draggable & Darkmode Polished) -->
-    <button
-      type="button"
-      id="floating-ai-launcher"
-      class="pointer-events-auto w-12 h-12 rounded-xl bg-[#222120] dark:bg-[#202020] text-white shadow-subtle hover:scale-105 active:scale-95 flex items-center justify-center transition-all duration-150 group relative select-none border border-[#37352F] dark:border-[#3E3D3A] p-1 cursor-grab active:cursor-grabbing"
-      title="Bạch tuộc trợ lí AI (Kéo thả để di chuyển vị trí)"
-    >
-      <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc" class="w-full h-full object-cover rounded-lg shadow-xs transition-transform group-hover:scale-105 pointer-events-none" />
-      <span class="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-600 border-2 border-[#FAF9F5] dark:border-[#202020]"></span>
-    </button>
-  </div>
-
-  <!-- DOMPurify for Safe WYSIWYG HTML Rendering -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
-  <!-- HLS.js for Secure Encrypted Streaming Playback -->
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js"></script>
-  <!-- KaTeX for Visual Math Formula Rendering -->
-  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
-  <!-- VideoArmor for Forensic Dynamic Watermarking & Anti-Tamper Armor -->
-  <script src="/frontend/assets/js/components/video-armor.js?v=3.2.7"></script>
-  <script src="/frontend/assets/js/swr-cache.js?v=3.2.7"></script>
-  <script src="/frontend/assets/js/ui.js?v=3.2.7"></script>
-  <script src="/frontend/assets/js/api.js?v=3.2.7"></script>
-  <script src="/frontend/assets/js/realtime.js?v=3.2.7"></script>
-  <script src="/frontend/assets/js/exam-store.js?v=3.2.7"></script>
-  <script src="/frontend/assets/js/views/auth.js?v=3.2.7"></script>
-  <script src="/frontend/assets/js/views/student.js?v=3.2.7"></script>
-  <script src="/frontend/assets/js/views/instructor.js?v=3.2.7"></script>
-  <script src="/frontend/assets/js/views/instructor-exams.js?v=3.2.7"></script>
-  <script src="/frontend/assets/js/views/admin.js?v=3.2.7"></script>
-  <script src="/frontend/assets/js/router.js?v=3.2.7"></script>
-
-  <!-- Application Bootstrap -->
-  <script>
-    document.addEventListener('DOMContentLoaded', async () => {
-      const router = new AppRouter();
-      window.app = router;
-      await router.init();
-    });
-  </script>
-</body>
-</html>
+<!DOCTYPE html>
+
+<html lang="vi" class="h-full">
+
+<head>
+
+  <meta charset="utf-8">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+  <title>PPTQ LMS - Học Tập Và Bài Thi</title>
+
+  <link rel="icon" type="image/x-icon" href="/frontend/favicon.ico">
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/frontend/assets/img/favicon.png">
+
+  <link rel="apple-touch-icon" href="/frontend/assets/img/pptq_icon.png">
+
+
+
+  <!-- Pre-paint Theme Restoration to prevent white flash (FOUC) -->
+
+  <script>
+
+    if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+
+      document.documentElement.classList.add('dark');
+
+    } else {
+
+      document.documentElement.classList.remove('dark');
+
+    }
+
+  </script>
+
+
+
+  <!-- Fonts & Material Symbols Setup (Warm Editorial Typography) -->
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+
+  <!-- KaTeX for Visual Math Formula Rendering -->
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+
+
+
+  <!-- Tailwind CSS CDN with Warm Editorial / Notion-like Design Tokens -->
+
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+
+  <script>
+
+    tailwind.config = {
+
+      darkMode: "class",
+
+      theme: {
+
+        extend: {
+
+          colors: {
+
+            // Remap slate palette to cohesive Warm Charcoal / Notion shades
+
+            slate: {
+
+              50: '#FAF9F5',
+
+              100: '#F4F1EA',
+
+              200: '#E8E6DF',
+
+              300: '#D3D0C8',
+
+              400: '#9E9D99',
+
+              500: '#6D6C68',
+
+              600: '#3E3D3A',
+
+              700: '#2E2D2B',
+
+              800: '#262524',
+
+              850: '#222120',
+
+              900: '#202020',
+
+              950: '#141414',
+
+            },
+
+            "primary": "#2563EB",
+
+            "primary-hover": "#1D4ED8",
+
+            "primary-subtle": "#EFF4FE",
+
+            "primary-contrast": "#FAF9F5",
+
+            "surface-canvas": "#FAF9F5",
+
+            "surface-card": "#FAF9F5",
+
+            "surface-subtle": "#F4F1EA",
+
+            "surface-muted": "#ECE8DF",
+
+            "border-subtle": "#E8E6DF",
+
+            "border-strong": "#D3D0C8",
+
+            "text-primary": "#222120",
+
+            "text-secondary": "#5C5B57",
+
+            "text-muted": "#8F8E8A",
+
+            "success-emerald": "#15803D",
+
+            "warning-amber": "#B45309",
+
+            "danger-rose": "#BE123C",
+
+            "info-sky": "#0369A1",
+
+            // Semantic Warm Dark Tokens
+
+            "dark-canvas": "#101925",
+
+            "dark-card": "#223248",
+
+            "dark-surface": "#2D4058",
+
+            "dark-border": "#526881",
+
+            "dark-border-strong": "#91A9C2",
+
+            "dark-text-primary": "#F0F5FA",
+
+            "dark-text-secondary": "#C6D2E1",
+
+            "dark-text-muted": "#AEBED0",
+
+          },
+
+          fontFamily: {
+
+            sans: ["Plus Jakarta Sans", "Inter", "-apple-system", "BlinkMacSystemFont", "sans-serif"],
+
+            mono: ["JetBrains Mono", "SFMono-Regular", "Menlo", "monospace"],
+
+          },
+
+          boxShadow: {
+
+            "2xs": "0 1px 2px 0 rgba(34, 33, 32, 0.03)",
+
+            "xs": "0 1px 3px 0 rgba(34, 33, 32, 0.04), 0 1px 2px -1px rgba(34, 33, 32, 0.04)",
+
+            "subtle": "0 2px 6px -1px rgba(34, 33, 32, 0.05), 0 1px 4px -2px rgba(34, 33, 32, 0.03)",
+
+            "elevated": "0 8px 16px -2px rgba(34, 33, 32, 0.06), 0 3px 6px -3px rgba(34, 33, 32, 0.04)",
+
+          }
+
+        }
+
+      }
+
+    };
+
+  </script>
+
+
+
+  <style>
+
+    * { box-sizing: border-box; }
+
+    html, body {
+
+      margin: 0;
+
+      padding: 0;
+
+      width: 100%;
+
+      height: 100%;
+
+      overflow: hidden;
+
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+
+      background-color: #FAF9F5;
+
+      color: #222120;
+
+      -webkit-font-smoothing: antialiased;
+
+      -moz-osx-font-smoothing: grayscale;
+
+    }
+
+    .dark body {
+
+      background-color: #191919;
+
+      color: #EDEDEB;
+
+    }
+
+
+
+    body.fullscreen-focus-mode #app-topbar {
+
+      display: none !important;
+
+    }
+
+
+
+    /* Responsive Breakpoints for Admin & Student Topbar Navigation (TASK-139 / Dead-Center) */
+    @media (max-width: 1279px) {
+      .topbar-nav-extra-student {
+        display: none !important;
+      }
+    }
+    @media (max-width: 1149px) {
+      .topbar-admin-tier3 {
+        display: none !important;
+      }
+      .topbar-admin-tier3-dropdown {
+        display: flex !important;
+      }
+      .topbar-more-badge-tier3 {
+        display: inline !important;
+      }
+    }
+    @media (min-width: 1150px) {
+      .topbar-admin-tier3 {
+        display: inline-flex !important;
+      }
+      .topbar-admin-tier3-dropdown {
+        display: none !important;
+      }
+      .topbar-more-badge-tier3 {
+        display: none !important;
+      }
+    }
+    @media (max-width: 1349px) {
+      .topbar-admin-tier2 {
+        display: none !important;
+      }
+      .topbar-admin-tier2-dropdown {
+        display: flex !important;
+      }
+      .topbar-more-badge-tier2 {
+        display: inline !important;
+      }
+    }
+    @media (min-width: 1350px) {
+      .topbar-admin-tier2 {
+        display: inline-flex !important;
+      }
+      .topbar-admin-tier2-dropdown {
+        display: none !important;
+      }
+      .topbar-more-badge-tier2 {
+        display: none !important;
+      }
+    }
+
+    @media (max-width: 1849px) {
+
+      .topbar-admin-extra {
+
+        display: none !important;
+
+      }
+
+      .topbar-admin-more-btn {
+
+        display: inline-flex !important;
+
+      }
+
+    }
+
+    @media (min-width: 1850px) {
+
+      .topbar-admin-extra {
+
+        display: inline-flex !important;
+
+      }
+
+      .topbar-admin-more-btn {
+
+        display: none !important;
+
+      }
+
+    }
+
+
+
+    #topbar-navigation-items { overflow: visible !important; }
+
+    /* Automatic Dark Mode Guard for Pastel Light Colors & Glare Elimination */
+
+    .dark .bg-primary-subtle {
+
+      background-color: rgba(37, 99, 235, 0.16) !important;
+
+      color: #60A5FA !important;
+
+      border-color: rgba(37, 99, 235, 0.28) !important;
+
+    }
+
+    .dark .bg-emerald-50 {
+
+      background-color: rgba(16, 185, 129, 0.14) !important;
+
+      color: #34D399 !important;
+
+      border-color: rgba(16, 185, 129, 0.28) !important;
+
+    }
+
+    .dark .bg-indigo-50 {
+
+      background-color: rgba(99, 102, 241, 0.14) !important;
+
+      color: #818CF8 !important;
+
+      border-color: rgba(99, 102, 241, 0.28) !important;
+
+    }
+
+    .dark .bg-purple-50 {
+
+      background-color: rgba(168, 85, 247, 0.14) !important;
+
+      color: #C084FC !important;
+
+      border-color: rgba(168, 85, 247, 0.28) !important;
+
+    }
+
+    .dark .bg-blue-50 {
+
+      background-color: rgba(59, 130, 246, 0.14) !important;
+
+      color: #60A5FA !important;
+
+      border-color: rgba(59, 130, 246, 0.28) !important;
+
+    }
+
+    .dark .bg-amber-50 {
+
+      background-color: rgba(245, 158, 11, 0.14) !important;
+
+      color: #FBBF24 !important;
+
+      border-color: rgba(245, 158, 11, 0.28) !important;
+
+    }
+
+    .dark .bg-rose-50 {
+
+      background-color: rgba(244, 63, 94, 0.14) !important;
+
+      color: #FB7185 !important;
+
+      border-color: rgba(244, 63, 94, 0.28) !important;
+
+    }
+
+
+
+    /* Core Warm Editorial Utility Classes */
+
+    .c-btn {
+
+      display: inline-flex;
+
+      align-items: center;
+
+      justify-content: center;
+
+      gap: 0.375rem;
+
+      font-weight: 600;
+
+      font-size: 0.8125rem;
+
+      line-height: 1.25rem;
+
+      border-radius: 0.625rem;
+
+      transition: all 120ms ease;
+
+      cursor: pointer;
+
+      user-select: none;
+
+      white-space: nowrap;
+
+      border: 1px solid transparent;
+
+      padding: 0.4375rem 0.875rem;
+
+    }
+
+    .c-btn:disabled {
+
+      opacity: 0.45;
+
+      cursor: not-allowed;
+
+      pointer-events: none;
+
+    }
+
+    .c-btn:active {
+
+      transform: scale(0.985);
+
+    }
+
+    .c-btn-primary {
+
+      background-color: #222120;
+
+      color: #FAF9F5;
+
+      border-color: #222120;
+
+      box-shadow: 0 1px 2px 0 rgba(34, 33, 32, 0.12);
+
+    }
+
+    .dark .c-btn-primary {
+
+      background-color: #EDEDEB;
+
+      color: #191919;
+
+      border-color: #EDEDEB;
+
+    }
+
+    .c-btn-primary:hover {
+
+      background-color: #37352F;
+
+      border-color: #37352F;
+
+    }
+
+    .dark .c-btn-primary:hover {
+
+      background-color: #FAF9F5;
+
+      border-color: #FAF9F5;
+
+    }
+
+    .c-btn-accent {
+
+      background-color: #2563EB;
+
+      color: #FAF9F5;
+
+      border-color: #2563EB;
+
+    }
+
+    .c-btn-accent:hover {
+
+      background-color: #1D4ED8;
+
+      border-color: #1D4ED8;
+
+    }
+
+    .c-btn-secondary {
+
+      background-color: #FAF9F5;
+
+      color: #37352F;
+
+      border-color: #E8E6DF;
+
+      box-shadow: 0 1px 2px 0 rgba(34, 33, 32, 0.03);
+
+    }
+
+    .dark .c-btn-secondary {
+
+      background-color: #202020;
+
+      color: #EDEDEB;
+
+      border-color: #2E2D2B;
+
+    }
+
+    .c-btn-secondary:hover {
+
+      background-color: #F4F1EA;
+
+      border-color: #D3D0C8;
+
+    }
+
+    .dark .c-btn-secondary:hover {
+
+      background-color: #282726;
+
+      border-color: #3E3D3A;
+
+    }
+
+    .c-btn-ghost {
+
+      background-color: transparent;
+
+      color: #5C5B57;
+
+      border-color: transparent;
+
+    }
+
+    .dark .c-btn-ghost {
+
+      color: #9E9D99;
+
+    }
+
+    .c-btn-ghost:hover {
+
+      background-color: #F4F1EA;
+
+      color: #222120;
+
+    }
+
+    .dark .c-btn-ghost:hover {
+
+      background-color: #262524;
+
+      color: #EDEDEB;
+
+    }
+
+    .c-btn-danger {
+
+      background-color: #BE123C;
+
+      color: #FAF9F5;
+
+      border-color: #BE123C;
+
+    }
+
+    .c-btn-danger:hover {
+
+      background-color: #9F1239;
+
+    }
+
+    .c-btn-sm {
+
+      padding: 0.25rem 0.625rem;
+
+      font-size: 0.75rem;
+
+      border-radius: 0.5rem;
+
+      min-height: 30px;
+
+    }
+
+    .c-btn-md {
+
+      padding: 0.4375rem 0.875rem;
+
+      font-size: 0.8125rem;
+
+      min-height: 36px;
+
+    }
+
+    .c-btn-lg {
+
+      padding: 0.625rem 1.25rem;
+
+      font-size: 0.9375rem;
+
+      min-height: 44px;
+
+    }
+
+
+
+    /* Standard Warm Editorial Card */
+
+    .c-card {
+
+      background-color: #FAF9F5;
+
+      border: 1px solid #E8E6DF;
+
+      border-radius: 0.75rem;
+
+      box-shadow: 0 1px 3px 0 rgba(34, 33, 32, 0.02);
+
+      transition: border-color 150ms ease, box-shadow 150ms ease;
+
+    }
+
+    .dark .c-card {
+
+      background-color: #202020;
+
+      border-color: #2E2D2B;
+
+      box-shadow: none;
+
+    }
+
+    .c-card-hover:hover {
+
+      border-color: #D3D0C8;
+
+      box-shadow: 0 3px 8px -2px rgba(34, 33, 32, 0.06);
+
+    }
+
+    .dark .c-card-hover:hover {
+
+      border-color: #3E3D3A;
+
+    }
+
+
+
+    /* Standard Form Inputs */
+
+    .c-input {
+
+      width: 100%;
+
+      padding: 0.5rem 0.75rem;
+
+      font-size: 0.8125rem;
+
+      border-radius: 0.625rem;
+
+      border: 1px solid #E8E6DF;
+
+      background-color: #FAF9F5;
+
+      color: #222120;
+
+      transition: border-color 120ms ease, box-shadow 120ms ease;
+
+      outline: none;
+
+    }
+
+    .dark .c-input {
+
+      background-color: #202020;
+
+      border-color: #2E2D2B;
+
+      color: #EDEDEB;
+
+    }
+
+    .c-input:focus {
+
+      border-color: #222120;
+
+      box-shadow: 0 0 0 2px rgba(34, 33, 32, 0.08);
+
+    }
+
+    .dark .c-input:focus {
+
+      border-color: #EDEDEB;
+
+      box-shadow: 0 0 0 2px rgba(237, 237, 235, 0.12);
+
+    }
+
+    .c-input-error {
+
+      border-color: #BE123C !important;
+
+    }
+
+    .c-input-error:focus {
+
+      box-shadow: 0 0 0 2px rgba(190, 18, 60, 0.15) !important;
+
+    }
+
+
+
+    /* Standard Table */
+
+    .c-table-wrapper {
+
+      overflow-x: auto;
+
+      border-radius: 0.75rem;
+
+      border: 1px solid #E8E6DF;
+
+      background-color: #FAF9F5;
+
+    }
+
+    .dark .c-table-wrapper {
+
+      border-color: #2E2D2B;
+
+      background-color: #202020;
+
+    }
+
+    .c-table {
+
+      width: 100%;
+
+      text-align: left;
+
+      font-size: 0.8125rem;
+
+      border-collapse: collapse;
+
+    }
+
+    .c-table-th {
+
+      padding: 0.625rem 0.875rem;
+
+      font-size: 0.6875rem;
+
+      font-weight: 700;
+
+      text-transform: uppercase;
+
+      letter-spacing: 0.05em;
+
+      color: #8F8E8A;
+
+      background-color: #F4F1EA;
+
+      border-bottom: 1px solid #E8E6DF;
+
+    }
+
+    .dark .c-table-th {
+
+      color: #9E9D99;
+
+      background-color: #262524;
+
+      border-bottom-color: #2E2D2B;
+
+    }
+
+    .c-table-td {
+
+      padding: 0.75rem 0.875rem;
+
+      border-bottom: 1px solid #F4F1EA;
+
+      color: #37352F;
+
+    }
+
+    .dark .c-table-td {
+
+      border-bottom-color: #282726;
+
+      color: #EDEDEB;
+
+    }
+
+    .c-table-tr:hover .c-table-td {
+
+      background-color: #FAF9F5;
+
+    }
+
+    .dark .c-table-tr:hover .c-table-td {
+
+      background-color: #242423;
+
+    }
+
+
+
+    /* Subtle custom scrollbars */
+
+    ::-webkit-scrollbar {
+
+      width: 5px;
+
+      height: 5px;
+
+    }
+
+    ::-webkit-scrollbar-track {
+
+      background: transparent;
+
+    }
+
+    ::-webkit-scrollbar-thumb {
+
+      background: rgba(143, 142, 138, 0.28);
+
+      border-radius: 9999px;
+
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+
+      background: rgba(143, 142, 138, 0.45);
+
+    }
+
+
+
+    /* Minimal Top Progress Bar Animation */
+
+    @keyframes pulseProgress {
+
+      0% { opacity: 0.6; }
+
+      50% { opacity: 1; }
+
+      100% { opacity: 0.6; }
+
+    }
+
+    .animate-progress-pulse {
+
+      animation: pulseProgress 1s infinite ease-in-out;
+
+    }
+
+    /* Shared dark surfaces: Warm Editorial & Notion-like tokens */
+
+    html.dark body,
+
+    html.dark #app-viewport,
+
+    html.dark [class~="dark:bg-slate-950"],
+
+    html.dark [class~="dark:bg-[#191919]"],
+
+    html.dark [class~="dark:bg-[#151515]"],
+
+    html.dark [class~="dark:bg-[#18181b]"],
+
+    html.dark [class~="dark:bg-[#1A1918]"],
+
+    html.dark [class~="dark:bg-[#1E1E1E]"],
+
+    html.dark [class~="dark:bg-[#1E1D1B]"] {
+
+      background-color: #18181b !important;
+
+      color: #EDEDEB;
+
+    }
+
+    html.dark #app-topbar,
+
+    html.dark [class~="dark:bg-slate-900"],
+
+    html.dark [class~="dark:bg-[#202020]"],
+
+    html.dark [class~="dark:bg-[#222120]"],
+
+    html.dark [class~="dark:bg-[#252525]"],
+
+    html.dark [class~="dark:bg-[#2A2928]"],
+
+    html.dark .c-card,
+
+    html.dark .c-table-wrapper {
+
+      background-color: #202020 !important;
+
+      border-color: #2E2D2B !important;
+
+    }
+
+    html.dark [class~="dark:bg-slate-800"],
+
+    html.dark [class~="dark:bg-[#262524]"],
+
+    html.dark [class~="dark:bg-[#242423]"],
+
+    html.dark [class~="dark:bg-[#2E2D2B]"],
+
+    html.dark .c-table-th {
+
+      background-color: #262524 !important;
+
+    }
+
+    html.dark [class~="dark:border-slate-800"],
+
+    html.dark [class~="dark:border-slate-700"],
+
+    html.dark [class~="dark:border-[#2E2D2B]"],
+
+    html.dark [class~="dark:border-[#353432]"],
+
+    html.dark [class~="dark:border-[#37352F]"],
+
+    html.dark [class~="dark:border-[#3D3C3A]"],
+
+    html.dark [class~="dark:border-[#3E3D3A]"] {
+
+      border-color: #2E2D2B !important;
+
+    }
+
+    html.dark [class~="dark:text-white"],
+
+    html.dark [class~="dark:text-slate-100"],
+
+    html.dark [class~="dark:text-[#EDEDEB]"] { color: #EDEDEB !important; }
+
+    html.dark [class~="dark:text-slate-300"],
+
+    html.dark [class~="dark:text-slate-400"],
+
+    html.dark [class~="dark:text-[#9E9D99]"],
+
+    html.dark [class~="dark:text-[#6D6C68]"],
+
+    html.dark [class~="dark:text-[#A8A6A0]"] { color: #9E9D99 !important; }
+
+    html.dark [class~="dark:bg-[#32312F]"],
+
+    html.dark [class~="dark:bg-[#3E3D3A]"] { background-color: #2A2928 !important; }
+
+    html.dark [class~="text-slate-400"],
+
+    html.dark [class~="text-slate-500"],
+
+    html.dark [class~="text-slate-600"],
+
+    html.dark [class~="text-[#8F8E8A]"],
+
+    html.dark [class~="text-[#5C5B57]"] { color: #9E9D99 !important; }
+
+    html.dark .c-input,
+
+    html.dark input:not([type="checkbox"]):not([type="radio"]),
+
+    html.dark textarea,
+
+    html.dark select {
+
+      background-color: #18181b !important;
+
+      border-color: #2E2D2B !important;
+
+      color: #EDEDEB !important;
+
+    }
+
+    html.dark input::placeholder,
+
+    html.dark textarea::placeholder { color: #8F8E8A; }
+
+    html.dark .c-btn-secondary {
+
+      background-color: #262524;
+
+      border-color: #2E2D2B;
+
+      color: #EDEDEB;
+
+    }
+
+    html.dark .c-btn-secondary:hover { background-color: #2A2928; }
+
+    html.dark .c-table-td { border-bottom-color: #2E2D2B; color: #EDEDEB; }
+
+    html.dark .modal-layer { background-color: rgba(0, 0, 0, 0.65) !important; }
+
+    html.dark .modal-layer .modal-dialog,
+
+    html.dark #confirm-dialog-card {
+
+      background-color: #202020 !important;
+
+      border: 1px solid #2E2D2B !important;
+
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5) !important;
+
+      color: #EDEDEB;
+
+    }
+
+    html.dark .modal-dialog > div:first-child,
+
+    html.dark .modal-dialog > div:last-child:not(:first-child) {
+
+      background-color: #262524 !important;
+
+      border-color: #2E2D2B !important;
+
+    }
+
+    html.dark .modal-dialog > div:nth-child(2),
+
+    html.dark #confirm-dialog-card > div:nth-child(2) { color: #EDEDEB !important; }
+
+  </style>
+
+</head>
+
+<body class="bg-[#FAF9F5] dark:bg-[#191919] text-[#222120] dark:text-[#EDEDEB] antialiased h-full w-full flex flex-col selection:bg-[#ECE8DF] selection:text-[#222120] dark:selection:bg-[#37352F] dark:selection:text-[#EDEDEB]">
+
+
+
+  <!-- Minimal Instant Top Micro Progress Bar -->
+
+  <div id="top-micro-loader" class="fixed top-0 left-0 right-0 h-[2.5px] z-50 pointer-events-none opacity-0 transition-opacity duration-150">
+
+    <div id="top-micro-loader-bar" class="h-full bg-[#222120] dark:bg-[#EDEDEB] w-0 transition-all duration-150 ease-out"></div>
+
+  </div>
+
+
+
+  <!-- Application Shell Root Container -->
+
+  <div id="app-root" class="w-full h-full flex flex-col overflow-hidden">
+
+    
+
+    <!-- Modern Warm Editorial Top Navigation Bar -->
+
+    <header id="app-topbar" class="relative h-14 px-4 sm:px-6 bg-[#FAF9F5]/90 dark:bg-[#191919]/90 backdrop-blur-md border-b border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-between shrink-0 z-30 select-none">
+
+      
+
+      <!-- Left: Brand -->
+
+      <div class="flex items-center shrink-0 z-10">
+
+        <a href="#/" class="flex items-center gap-2.5 shrink-0 group py-1" title="PPTQ - Nền tảng Đào tạo và Khảo thí Trực tuyến">
+
+          <img src="/frontend/assets/img/pptq_icon.png" alt="PPTQ Logo" class="h-8 w-8 object-contain rounded-lg shadow-2xs group-hover:scale-105 transition-transform" />
+
+          <span class="font-black text-lg tracking-tight text-[#222120] dark:text-[#EDEDEB] group-hover:opacity-85 transition-opacity">PPTQ</span>
+
+        </a>
+
+      </div>
+
+
+
+      <!-- Center: Desktop Navigation Items (Responsive flex center, prevents overlap with bell or logo on zoom) -->
+
+      <div class="hidden lg:flex items-center justify-center absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 z-10 pointer-events-none">
+
+        <nav id="topbar-navigation-items" class="pointer-events-auto flex items-center gap-1 bg-[#F4F1EA] dark:bg-[#202020] p-1 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] shadow-2xs max-w-full overflow-visible whitespace-nowrap">
+
+          <!-- Populated dynamically based on role -->
+
+        </nav>
+
+      </div>
+
+
+
+      <!-- Right: Controls (Notifications, Theme, User Avatar & Role Switcher, Mobile Menu) -->
+
+      <div class="flex items-center gap-2 shrink-0 z-20">
+
+        
+
+        <!-- Topbar Wallet Quick Action & Dropdown (TASK-121) -->
+
+        <div class="relative hidden" id="topbar-wallet-wrapper">
+
+          <button
+
+            type="button"
+
+            id="topbar-wallet-btn"
+
+            class="group flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#202020] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] hover:border-emerald-500 text-[#222120] dark:text-[#EDEDEB] text-xs font-bold transition-all shadow-2xs select-none cursor-pointer"
+
+            title="Ví tài khoản & Nạp tiền"
+
+            aria-expanded="false"
+
+            aria-haspopup="true"
+
+            aria-controls="topbar-wallet-dropdown"
+
+          >
+
+            <span class="material-symbols-outlined text-[17px] text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform">account_balance_wallet</span>
+
+            <span>Ví</span>
+
+            <span class="material-symbols-outlined text-[15px] text-[#8F8E8A] dark:text-[#6D6C68] transition-transform duration-200" id="topbar-wallet-chevron">expand_more</span>
+
+          </button>
+
+
+
+          <!-- Minimalist Wallet Dropdown Menu -->
+
+          <div
+
+            id="topbar-wallet-dropdown"
+
+            class="hidden absolute right-0 mt-2 w-56 rounded-2xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E] shadow-xl p-3.5 space-y-3 z-50 animate-scale-in"
+
+            role="menu"
+
+          >
+
+            <div class="space-y-1">
+
+              <div class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Số dư hiện có</div>
+
+              <div class="text-lg font-black font-mono text-emerald-600 dark:text-emerald-400" id="topbar-wallet-balance-val">
+
+                0 đ
+
+              </div>
+
+            </div>
+
+            <button
+
+              type="button"
+
+              id="topbar-wallet-deposit-action"
+
+              class="w-full c-btn c-btn-primary py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-sm hover:shadow-md transition-all"
+
+            >
+
+              <span class="material-symbols-outlined text-[16px]">add_circle</span>
+
+              <span>Nạp tiền</span>
+
+            </button>
+
+          </div>
+
+        </div>
+
+
+
+        <!-- Notification Bell Button & Dropdown Popover -->
+
+        <div class="relative" id="topbar-notifications-wrapper">
+
+          <button
+
+            type="button"
+
+            id="topbar-notifications-btn"
+
+            class="relative w-8 h-8 rounded-lg border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#202020] text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] flex items-center justify-center transition-colors select-none"
+
+            title="Thông báo"
+
+            aria-expanded="false"
+
+            aria-haspopup="true"
+
+          >
+
+            <span class="material-symbols-outlined text-[17px]">notifications</span>
+
+            <span id="topbar-notifications-badge" class="hidden absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-rose-600 text-white text-[9px] font-bold items-center justify-center ring-2 ring-[#FAF9F5] dark:ring-[#191919]">
+
+              0
+
+            </span>
+
+          </button>
+
+
+
+          <!-- Notifications Dropdown Menu Popover -->
+
+          <div
+
+            id="topbar-notifications-dropdown"
+
+            class="hidden absolute right-0 top-11 w-84 sm:w-96 max-w-[calc(100vw-1.5rem)] bg-[#FAF9F5] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl shadow-elevated z-50 flex flex-col text-xs overflow-hidden transition-all duration-150"
+
+            role="dialog"
+
+            aria-label="Bảng thông báo"
+
+          >
+
+            <!-- Dynamic Content Mounted by NotificationManager -->
+
+          </div>
+
+        </div>
+
+
+
+        <!-- Dark/Light Theme Toggle Button -->
+
+        <button
+
+          type="button"
+
+          id="topbar-theme-toggle"
+
+          class="w-8 h-8 rounded-lg border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#202020] text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] flex items-center justify-center transition-colors"
+
+          title="Đổi giao diện Sáng / Tối"
+
+        >
+
+          <span class="material-symbols-outlined text-[17px]" id="theme-toggle-icon">dark_mode</span>
+
+        </button>
+
+
+
+        <!-- User Profile Avatar & Multi-Role Switcher -->
+
+        <div class="relative">
+
+          <button
+
+            type="button"
+
+            id="topbar-avatar-btn"
+
+            class="group flex items-center gap-2 pl-2.5 pr-2 py-1 rounded-full border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#202020] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] hover:border-[#D3D0C8] dark:hover:border-[#3E3D3A] transition-all shadow-2xs select-none"
+
+            title="Hồ sơ tài khoản & Chuyển góc nhìn"
+
+            aria-expanded="false"
+
+            aria-haspopup="true"
+
+            aria-controls="topbar-role-dropdown"
+
+          >
+
+            <div class="text-right hidden sm:block leading-none">
+
+              <div id="topbar-user-name" class="font-bold text-xs text-[#222120] dark:text-[#EDEDEB] max-w-[110px] truncate leading-tight">Học viên</div>
+
+              <div class="mt-0.5 flex items-center justify-end">
+
+                <span id="topbar-role-badge" class="px-1.5 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider bg-[#ECE8DF] dark:bg-[#2E2D2B] text-[#5C5B57] dark:text-[#EDEDEB]">HỌC VIÊN</span>
+
+              </div>
+
+            </div>
+
+            <div class="relative">
+
+              <div class="w-7 h-7 rounded-full bg-[#222120] dark:bg-[#2A2928] text-[#FAF9F5] dark:text-[#EDEDEB] border border-[#E8E6DF] dark:border-[#3E3D3A] font-bold flex items-center justify-center text-[11px] shadow-xs transition-transform group-hover:scale-105" id="topbar-avatar-initials">
+
+                SV
+
+              </div>
+
+            </div>
+
+            <span class="material-symbols-outlined text-[16px] text-[#8F8E8A] dark:text-[#6D6C68] group-hover:text-[#222120] dark:group-hover:text-[#EDEDEB] transition-transform duration-200" id="topbar-avatar-chevron">expand_more</span>
+
+          </button>
+
+
+
+          <!-- User Dropdown & Role Switcher Popover -->
+
+          <div id="topbar-role-dropdown" class="hidden absolute right-0 top-11 w-64 bg-[#FAF9F5] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-xl shadow-elevated z-50 divide-y divide-[#F4F1EA] dark:divide-[#2E2D2B] text-xs">
+
+            <!-- Populated dynamically by AppRouter -->
+
+          </div>
+
+        </div>
+
+
+
+        <!-- Mobile Menu Toggle Button -->
+
+        <button
+
+          type="button"
+
+          id="topbar-mobile-menu-btn"
+
+          class="lg:hidden w-8 h-8 rounded-lg border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#202020] text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] flex items-center justify-center transition-colors"
+
+          title="Mở menu điều hướng"
+
+          aria-expanded="false"
+
+          aria-haspopup="true"
+
+          aria-controls="mobile-nav-drawer"
+
+        >
+
+          <span class="material-symbols-outlined text-[19px]">menu</span>
+
+        </button>
+
+
+
+      </div>
+
+    </header>
+
+
+
+    <!-- Mobile Navigation Drawer Overlay -->
+
+    <div id="mobile-nav-backdrop" class="hidden fixed inset-0 bg-[#222120]/30 backdrop-blur-sm z-40 transition-opacity lg:hidden"></div>
+
+    <div id="mobile-nav-drawer" class="hidden fixed inset-y-0 left-0 w-72 bg-[#FAF9F5] dark:bg-[#191919] z-50 flex flex-col shadow-elevated transition-transform lg:hidden border-r border-[#E8E6DF] dark:border-[#2E2D2B]">
+
+      <div class="h-14 px-5 border-b border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-between shrink-0">
+
+        <div class="flex items-center">
+
+          <span class="font-bold text-base tracking-tight text-[#222120] dark:text-[#EDEDEB]">PPTQ LMS</span>
+
+        </div>
+
+        <button type="button" id="mobile-nav-close-btn" class="p-1 rounded-md text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB]">
+
+          <span class="material-symbols-outlined text-[18px]">close</span>
+
+        </button>
+
+      </div>
+
+      <nav class="flex-1 overflow-y-auto p-3 space-y-1" id="mobile-navigation-items">
+
+        <!-- Injected dynamically -->
+
+      </nav>
+
+      <div class="p-4 border-t border-[#E8E6DF] dark:border-[#2E2D2B] shrink-0 text-xs text-[#8F8E8A] flex items-center justify-between">
+
+        <span class="font-mono text-[11px]">v3.0.0 Unified</span>
+
+        <span class="inline-flex items-center gap-1 text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
+
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span> Trực tuyến
+
+        </span>
+
+      </div>
+
+    </div>
+
+
+
+    <!-- Hidden compatibility container for any legacy querySelector('#app-sidebar') -->
+
+    <div id="app-sidebar" class="hidden">
+
+      <nav id="sidebar-navigation-items"></nav>
+
+    </div>
+
+
+
+    <!-- Dynamic Single-DOM Viewport Mounting Target (Warm Editorial Canvas) -->
+
+    <main id="app-viewport" class="spa-viewport flex-1 overflow-y-auto relative bg-[#FAF9F5] dark:bg-[#191919]">
+
+      <div class="h-full flex items-center justify-center text-[#8F8E8A]">
+
+        <div class="flex items-center gap-2 text-xs font-medium">
+
+          <span class="w-2 h-2 rounded-full bg-[#222120] dark:bg-[#EDEDEB] animate-ping"></span>
+
+          <span>Khởi tạo hệ thống...</span>
+
+        </div>
+
+      </div>
+
+    </main>
+
+
+
+  </div>
+
+
+
+  <!-- Global Floating Toast Notification Container (Top Right) -->
+
+  <div id="toast-container" class="fixed top-5 right-5 z-[9999] flex flex-col gap-2.5 pointer-events-none max-w-sm w-full"></div>
+
+
+
+  <!-- Global Modal Container -->
+
+  <div id="modal-container" class="hidden z-50"></div>
+
+
+
+  <!-- Global Multi-Directional Drawer -->
+
+  <div id="app-drawer-backdrop" class="hidden fixed inset-0 bg-[#222120]/30 backdrop-blur-sm z-50 transition-opacity duration-150"></div>
+
+  <div id="app-drawer-container" class="hidden fixed inset-y-0 z-50 flex shadow-elevated transition-all duration-200"></div>
+
+
+
+  <!-- Global Floating Circular AI Tutor Widget (Warm Editorial Style) -->
+
+  <div id="floating-ai-container" class="fixed bottom-5 right-5 z-40 flex flex-col items-end pointer-events-none">
+
+    <!-- Flyout Chat Drawer -->
+
+    <div id="floating-ai-drawer" class="hidden pointer-events-auto w-96 max-w-[calc(100vw-2.5rem)] h-[520px] max-h-[calc(100vh-2.5rem)] bg-[#FAF9F5] dark:bg-[#202020] rounded-2xl shadow-elevated border border-[#E8E6DF] dark:border-[#2E2D2B] flex flex-col overflow-hidden">
+
+      <!-- Drawer Header -->
+
+      <div class="px-4 py-3 bg-[#F4F1EA] dark:bg-[#262524] border-b border-[#E8E6DF] dark:border-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] flex items-center justify-between shrink-0">
+
+        <div class="flex items-center gap-2.5">
+
+          <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc" class="w-8 h-8 rounded-lg object-cover border border-[#E8E6DF] dark:border-[#3E3D3A] shadow-xs" />
+
+          <div>
+
+            <div class="font-bold text-xs text-[#222120] dark:text-[#EDEDEB] flex items-center gap-1.5">
+
+              <span>Bạch tuộc trợ lí AI</span>
+
+              <span class="text-[9px] px-1.5 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-semibold border border-indigo-200 dark:border-indigo-800">AI Assistant</span>
+
+            </div>
+
+            <div class="text-[10px] text-[#8F8E8A] dark:text-[#9E9D99] flex items-center gap-1">
+
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span> Sẵn sàng giải đáp
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <div class="flex items-center gap-1 shrink-0 z-10">
+
+          <button type="button" id="floating-ai-reset-btn" title="Làm mới cuộc trò chuyện" class="w-7 h-7 flex items-center justify-center rounded-md text-[#8F8E8A] hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-[#E8E6DF] dark:hover:bg-[#2E2D2B] transition-colors cursor-pointer">
+
+            <span class="material-symbols-outlined text-[16px]">refresh</span>
+
+          </button>
+
+          <button type="button" id="floating-ai-close-btn" title="Đóng cửa sổ" class="w-7 h-7 flex items-center justify-center rounded-md text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#E8E6DF] dark:hover:bg-[#2E2D2B] transition-colors cursor-pointer">
+
+            <span class="material-symbols-outlined text-[16px]">close</span>
+
+          </button>
+
+        </div>
+
+      </div>
+
+
+
+      <!-- Drawer Chat Messages Container -->
+
+      <div id="floating-ai-messages" class="flex-1 p-4 overflow-y-auto space-y-3 text-xs leading-relaxed">
+
+        <div class="flex gap-2.5 items-start">
+
+          <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc" class="w-7 h-7 rounded-lg object-cover shrink-0 border border-[#E8E6DF] dark:border-[#2E2D2B] shadow-2xs" />
+
+          <div class="bg-[#F4F1EA] dark:bg-[#262524] text-[#222120] dark:text-[#EDEDEB] p-3 rounded-xl rounded-tl-none max-w-[85%] border border-[#E8E6DF] dark:border-[#2E2D2B]">
+
+            Xin chào bạn! Mình là Bạch Tuột, trợ lí AI của hệ thống PPTQ. Mình có thể giúp được gì cho bạn?
+
+          </div>
+
+        </div>
+
+      </div>
+
+
+
+      <!-- Drawer Input Box -->
+
+      <div class="p-3 border-t border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#191919] shrink-0">
+
+        <form id="floating-ai-form" class="flex items-center gap-2">
+
+          <input
+
+            type="text"
+
+            id="floating-ai-input"
+
+            aria-label="Đặt câu hỏi cho Bạch tuộc trợ lí AI"
+
+            class="flex-1 px-3 py-1.5 rounded-lg text-xs border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#202020] text-[#222120] dark:text-[#EDEDEB] focus:outline-none focus:border-[#222120] dark:focus:border-[#EDEDEB] placeholder-[#8F8E8A]"
+
+            placeholder="Đặt câu hỏi cho Bạch tuộc..."
+
+            autocomplete="off"
+
+          />
+
+          <button
+
+            type="submit"
+
+            id="floating-ai-send-btn"
+
+            class="w-8 h-8 rounded-lg bg-[#222120] dark:bg-[#EDEDEB] text-[#FAF9F5] dark:text-[#191919] hover:opacity-90 flex items-center justify-center transition-opacity shrink-0"
+
+          >
+
+            <span class="material-symbols-outlined text-[15px]">send</span>
+
+          </button>
+
+        </form>
+
+      </div>
+
+    </div>
+
+
+
+    <!-- Circular Floating Button (Draggable & Darkmode Polished) -->
+
+    <button
+
+      type="button"
+
+      id="floating-ai-launcher"
+
+      class="pointer-events-auto w-12 h-12 rounded-xl bg-[#222120] dark:bg-[#202020] text-white shadow-subtle hover:scale-105 active:scale-95 flex items-center justify-center transition-all duration-150 group relative select-none border border-[#37352F] dark:border-[#3E3D3A] p-1 cursor-grab active:cursor-grabbing"
+
+      title="Bạch tuộc trợ lí AI (Kéo thả để di chuyển vị trí)"
+
+    >
+
+      <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc" class="w-full h-full object-cover rounded-lg shadow-xs transition-transform group-hover:scale-105 pointer-events-none" />
+
+      <span class="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-600 border-2 border-[#FAF9F5] dark:border-[#202020]"></span>
+
+    </button>
+
+  </div>
+
+
+
+  <!-- DOMPurify for Safe WYSIWYG HTML Rendering -->
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+
+  <!-- HLS.js for Secure Encrypted Streaming Playback -->
+
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js"></script>
+
+  <!-- KaTeX for Visual Math Formula Rendering -->
+
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+
+  <!-- VideoArmor for Forensic Dynamic Watermarking & Anti-Tamper Armor -->
+
+  <script src="/frontend/assets/js/components/video-armor.js?v=3.3.0"></script>
+
+  <!-- Local QRCode Library for Infallible Client-Side QR Rendering -->
+
+  <script src="/frontend/assets/js/qrcode.min.js?v=3.3.0"></script>
+
+  <script src="/frontend/assets/js/crypto-helper.js?v=3.3.0"></script>
+
+  <script src="/frontend/assets/js/swr-cache.js?v=3.3.0"></script>
+
+  <script src="/frontend/assets/js/ui.js?v=3.3.0"></script>
+
+  <script src="/frontend/assets/js/api.js?v=3.3.0"></script>
+
+  <script src="/frontend/assets/js/realtime.js?v=3.3.0"></script>
+
+  <script src="/frontend/assets/js/exam-store.js?v=3.3.0"></script>
+
+  <script src="/frontend/assets/js/views/auth.js?v=3.3.0"></script>
+
+  <script src="/frontend/assets/js/views/student.js?v=3.3.0"></script>
+
+  <script src="/frontend/assets/js/views/instructor.js?v=3.3.0"></script>
+
+  <script src="/frontend/assets/js/views/instructor-exams.js?v=3.3.0"></script>
+
+  <script src="/frontend/assets/js/views/admin.js?v=3.3.0"></script>
+
+  <script src="/frontend/assets/js/router.js?v=3.3.0"></script>
+
+
+
+  <!-- Application Bootstrap -->
+
+  <script>
+
+    document.addEventListener('DOMContentLoaded', async () => {
+
+      const router = new AppRouter();
+
+      window.app = router;
+
+      await router.init();
+
+    });
+
+  </script>
+
+</body>
+
+</html>
+

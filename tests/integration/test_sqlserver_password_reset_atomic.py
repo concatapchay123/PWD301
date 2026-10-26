@@ -6,12 +6,12 @@ import uuid
 import pytest
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.identity import AuthSession, JwtTokenGrant, Role, User, UserSecurityToken
-from pwd301.models.notification_audit import EmailDelivery, NotificationEvent
-from pwd301.services import auth_token_service, notification_service
-from pwd301.services.exceptions import ServiceError
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.extensions import db
+from backend.models.identity import AuthSession, JwtTokenGrant, Role, User, UserSecurityToken
+from backend.models.notification_audit import EmailDelivery, NotificationEvent
+from backend.services import auth_token_service, notification_service
+from backend.services.exceptions import ServiceError
+from backend.services.user_service import assign_role_to_user, register_user
 from tests.integration.test_sqlserver_import_atomic_retry import http_request
 from tests.integration.test_sqlserver_import_atomic_retry import http_server as http_server
 

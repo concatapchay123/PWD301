@@ -4,10 +4,10 @@ from datetime import UTC, datetime
 
 import pytest
 
-from pwd301.extensions import db
-from pwd301.models.course import CourseChangeRequest, Lesson
-from pwd301.services.course_service import create_course
-from pwd301.services.lesson_service import create_learning_unit, create_lesson, update_lesson
+from backend.extensions import db
+from backend.models.course import CourseChangeRequest, Lesson
+from backend.services.course_service import create_course
+from backend.services.lesson_service import create_learning_unit, create_lesson, update_lesson
 from tests.api.test_lesson_authoring_remediation import admin_user as admin_user
 from tests.api.test_lesson_authoring_remediation import instructor_user as instructor_user
 from tests.api.test_lesson_authoring_remediation import setup_roles as setup_roles
@@ -82,7 +82,7 @@ def test_move_and_order_apply_together(client, instructor_user, move_env):
 
 
 def test_move_order_failure_rolls_back_placement(client, instructor_user, move_env, monkeypatch):
-    from pwd301.services import lesson_service
+    from backend.services import lesson_service
 
     original = lesson_service._record_lesson_audit_event
 
@@ -135,7 +135,7 @@ def test_published_move_waits_for_atomic_admin_approval(
     db.session.expire_all()
     assert db.session.get(Lesson, first.id).learning_unit_id == source.id
     login_web_user(client, admin_user)
-    from pwd301.services import lesson_service
+    from backend.services import lesson_service
 
     original = lesson_service._record_lesson_audit_event
 

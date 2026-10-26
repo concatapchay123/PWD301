@@ -3,7 +3,7 @@ from __future__ import annotations
 import zlib
 from pathlib import Path
 
-from pwd301.services.scanner_service import BuiltinHeuristicScanner
+from backend.services.scanner_service import BuiltinHeuristicScanner
 
 
 def test_compressed_stream_containing_js_bytes_passes(tmp_path: Path) -> None:

@@ -14,12 +14,12 @@ from __future__ import annotations
 
 import pytest
 
-from pwd301.extensions import db
-from pwd301.models.identity import User
-from pwd301.services.exceptions import (
+from backend.extensions import db
+from backend.models.identity import User
+from backend.services.exceptions import (
     ValidationError,
 )
-from pwd301.services.user_service import (
+from backend.services.user_service import (
     assign_role_to_user,
     cancel_instructor_application,
     get_instructor_application,
@@ -63,7 +63,7 @@ def admin_user(app):
     """Create an administrator user."""
     with app.app_context():
         user = register_user(
-            email="system.admin@pwd301.edu.vn",
+            email="system.admin@backend.edu.vn",
             password="StrongAdminPassword123!",
             display_name="Admin Manager",
             session=db.session,
@@ -216,12 +216,12 @@ def test_review_instructor_application_approve(
 
 
 def test_instructor_reviewer_can_approve_and_is_audited(app, student_user, valid_application_data):
-    from pwd301.models.identity import Role, UserRole
-    from pwd301.models.notification_audit import AuditEvent
+    from backend.models.identity import Role, UserRole
+    from backend.models.notification_audit import AuditEvent
 
     with app.app_context():
         reviewer = register_user(
-            "instructor.reviewer@pwd301.edu.vn", "StrongAdminPassword123!", "Instructor Reviewer"
+            "instructor.reviewer@backend.edu.vn", "StrongAdminPassword123!", "Instructor Reviewer"
         )
         admin_role = db.session.query(Role).filter_by(code="ADMIN").first()
         if admin_role is None:
@@ -264,11 +264,11 @@ def test_instructor_reviewer_can_approve_and_is_audited(app, student_user, valid
 def test_course_reviewer_cannot_approve_instructor_application(
     app, student_user, valid_application_data
 ):
-    from pwd301.models.identity import Role, UserRole
+    from backend.models.identity import Role, UserRole
 
     with app.app_context():
         reviewer = register_user(
-            "course.reviewer@pwd301.edu.vn", "StrongAdminPassword123!", "Course Reviewer"
+            "course.reviewer@backend.edu.vn", "StrongAdminPassword123!", "Course Reviewer"
         )
         admin_role = db.session.query(Role).filter_by(code="ADMIN").first()
         if admin_role is None:

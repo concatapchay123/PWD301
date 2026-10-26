@@ -3,17 +3,17 @@
 import json
 import pytest
 
-from pwd301.extensions import db
-from pwd301.models.course import Course, Enrollment
-from pwd301.models.identity import User
-from pwd301.models.wallet import UserBalance, WalletTransaction
-from pwd301.services.payos_service import (
+from backend.extensions import db
+from backend.models.course import Course, Enrollment
+from backend.models.identity import User
+from backend.models.wallet import UserBalance, WalletTransaction
+from backend.services.payos_service import (
     create_payos_payment_link,
     create_signature,
     generate_12char_transfer_code,
     verify_webhook_signature,
 )
-from pwd301.services.wallet_service import (
+from backend.services.wallet_service import (
     create_direct_course_qr,
     deposit_via_payos,
     get_cashflow_stats,
@@ -23,7 +23,7 @@ from pwd301.services.wallet_service import (
     revoke_transaction,
     verify_deposit_manually,
 )
-from pwd301.services.exceptions import ValidationError, ForbiddenError
+from backend.services.exceptions import ValidationError, ForbiddenError
 
 
 def test_12char_transfer_code_format(app):
@@ -90,7 +90,7 @@ def test_deposit_and_webhook_credit(app):
         assert tx.status == "PENDING"
 
         # 2. Simulate valid PayOS Webhook
-        from pwd301.services.payos_service import PAYOS_CHECKSUM_KEY
+        from backend.services.payos_service import PAYOS_CHECKSUM_KEY
 
         webhook_data = {
             "orderCode": tx.order_code,
@@ -200,7 +200,7 @@ def test_revoke_deposit_and_cancel_enrollment(app):
         db.session.commit()
 
         # Set admin role
-        from pwd301.models.identity import Role, UserRole
+        from backend.models.identity import Role, UserRole
         role_admin = Role(code="ADMIN", name="Administrator")
         db.session.add(role_admin)
         db.session.flush()
@@ -242,7 +242,7 @@ def test_revoke_deposit_and_cancel_enrollment(app):
 def test_admin_financial_rbac(app, client):
     """Verify that Primary Admin and ADMIN_FINANCIAL have cashflow access, while other roles are rejected with 403."""
     with app.app_context():
-        from pwd301.models.identity import Role, UserRole
+        from backend.models.identity import Role, UserRole
         from tests.conftest import login_web_user
 
         role_admin = db.session.query(Role).filter_by(code="ADMIN").first()
@@ -309,5 +309,51 @@ def test_payos_authentic_bank_credentials(app):
         assert "account_name" in deposit_res
         assert "account_number" in deposit_res
         assert len(deposit_res["qr_code"]) > 0
+
+
+def test_payos_virtual_account_in_qr(app, monkeypatch):
+    """Verify that PayOS virtual account number (VQRQ...) is encoded in QR code for automated webhook routing."""
+    import urllib.request
+
+    mock_resp_data = {
+        "code": "00",
+        "desc": "success",
+        "data": {
+            "bin": "970422",
+            "accountNumber": "VQRQTEST9999",
+            "accountName": "PHAM NGUYEN HOANG PHUC",
+            "amount": 50000,
+            "description": "PPTQU001A9B1",
+            "orderCode": 999888777,
+            "currency": "VND",
+            "paymentLinkId": "link_test_123",
+            "status": "PENDING",
+            "checkoutUrl": "https://pay.payos.vn/web/link_test_123",
+            "qrCode": "00020101021238570010A000000727012700069704220113VQRQTEST9999...",
+        },
+    }
+
+    class MockResponse:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+        def read(self):
+            return json.dumps(mock_resp_data).encode("utf-8")
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=None: MockResponse())
+
+    res = create_payos_payment_link(
+        order_code=999888777,
+        amount=50000,
+        description="PPTQU001A9B1",
+        return_url="http://test/return",
+        cancel_url="http://test/cancel",
+    )
+    assert res["account_number"] == "VQRQTEST9999"
+    assert "970422-VQRQTEST9999" in res["vietqr_url"]
+    assert res["qr_data_uri"].startswith("data:image/png;base64,")
+    assert res["checkout_url"] == "https://pay.payos.vn/web/link_test_123"
+
 
 

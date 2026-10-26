@@ -4,14 +4,14 @@ import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 
-from pwd301.extensions import db
-from pwd301.models.course import Course, CourseChangeRequest
-from pwd301.models.identity import Role, User
-from pwd301.models.types import utc_now
-from pwd301.services.lesson_service import (
+from backend.extensions import db
+from backend.models.course import Course, CourseChangeRequest
+from backend.models.identity import Role, User
+from backend.models.types import utc_now
+from backend.services.lesson_service import (
     approve_course_change_request,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 from tests.conftest import login_web_user
 
 

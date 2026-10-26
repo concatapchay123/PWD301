@@ -19,25 +19,25 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.attempt_regrade import AssessmentAttempt, AttemptAnswer
-from pwd301.models.identity import User
-from pwd301.models.types import utc_now
-from pwd301.seeds.baseline import seed_baseline
-from pwd301.services.assessment_service import (
+from backend.extensions import db
+from backend.models.attempt_regrade import AssessmentAttempt, AttemptAnswer
+from backend.models.identity import User
+from backend.models.types import utc_now
+from backend.seeds.baseline import seed_baseline
+from backend.services.assessment_service import (
     assign_question,
     create_assessment,
     create_section,
     publish_assessment,
 )
-from pwd301.services.attempt_service import (
+from backend.services.attempt_service import (
     get_attempt_delivery,
     start_assessment_attempt,
 )
-from pwd301.services.course_service import change_course_status, create_course
-from pwd301.services.enrollment_service import enroll_student
-from pwd301.services.question_bank_service import create_question
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.course_service import change_course_status, create_course
+from backend.services.enrollment_service import enroll_student
+from backend.services.question_bank_service import create_question
+from backend.services.user_service import assign_role_to_user, register_user
 from tests.conftest import login_web_user
 
 
@@ -47,25 +47,25 @@ def m2_challenge_fixture(app: Flask) -> dict[str, Any]:
     seed_baseline(db.session)
     sess: Session = db.session
 
-    admin = sess.query(User).filter(User.email == "admin@pwd301.local").first()
+    admin = sess.query(User).filter(User.email == "admin@backend.local").first()
     assert admin is not None
 
     instructor = register_user(
-        email="m2_chal_inst@pwd301.local",
+        email="m2_chal_inst@backend.local",
         password="Password@123",
         display_name="Challenger Instructor",
     )
     assign_role_to_user(instructor.id, "INSTRUCTOR")
 
     student1 = register_user(
-        email="m2_chal_stud1@pwd301.local",
+        email="m2_chal_stud1@backend.local",
         password="Password@123",
         display_name="Challenger Student 1",
     )
     assign_role_to_user(student1.id, "STUDENT")
 
     student2 = register_user(
-        email="m2_chal_stud2@pwd301.local",
+        email="m2_chal_stud2@backend.local",
         password="Password@123",
         display_name="Challenger Student 2",
     )

@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from pwd301.services.backup_cipher import decrypt_backup
+from backend.services.backup_cipher import decrypt_backup
 
 KEY = base64.urlsafe_b64encode(b"k" * 32).decode()
 
@@ -65,7 +65,7 @@ def backup(tmp_path, stamp="20261009_010000", suffix="12345678"):
 
 
 def test_archive_includes_authenticated_encrypted_manifest(tmp_path):
-    from pwd301.services.backup_archive_service import archive_backup
+    from backend.services.backup_archive_service import archive_backup
 
     item, cloud = backup(tmp_path), Cloud()
     result = archive_backup(item, KEY, cloud, "private-backup")
@@ -80,7 +80,7 @@ def test_archive_includes_authenticated_encrypted_manifest(tmp_path):
 
 
 def test_partial_group_is_never_completed(tmp_path):
-    from pwd301.services.backup_archive_service import archive_backup
+    from backend.services.backup_archive_service import archive_backup
 
     item, cloud = backup(tmp_path), Cloud()
     cloud.fail_manifest = True
@@ -91,7 +91,7 @@ def test_partial_group_is_never_completed(tmp_path):
 
 
 def test_cloud_retention_ignores_forged_and_unrelated_groups(tmp_path):
-    from pwd301.services.backup_archive_service import archive_backup, prune_cloud_archives
+    from backend.services.backup_archive_service import archive_backup, prune_cloud_archives
 
     cloud = Cloud()
     cloud.objects["daily/unrelated/receipt.json"] = (b"{}", {})
@@ -109,9 +109,9 @@ def test_cloud_retention_ignores_forged_and_unrelated_groups(tmp_path):
 
 
 def test_production_age_prune_preserves_unarchived_recovery_copy(app, tmp_path):
-    from pwd301.extensions import db
-    from pwd301.models.operations import BackupRun
-    from pwd301.services.operations_service import _prune_expired_backups
+    from backend.extensions import db
+    from backend.models.operations import BackupRun
+    from backend.services.operations_service import _prune_expired_backups
 
     source = Path(app.config["FILE_BACKUP_ROOT"]) / "last-copy.bak"
     source.parent.mkdir(parents=True, exist_ok=True)
@@ -133,7 +133,7 @@ def test_production_age_prune_preserves_unarchived_recovery_copy(app, tmp_path):
 def test_weekly_retention_keeps_four_complete_sunday_groups(tmp_path):
     from datetime import timedelta
 
-    from pwd301.services.backup_archive_service import archive_backup, prune_cloud_archives
+    from backend.services.backup_archive_service import archive_backup, prune_cloud_archives
 
     cloud = Cloud()
     for number in range(5):
@@ -153,9 +153,9 @@ admin_user = fixtures.admin_user
 
 
 def _local_archives(app, count=5):
-    from pwd301.extensions import db
-    from pwd301.models.operations import BackupRun
-    from pwd301.services.backup_archive_service import archive_backup
+    from backend.extensions import db
+    from backend.models.operations import BackupRun
+    from backend.services.backup_archive_service import archive_backup
 
     root = Path(app.config["FILE_BACKUP_ROOT"])
     root.mkdir(parents=True, exist_ok=True)
@@ -177,10 +177,10 @@ def _local_archives(app, count=5):
 
 
 def test_local_retention_commits_audit_and_metadata_before_unlink(app, admin_user):
-    from pwd301.extensions import db
-    from pwd301.models.notification_audit import AuditEvent
-    from pwd301.models.operations import BackupRun
-    from pwd301.services.backup_archive_service import prune_local_archives
+    from backend.extensions import db
+    from backend.models.notification_audit import AuditEvent
+    from backend.models.operations import BackupRun
+    from backend.services.backup_archive_service import prune_local_archives
 
     cloud, sources = _local_archives(app)
     assert prune_local_archives(admin_user, KEY, cloud, "private-backup", db.session) == 3
@@ -193,8 +193,8 @@ def test_local_retention_commits_audit_and_metadata_before_unlink(app, admin_use
 
 
 def test_failed_metadata_commit_preserves_all_local_recovery_bytes(app, admin_user, monkeypatch):
-    from pwd301.extensions import db
-    from pwd301.services.backup_archive_service import prune_local_archives
+    from backend.extensions import db
+    from backend.services.backup_archive_service import prune_local_archives
 
     cloud, sources = _local_archives(app)
 
@@ -208,7 +208,7 @@ def test_failed_metadata_commit_preserves_all_local_recovery_bytes(app, admin_us
 
 
 def test_successful_archive_releases_unreferenced_local_ciphertexts(tmp_path):
-    from pwd301.services.backup_archive_service import archive_backup
+    from backend.services.backup_archive_service import archive_backup
 
     item, cloud = backup(tmp_path), Cloud()
     archive_backup(item, KEY, cloud, "private-backup")
@@ -220,9 +220,9 @@ def test_successful_archive_releases_unreferenced_local_ciphertexts(tmp_path):
 
 
 def test_local_prune_preserves_files_referenced_by_another_backup_record(app, admin_user):
-    from pwd301.extensions import db
-    from pwd301.models.operations import BackupRun
-    from pwd301.services.backup_archive_service import prune_local_archives
+    from backend.extensions import db
+    from backend.models.operations import BackupRun
+    from backend.services.backup_archive_service import prune_local_archives
 
     cloud, sources = _local_archives(app)
     db.session.add(
@@ -242,8 +242,8 @@ def test_local_prune_preserves_files_referenced_by_another_backup_record(app, ad
 
 @pytest.mark.parametrize("failure", ["missing", "size", "metadata"])
 def test_local_retention_keeps_recovery_bytes_when_cloud_group_is_damaged(app, admin_user, failure):
-    from pwd301.extensions import db
-    from pwd301.services.backup_archive_service import prune_local_archives
+    from backend.extensions import db
+    from backend.services.backup_archive_service import prune_local_archives
 
     cloud, sources = _local_archives(app)
     object_key = "daily/" + sources[0].name + "/" + sources[0].name + ".encrypted"

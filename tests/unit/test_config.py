@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from pwd301.config import (
+from backend.config import (
     BaseConfig,
     DevelopmentConfig,
     ProductionConfig,

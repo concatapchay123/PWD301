@@ -7,11 +7,11 @@ from threading import Barrier
 import pytest
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import LessonProgress
-from pwd301.models.identity import User
-from pwd301.models.playback import PlaybackReceipt
-from pwd301.services.playback_service import record_playback_heartbeat, start_playback_session
+from backend.extensions import db
+from backend.models.course import LessonProgress
+from backend.models.identity import User
+from backend.models.playback import PlaybackReceipt
+from backend.services.playback_service import record_playback_heartbeat, start_playback_session
 from tests.unit.test_playback_sessions import playback_setup  # noqa: F401
 
 

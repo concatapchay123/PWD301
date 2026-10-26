@@ -20,26 +20,26 @@ import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.assessment import Assessment
-from pwd301.models.attempt_regrade import (
+from backend.extensions import db
+from backend.models.assessment import Assessment
+from backend.models.attempt_regrade import (
     AssessmentAttempt,
     AssessmentResult,
 )
-from pwd301.models.course import EnrollmentPeriod
-from pwd301.models.file_import import FileAsset, FileBlob, FileRevision
-from pwd301.models.identity import Role, User
-from pwd301.models.types import utc_now
-from pwd301.services.analytics_service import (
+from backend.models.course import EnrollmentPeriod
+from backend.models.file_import import FileAsset, FileBlob, FileRevision
+from backend.models.identity import Role, User
+from backend.models.types import utc_now
+from backend.services.analytics_service import (
     get_admin_system_overview,
     get_instructor_course_analytics,
     get_instructor_overview_analytics,
     get_student_learning_overview,
 )
-from pwd301.services.course_service import create_course
-from pwd301.services.enrollment_service import enroll_student
-from pwd301.services.exceptions import ForbiddenError
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.course_service import create_course
+from backend.services.enrollment_service import enroll_student
+from backend.services.exceptions import ForbiddenError
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture

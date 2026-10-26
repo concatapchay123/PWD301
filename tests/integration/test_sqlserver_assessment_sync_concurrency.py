@@ -8,22 +8,22 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.assessment import Assessment, AssessmentQuestionAssignment
-from pwd301.models.attempt_regrade import (
+from backend.extensions import db
+from backend.models.assessment import Assessment, AssessmentQuestionAssignment
+from backend.models.attempt_regrade import (
     AssessmentAttempt,
     AttemptAnswer,
     AttemptAnswerChoice,
     AttemptAnswerEvent,
     AttemptQuestionGrade,
 )
-from pwd301.models.identity import User
-from pwd301.services.attempt_service import (
+from backend.models.identity import User
+from backend.services.attempt_service import (
     save_attempt_answer,
     start_assessment_attempt,
     submit_assessment_attempt,
 )
-from pwd301.services.exceptions import AttemptAlreadySubmittedError, AttemptLeaseConflictError
+from backend.services.exceptions import AttemptAlreadySubmittedError, AttemptLeaseConflictError
 from tests.api.test_instructor_backend_remediation import login_session
 from tests.unit.test_attempt_autosave_service import _make_assessment_with_questions
 from tests.unit.test_attempt_autosave_service import admin_user as admin_user

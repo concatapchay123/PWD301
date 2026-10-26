@@ -1,6 +1,6 @@
-from pwd301.extensions import db
-from pwd301.models.identity import Role, User, UserRole
-from pwd301.services.user_service import register_user
+from backend.extensions import db
+from backend.models.identity import Role, User, UserRole
+from backend.services.user_service import register_user
 
 
 def test_admin_subroles_and_permissions(app):
@@ -20,7 +20,7 @@ def test_admin_subroles_and_permissions(app):
 
         # Create Primary Admin user
         primary_admin = register_user(
-            email="primary_admin_test@pwd301.local",
+            email="primary_admin_test@backend.local",
             password="AdminPass1234!",
             display_name="Primary Admin",
         )
@@ -42,7 +42,7 @@ def test_admin_subroles_and_permissions(app):
 
         # Create Course Review Admin user
         course_admin = register_user(
-            email="course_admin_test@pwd301.local",
+            email="course_admin_test@backend.local",
             password="CoursePass1234!",
             display_name="Course Review Admin",
         )
@@ -75,7 +75,7 @@ def test_auth_profile_and_preferences(app, client):
     """Test /auth/profile and /auth/preferences endpoints."""
     with app.app_context():
         user = register_user(
-            email="settings_user_test@pwd301.local",
+            email="settings_user_test@backend.local",
             password="StudentPass1234!",
             display_name="Test Student",
         )
@@ -84,7 +84,7 @@ def test_auth_profile_and_preferences(app, client):
     # Login
     login_res = client.post(
         "/auth/login",
-        json={"email": "settings_user_test@pwd301.local", "password": "StudentPass1234!"},
+        json={"email": "settings_user_test@backend.local", "password": "StudentPass1234!"},
     )
     assert login_res.status_code == 200
 
@@ -93,7 +93,7 @@ def test_auth_profile_and_preferences(app, client):
     assert profile_res.status_code == 200
     pdata = profile_res.get_json()["profile"]
     assert pdata["display_name"] == "Test Student"
-    assert pdata["email"] == "settings_user_test@pwd301.local"
+    assert pdata["email"] == "settings_user_test@backend.local"
 
     # PUT /auth/profile
     update_res = client.put(
@@ -129,8 +129,8 @@ def test_auth_profile_and_preferences(app, client):
 
     # Cleanup
     with app.app_context():
-        from pwd301.models.identity import AuthSession
-        from pwd301.models.notification_audit import NotificationPreference
+        from backend.models.identity import AuthSession
+        from backend.models.notification_audit import NotificationPreference
 
         db.session.query(AuthSession).filter_by(user_id=user_id).delete(synchronize_session=False)
         db.session.query(NotificationPreference).filter_by(user_id=user_id).delete(
@@ -152,7 +152,7 @@ def test_admin_subrole_rbac_enforcement(app, client):
 
         # Create Course Review Admin (non-primary)
         course_admin = register_user(
-            email="course_only_admin@pwd301.local",
+            email="course_only_admin@backend.local",
             password="AdminPass1234!",
             display_name="Course Only Admin",
         )
@@ -165,7 +165,7 @@ def test_admin_subrole_rbac_enforcement(app, client):
 
         # Create a target student
         target_student = register_user(
-            email="target_student_test@pwd301.local",
+            email="target_student_test@backend.local",
             password="StudentPass1234!",
             display_name="Target Student",
         )
@@ -176,7 +176,7 @@ def test_admin_subrole_rbac_enforcement(app, client):
     # Login as course_admin
     login_res = client.post(
         "/auth/login",
-        json={"email": "course_only_admin@pwd301.local", "password": "AdminPass1234!"},
+        json={"email": "course_only_admin@backend.local", "password": "AdminPass1234!"},
     )
     assert login_res.status_code == 200
 
@@ -194,8 +194,8 @@ def test_admin_subrole_rbac_enforcement(app, client):
 
     # Cleanup
     with app.app_context():
-        from pwd301.models.identity import AuthSession
-        from pwd301.models.notification_audit import NotificationPreference
+        from backend.models.identity import AuthSession
+        from backend.models.notification_audit import NotificationPreference
 
         uids = [course_admin_id, target_student_id]
         db.session.query(AuthSession).filter(AuthSession.user_id.in_(uids)).delete(
@@ -218,7 +218,7 @@ def test_only_primary_admin_can_list_users_or_assign_primary_role(app, client):
             admin_role = Role(code="ADMIN", name="Administrator")
             db.session.add(admin_role)
             db.session.flush()
-        sub_admin = register_user("matrix.subadmin@pwd301.local", "AdminPass1234!", "Sub Admin")
+        sub_admin = register_user("matrix.subadmin@backend.local", "AdminPass1234!", "Sub Admin")
         db.session.add(
             UserRole(
                 user_id=sub_admin.id,
@@ -226,8 +226,8 @@ def test_only_primary_admin_can_list_users_or_assign_primary_role(app, client):
                 assignment_reason="SUB_ROLE:ADMIN_COURSE_REVIEW | reviewer",
             )
         )
-        target = register_user("matrix.target@pwd301.local", "StudentPass1234!", "Target")
-        primary = register_user("matrix.primary@pwd301.local", "AdminPass1234!", "Primary")
+        target = register_user("matrix.target@backend.local", "StudentPass1234!", "Target")
+        primary = register_user("matrix.primary@backend.local", "AdminPass1234!", "Primary")
         db.session.add(
             UserRole(
                 user_id=primary.id,
@@ -240,7 +240,7 @@ def test_only_primary_admin_can_list_users_or_assign_primary_role(app, client):
 
     sub_admin_client = app.test_client()
     sub_login = sub_admin_client.post(
-        "/auth/login", json={"email": "matrix.subadmin@pwd301.local", "password": "AdminPass1234!"}
+        "/auth/login", json={"email": "matrix.subadmin@backend.local", "password": "AdminPass1234!"}
     )
     assert sub_login.status_code == 200
     assert sub_admin_client.get("/admin/users").status_code == 403
@@ -248,7 +248,7 @@ def test_only_primary_admin_can_list_users_or_assign_primary_role(app, client):
 
     primary_client = app.test_client()
     primary_login = primary_client.post(
-        "/auth/login", json={"email": "matrix.primary@pwd301.local", "password": "AdminPass1234!"}
+        "/auth/login", json={"email": "matrix.primary@backend.local", "password": "AdminPass1234!"}
     )
     assert primary_login.status_code == 200
     admin_users_res = primary_client.get("/admin/users")
@@ -285,8 +285,8 @@ def test_notifications_and_evidence_preview(app, client):
     with app.app_context():
         import json
 
-        from pwd301.models.identity import InstructorApplication
-        from pwd301.models.notification_audit import Notification
+        from backend.models.identity import InstructorApplication
+        from backend.models.notification_audit import Notification
 
         admin_role = db.session.query(Role).filter_by(code="ADMIN").first()
         if not admin_role:
@@ -296,7 +296,7 @@ def test_notifications_and_evidence_preview(app, client):
 
         # Create Primary Admin
         admin_user = register_user(
-            email="notif_admin_test@pwd301.local",
+            email="notif_admin_test@backend.local",
             password="AdminPass1234!",
             display_name="Notif Admin",
         )
@@ -309,7 +309,7 @@ def test_notifications_and_evidence_preview(app, client):
 
         # Create Applicant Student
         applicant = register_user(
-            email="applicant_test@pwd301.local",
+            email="applicant_test@backend.local",
             password="StudentPass1234!",
             display_name="Applicant Student",
         )
@@ -339,7 +339,7 @@ def test_notifications_and_evidence_preview(app, client):
         db.session.add(app_record)
 
         # Create direct notification
-        from pwd301.services.notification_service import dispatch_notification
+        from backend.services.notification_service import dispatch_notification
 
         dispatch_notification(
             recipient_user=admin_id,
@@ -367,14 +367,14 @@ def test_notifications_and_evidence_preview(app, client):
 
     # Login as admin
     login_res = client.post(
-        "/auth/login", json={"email": "notif_admin_test@pwd301.local", "password": "AdminPass1234!"}
+        "/auth/login", json={"email": "notif_admin_test@backend.local", "password": "AdminPass1234!"}
     )
     assert login_res.status_code == 200
 
     # Cleanup
     with app.app_context():
-        from pwd301.models.identity import AuthSession
-        from pwd301.models.notification_audit import NotificationPreference
+        from backend.models.identity import AuthSession
+        from backend.models.notification_audit import NotificationPreference
 
         uids = [admin_id, applicant_id]
         db.session.query(Notification).filter(Notification.recipient_user_id.in_(uids)).delete(
@@ -410,7 +410,7 @@ def test_atomic_multi_role_management_api(app, client):
         db.session.commit()
 
         admin = register_user(
-            email="primary_multi_role@pwd301.local",
+            email="primary_multi_role@backend.local",
             password="AdminPass1234!",
             display_name="Primary Multi Admin",
         )
@@ -422,7 +422,7 @@ def test_atomic_multi_role_management_api(app, client):
             )
         )
         target = register_user(
-            email="target_multi_role@pwd301.local",
+            email="target_multi_role@backend.local",
             password="TargetPass1234!",
             display_name="Target Student",
         )
@@ -434,7 +434,7 @@ def test_atomic_multi_role_management_api(app, client):
     # Login as primary admin
     login_res = client.post(
         "/auth/login",
-        json={"email": "primary_multi_role@pwd301.local", "password": "AdminPass1234!"},
+        json={"email": "primary_multi_role@backend.local", "password": "AdminPass1234!"},
     )
     assert login_res.status_code == 200
 

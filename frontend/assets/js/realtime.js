@@ -243,15 +243,25 @@
         }
       });
 
-      // A. Notifications (Instant Toast + Badge Update without F5)
+      // A. Notifications (Badge Update without F5 - Streamlined, no noisy toast for routine notifications)
       EventBus.on('notification:new', (data) => {
         const isSelfBroadcast = (
           window._lastBroadcastSent &&
           Date.now() - window._lastBroadcastSent.timestamp < 10000 &&
           (window._lastBroadcastSent.title === (data.title || data.message))
         );
-        if (!isSelfBroadcast && global.UI && typeof global.UI.showToast === 'function') {
-          global.UI.showToast(data.title || data.message || 'Bạn có thông báo mới.', 'info');
+        const isUrgent = Boolean(
+          data && (
+            data.priority === 'URGENT' ||
+            data.priority === 'HIGH' ||
+            data.is_urgent === true ||
+            data.category === 'URGENT' ||
+            data.category === 'CRITICAL'
+          )
+        );
+        // Only trigger floating toast if the notification is explicitly marked as urgent/critical
+        if (!isSelfBroadcast && isUrgent && global.UI && typeof global.UI.showToast === 'function') {
+          global.UI.showToast(data.title || data.message || 'Bạn có thông báo khẩn.', 'warning');
         }
         this._updateNotificationBadgeUI();
       });

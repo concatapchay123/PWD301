@@ -6,20 +6,20 @@ from datetime import timedelta
 import pytest
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.attempt_regrade import (
+from backend.extensions import db
+from backend.models.attempt_regrade import (
     AssessmentAttempt,
     AssessmentResult,
     AttemptQuestionGrade,
     AttemptQuestionGradeHistory,
 )
-from pwd301.models.identity import User
-from pwd301.models.types import utc_now
-from pwd301.services import attempt_service
-from pwd301.services.enrollment_service import enroll_student
-from pwd301.services.exceptions import AssessmentValidationError
-from pwd301.services.jwt_auth_service import create_token_pair
-from pwd301.services.user_service import register_user
+from backend.models.identity import User
+from backend.models.types import utc_now
+from backend.services import attempt_service
+from backend.services.enrollment_service import enroll_student
+from backend.services.exceptions import AssessmentValidationError
+from backend.services.jwt_auth_service import create_token_pair
+from backend.services.user_service import register_user
 from tests.integration.test_sqlserver_assessment_sync_concurrency import admin_user as admin_user
 from tests.integration.test_sqlserver_assessment_sync_concurrency import (
     enrolled_student as enrolled_student,

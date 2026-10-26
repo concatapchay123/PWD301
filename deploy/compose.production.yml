@@ -40,9 +40,22 @@ x-environment: &environment
   GEMINI_API_KEY: ${GEMINI_API_KEY:-}
   GEMINI_MODEL_NAME: ${GEMINI_MODEL_NAME:-gemini-2.5-flash}
   GEMINI_TIMEOUT_SECONDS: ${GEMINI_TIMEOUT_SECONDS:-30}
-  MAIL_HOST: ${MAIL_HOST:-}
-  MAIL_USERNAME: ${MAIL_USERNAME:-}
+  MAIL_HOST: ${MAIL_HOST:-smtp.resend.com}
+  MAIL_PORT: ${MAIL_PORT:-587}
+  MAIL_USERNAME: ${MAIL_USERNAME:-resend}
   MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+  MAIL_FROM: ${MAIL_FROM:-Hệ thống PPTQ <noreply@pptq.id.vn>}
+  MAIL_USE_TLS: ${MAIL_USE_TLS:-1}
+  RESEND_API_KEY: ${RESEND_API_KEY:-}
+  FRONTEND_URL: ${FRONTEND_URL:-https://pptq.id.vn}
+  PPTQ_PASSWORD_PEPPER: ${PPTQ_PASSWORD_PEPPER:-PPTQ_LMS_PEPPER_2026_SECURE}
+  PAYOS_CLIENT_ID: ${PAYOS_CLIENT_ID:-4499c036-1c34-4f9f-8801-e5c436c89305}
+  PAYOS_API_KEY: ${PAYOS_API_KEY:-c41ff8e9-676f-4383-858e-3dfc660a0cf0}
+  PAYOS_CHECKSUM_KEY: ${PAYOS_CHECKSUM_KEY:-70416e4bea731fa6887e4d175e4503aae1e49b938d0d9a9f6463b0e568ed6d4d}
+  PPTQ_BANK_NAME: ${PPTQ_BANK_NAME:-MBBank (MBB - Ngân hàng TMCP Quân đội)}
+  PPTQ_BANK_BIN: ${PPTQ_BANK_BIN:-970422}
+  PPTQ_ACCOUNT_NUMBER: ${PPTQ_ACCOUNT_NUMBER:-0908667141}
+  PPTQ_ACCOUNT_NAME: ${PPTQ_ACCOUNT_NAME:-PHAM NGUYEN HOANG PHUC}
 
 x-app: &app
   image: ${PWD301_IMAGE:?Set immutable PWD301_IMAGE}
@@ -57,7 +70,7 @@ x-app: &app
     - backups:/var/opt/mssql/backups
     - exports:/app/exports
     - ../scripts:/app/scripts:ro
-    - ../src:/app/src:ro
+    - ../backend:/app/backend:ro
     - ../frontend:/app/frontend:ro
     - ../migrations:/app/migrations:ro
   networks: [private]
@@ -136,7 +149,7 @@ services:
     mem_limit: 600m
   web:
     <<: *app
-    command: [gunicorn, --bind, "0.0.0.0:5000", --workers, "3", --threads, "16", --worker-class, "gthread", --max-requests, "2000", --max-requests-jitter, "200", --timeout, "120", "wsgi:app"]
+    command: [gunicorn, --bind, "0.0.0.0:5000", --workers, "4", --threads, "36", --worker-class, "gthread", --max-requests, "2000", --max-requests-jitter, "200", --timeout, "120", "wsgi:app"]
     mem_limit: 600m
     depends_on:
       db: {condition: service_healthy}

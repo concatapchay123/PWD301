@@ -8,15 +8,15 @@ import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.assessment import Assessment
-from pwd301.models.attempt_regrade import AssessmentAttempt
-from pwd301.models.course import Course, Enrollment, LearningUnit, Lesson
-from pwd301.models.identity import AnonymousUser, Role, User
-from pwd301.models.notification_audit import AuditEvent, NotificationEvent
-from pwd301.models.question_bank import Question
-from pwd301.models.types import utc_now
-from pwd301.services.authorization_service import (
+from backend.extensions import db
+from backend.models.assessment import Assessment
+from backend.models.attempt_regrade import AssessmentAttempt
+from backend.models.course import Course, Enrollment, LearningUnit, Lesson
+from backend.models.identity import AnonymousUser, Role, User
+from backend.models.notification_audit import AuditEvent, NotificationEvent
+from backend.models.question_bank import Question
+from backend.models.types import utc_now
+from backend.services.authorization_service import (
     can_access_attempt,
     can_access_student_data,
     can_grade_attempt,
@@ -42,7 +42,7 @@ from pwd301.services.authorization_service import (
     require_question_manager,
     require_student_data_access,
 )
-from pwd301.services.exceptions import (
+from backend.services.exceptions import (
     AdminActionForbiddenError,
     ForbiddenError,
     InvalidRoleAssignmentError,
@@ -51,7 +51,7 @@ from pwd301.services.exceptions import (
     UserNotFoundError,
     ValidationError,
 )
-from pwd301.services.user_service import (
+from backend.services.user_service import (
     assign_role_to_user,
     register_user,
     remove_role_from_user,
@@ -819,7 +819,7 @@ def test_record_admin_intervention_notification_uses_audit_key(
         return None, None
 
     monkeypatch.setattr(
-        "pwd301.services.notification_service.dispatch_notification",
+        "backend.services.notification_service.dispatch_notification",
         capture_notification,
     )
     audit = record_admin_intervention(
@@ -885,7 +885,7 @@ def test_admin_permission_rules_enforcement(
     assert audit.action == "ADMIN_OVERRIDE_UPDATE"
 
     # Verify notification was dispatched to instructor
-    from pwd301.models.notification_audit import Notification
+    from backend.models.notification_audit import Notification
 
     sess = db.session
     notif = (

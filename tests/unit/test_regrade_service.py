@@ -28,8 +28,8 @@ import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.attempt_regrade import (
+from backend.extensions import db
+from backend.models.attempt_regrade import (
     AssessmentResultHistory,
     AttemptChoiceSnapshot,
     AttemptQuestionGrade,
@@ -37,33 +37,33 @@ from pwd301.models.attempt_regrade import (
     RegradeItem,
     RegradeJob,
 )
-from pwd301.models.course import Course
-from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import Notification, NotificationEvent
-from pwd301.services.assessment_service import (
+from backend.models.course import Course
+from backend.models.identity import Role, User
+from backend.models.notification_audit import Notification, NotificationEvent
+from backend.services.assessment_service import (
     assign_question,
     create_assessment,
     create_section,
     publish_assessment,
 )
-from pwd301.services.attempt_service import (
+from backend.services.attempt_service import (
     save_attempt_answer,
     start_assessment_attempt,
     submit_assessment_attempt,
 )
-from pwd301.services.completion_service import set_course_completion_rule
-from pwd301.services.course_service import change_course_status, create_course
-from pwd301.services.enrollment_service import enroll_student
-from pwd301.services.question_bank_service import (
+from backend.services.completion_service import set_course_completion_rule
+from backend.services.course_service import change_course_status, create_course
+from backend.services.enrollment_service import enroll_student
+from backend.services.question_bank_service import (
     create_question,
     create_question_revision,
 )
-from pwd301.services.regrade_worker import (
+from backend.services.regrade_worker import (
     create_or_get_regrade_job,
     process_regrade_job,
     retry_regrade_job,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -932,7 +932,7 @@ def test_regrade_batching_and_retry(
     assert batch_res["status"] == "RUNNING"
 
     # 2. Simulate transient error on the 2nd item
-    from pwd301.services import regrade_worker
+    from backend.services import regrade_worker
 
     call_count = 0
     original_eval = regrade_worker._evaluate_attempt_item_regrade
@@ -1027,7 +1027,7 @@ def test_sync063_correction_before_submit_affects_initial_grade(
 def test_sync062_correction_has_durable_dispatch(
     app, instructor_user, published_course, student_user_1
 ):
-    from pwd301.models.operations import BackgroundJob
+    from backend.models.operations import BackgroundJob
 
     q, asm, attempt, token, keys = _sync_correction_fixture(
         instructor_user, published_course, student_user_1
@@ -1045,7 +1045,7 @@ def test_sync062_correction_has_durable_dispatch(
 def test_sync064_failed_item_rolls_back_grade_mutation(
     app, instructor_user, published_course, student_user_1, monkeypatch
 ):
-    from pwd301.services import regrade_worker
+    from backend.services import regrade_worker
 
     q, asm, attempt, token, keys = _sync_correction_fixture(
         instructor_user, published_course, student_user_1
@@ -1076,8 +1076,8 @@ def test_sync064_failed_item_rolls_back_grade_mutation(
 def test_sync061_unrelated_correction_rejected(
     app, instructor_user, published_course, student_user_1
 ):
-    from pwd301.services.assessment_service import trigger_assessment_regrade
-    from pwd301.services.exceptions import ForbiddenError
+    from backend.services.assessment_service import trigger_assessment_regrade
+    from backend.services.exceptions import ForbiddenError
 
     q, asm, attempt, token, keys = _sync_correction_fixture(
         instructor_user, published_course, student_user_1

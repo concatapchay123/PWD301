@@ -18,11 +18,11 @@ import uuid
 
 import pytest
 
-from pwd301.extensions import db
-from pwd301.models.identity import Role
-from pwd301.models.notification_audit import NotificationEvent
-from pwd301.models.types import utc_now
-from pwd301.services.auth_token_service import (
+from backend.extensions import db
+from backend.models.identity import Role
+from backend.models.notification_audit import NotificationEvent
+from backend.models.types import utc_now
+from backend.services.auth_token_service import (
     SecurityTokenPurpose,
     apply_email_change_with_token,
     consume_security_token,
@@ -31,7 +31,7 @@ from pwd301.services.auth_token_service import (
     verify_email_with_token,
     verify_security_token,
 )
-from pwd301.services.exceptions import (
+from backend.services.exceptions import (
     AccountNotActiveError,
     InvalidEmailError,
     InvalidPasswordError,
@@ -42,7 +42,7 @@ from pwd301.services.exceptions import (
     UserAlreadyExistsError,
     UserNotFoundError,
 )
-from pwd301.services.user_service import (
+from backend.services.user_service import (
     assign_role_to_user,
     change_password,
     get_user_by_email,
@@ -140,7 +140,7 @@ def test_register_user_success(app):
         db.session.commit()
 
         user = register_user(
-            email="  NEW_STUDENT@pwd301.local ",
+            email="  NEW_STUDENT@backend.local ",
             password="StrongPassword@123",
             display_name="New Student",
         )
@@ -148,7 +148,7 @@ def test_register_user_success(app):
         assert user.id is not None
         assert user.public_id is not None
         assert isinstance(user.public_id, uuid.UUID)
-        assert user.email == "new_student@pwd301.local"
+        assert user.email == "new_student@backend.local"
         assert user.display_name == "New Student"
         assert user.status == "ACTIVE"
         assert user.auth_version == 1
@@ -169,18 +169,18 @@ def test_register_user_duplicate_email_rejected(app):
     """Verify duplicate email registration is rejected with UserAlreadyExistsError."""
     with app.app_context():
         register_user(
-            email="duplicate@pwd301.local",
+            email="duplicate@backend.local",
             password="Password@123",
             display_name="User One",
         )
 
         with pytest.raises(UserAlreadyExistsError) as exc_info:
             register_user(
-                email="  DUPLICATE@pwd301.local  ",
+                email="  DUPLICATE@backend.local  ",
                 password="AnotherPassword@123",
                 display_name="User Two",
             )
-        assert "duplicate@pwd301.local" in str(exc_info.value)
+        assert "duplicate@backend.local" in str(exc_info.value)
 
 
 def test_register_user_invalid_inputs(app):
@@ -190,16 +190,16 @@ def test_register_user_invalid_inputs(app):
             register_user("invalid-email", "Password@123", "Valid Name")
 
         with pytest.raises(InvalidPasswordError):
-            register_user("valid@pwd301.local", "short", "Valid Name")
+            register_user("valid@backend.local", "short", "Valid Name")
 
         with pytest.raises(ValueError):
-            register_user("valid@pwd301.local", "Password@123", "   ")
+            register_user("valid@backend.local", "Password@123", "   ")
 
 
 def test_get_user_helpers(app):
     """Verify user lookup by primary key, public UUID, and normalized email."""
     with app.app_context():
-        user = register_user("lookup@pwd301.local", "Password@123", "Lookup User")
+        user = register_user("lookup@backend.local", "Password@123", "Lookup User")
 
         # Lookup by ID
         by_id = get_user_by_id(user.id)
@@ -220,17 +220,17 @@ def test_get_user_helpers(app):
         assert get_user_by_public_id("invalid-uuid-string") is None
 
         # Lookup by email
-        by_email = get_user_by_email("  LOOKUP@pwd301.local  ")
+        by_email = get_user_by_email("  LOOKUP@backend.local  ")
         assert by_email is not None
         assert by_email.id == user.id
-        assert get_user_by_email("nonexistent@pwd301.local") is None
+        assert get_user_by_email("nonexistent@backend.local") is None
         assert get_user_by_email("malformed_email") is None
 
 
 def test_change_password_increments_auth_version(app):
     """Verify password change verifies current password and increments auth_version."""
     with app.app_context():
-        user = register_user("pwdchange@pwd301.local", "OldPassword@123", "Pwd User")
+        user = register_user("pwdchange@backend.local", "OldPassword@123", "Pwd User")
         assert user.auth_version == 1
 
         # Failure: Wrong current password
@@ -256,14 +256,14 @@ def test_change_password_increments_auth_version(app):
 def test_change_password_notification_uses_auth_version_idempotency_key(app, monkeypatch):
     """A password mutation retry uses the durable post-change auth version as its key."""
     with app.app_context():
-        user = register_user("pwd-key@pwd301.local", "OldPassword@123", "Password Key")
+        user = register_user("pwd-key@backend.local", "OldPassword@123", "Password Key")
         captured: list[dict[str, object]] = []
 
         def capture_notification(**kwargs: object) -> None:
             captured.append(kwargs)
 
         monkeypatch.setattr(
-            "pwd301.services.notification_service.dispatch_notification",
+            "backend.services.notification_service.dispatch_notification",
             capture_notification,
         )
         updated = change_password(user.id, "OldPassword@123", "NewPassword@123")
@@ -277,18 +277,18 @@ def test_change_password_notification_uses_auth_version_idempotency_key(app, mon
 
 def test_change_password_rejects_password_without_special_character(app):
     with app.app_context():
-        user = register_user("pwd-special@pwd301.local", "OldPassword@123", "Pwd User")
+        user = register_user("pwd-special@backend.local", "OldPassword@123", "Pwd User")
         with pytest.raises(InvalidPasswordError):
             change_password(user.id, "OldPassword@123", "NewPassword123")
         assert user.auth_version == 1
 
 
 def test_role_assignment_cannot_grant_primary_admin(app):
-    from pwd301.services.exceptions import InvalidRoleAssignmentError
-    from pwd301.services.user_service import assign_role_to_user
+    from backend.services.exceptions import InvalidRoleAssignmentError
+    from backend.services.user_service import assign_role_to_user
 
     with app.app_context():
-        user = register_user("primary-grant@pwd301.local", "Password@123!", "Role Target")
+        user = register_user("primary-grant@backend.local", "Password@123!", "Role Target")
         with pytest.raises(InvalidRoleAssignmentError, match="ADMIN_PRIMARY"):
             assign_role_to_user(
                 user.id,
@@ -300,12 +300,12 @@ def test_role_assignment_cannot_grant_primary_admin(app):
 
 
 def test_primary_admin_cannot_be_demoted_by_role_removal(app):
-    from pwd301.services.exceptions import AdminActionForbiddenError
-    from pwd301.services.user_service import assign_role_to_user, remove_role_from_user
+    from backend.services.exceptions import AdminActionForbiddenError
+    from backend.services.user_service import assign_role_to_user, remove_role_from_user
 
     with app.app_context():
-        primary = register_user("primary-kept@pwd301.local", "Password@123!", "Primary")
-        other_admin = register_user("other-admin@pwd301.local", "Password@123!", "Other Admin")
+        primary = register_user("primary-kept@backend.local", "Password@123!", "Primary")
+        other_admin = register_user("other-admin@backend.local", "Password@123!", "Other Admin")
         assign_role_to_user(primary.id, "ADMIN")
         assign_role_to_user(other_admin.id, "ADMIN")
         with pytest.raises(AdminActionForbiddenError):
@@ -319,11 +319,11 @@ def test_primary_admin_cannot_be_demoted_by_role_removal(app):
 
 
 def test_primary_admin_cannot_be_reassigned_to_a_subordinate_admin_role(app):
-    from pwd301.services.exceptions import AdminActionForbiddenError
-    from pwd301.services.user_service import assign_role_to_user
+    from backend.services.exceptions import AdminActionForbiddenError
+    from backend.services.user_service import assign_role_to_user
 
     with app.app_context():
-        primary = register_user("primary-role-lock@pwd301.local", "Password@123!", "Primary")
+        primary = register_user("primary-role-lock@backend.local", "Password@123!", "Primary")
         assign_role_to_user(primary.id, "ADMIN")
 
         with pytest.raises(AdminActionForbiddenError):
@@ -338,11 +338,11 @@ def test_primary_admin_cannot_be_reassigned_to_a_subordinate_admin_role(app):
 
 
 def test_exact_role_assignment_cannot_create_primary_admin(app):
-    from pwd301.services.exceptions import InvalidRoleAssignmentError
-    from pwd301.services.user_service import set_user_roles
+    from backend.services.exceptions import InvalidRoleAssignmentError
+    from backend.services.user_service import set_user_roles
 
     with app.app_context():
-        user = register_user("exact-primary@pwd301.local", "Password@123!", "Role Target")
+        user = register_user("exact-primary@backend.local", "Password@123!", "Role Target")
         with pytest.raises(InvalidRoleAssignmentError, match="ADMIN_PRIMARY"):
             set_user_roles(
                 user.id,
@@ -355,7 +355,7 @@ def test_exact_role_assignment_cannot_create_primary_admin(app):
 def test_change_password_inactive_user_rejected(app):
     """Verify inactive/suspended users cannot change their password."""
     with app.app_context():
-        user = register_user("suspended@pwd301.local", "OldPassword@123", "Suspended")
+        user = register_user("suspended@backend.local", "OldPassword@123", "Suspended")
         user.status = "SUSPENDED"
         user.suspended_at = utc_now()
         db.session.commit()
@@ -367,7 +367,7 @@ def test_change_password_inactive_user_rejected(app):
 def test_set_password_admin_or_reset(app):
     """Verify set_password directly sets password and increments auth_version."""
     with app.app_context():
-        user = register_user("directpwd@pwd301.local", "InitialPass@123", "Direct Pwd")
+        user = register_user("directpwd@backend.local", "InitialPass@123", "Direct Pwd")
         assert user.auth_version == 1
 
         updated = set_password(user.id, "DirectNewPass@123")
@@ -378,7 +378,7 @@ def test_set_password_admin_or_reset(app):
 def test_update_profile(app):
     """Verify profile updating of display_name and avatar."""
     with app.app_context():
-        user = register_user("profile@pwd301.local", "Password@123", "Old Name")
+        user = register_user("profile@backend.local", "Password@123", "Old Name")
         assert user.display_name == "Old Name"
         assert user.avatar_file_asset_id is None
 
@@ -412,7 +412,7 @@ def test_update_profile(app):
 def test_mark_email_verified(app):
     """Verify marking email verified sets timestamp."""
     with app.app_context():
-        user = register_user("unverified@pwd301.local", "Password@123", "Unverified")
+        user = register_user("unverified@backend.local", "Password@123", "Unverified")
         assert user.email_verified_at is None
 
         updated = mark_email_verified(user.id)
@@ -428,7 +428,7 @@ def test_mark_email_verified(app):
 def test_create_security_token_storage(app):
     """Verify security token generation, SHA-256 storage, and raw token return."""
     with app.app_context():
-        user = register_user("tokenuser@pwd301.local", "Password@123", "Token User")
+        user = register_user("tokenuser@backend.local", "Password@123", "Token User")
 
         token_record, raw_token = create_security_token(
             user_id=user.id,
@@ -452,7 +452,7 @@ def test_create_security_token_storage(app):
 def test_create_security_token_invalidates_prior_unconsumed(app):
     """Verify creating a new token of same purpose invalidates older pending tokens."""
     with app.app_context():
-        user = register_user("tokensupersede@pwd301.local", "Password@123", "Supersede")
+        user = register_user("tokensupersede@backend.local", "Password@123", "Supersede")
 
         tok1, raw1 = create_security_token(user.id, SecurityTokenPurpose.EMAIL_VERIFY)
         assert tok1.consumed_at is None
@@ -476,7 +476,7 @@ def test_create_security_token_invalidates_prior_unconsumed(app):
 def test_verify_and_consume_security_token(app):
     """Verify token validation and atomic consumption."""
     with app.app_context():
-        user = register_user("consume@pwd301.local", "Password@123", "Consumer")
+        user = register_user("consume@backend.local", "Password@123", "Consumer")
 
         tok, raw = create_security_token(user.id, SecurityTokenPurpose.PASSWORD_RESET)
 
@@ -507,7 +507,7 @@ def test_verify_and_consume_security_token(app):
 def test_verify_security_token_expired(app):
     """Verify expired security token is rejected with TokenExpiredError."""
     with app.app_context():
-        user = register_user("expired@pwd301.local", "Password@123", "Expired")
+        user = register_user("expired@backend.local", "Password@123", "Expired")
 
         # Issue token with expires_in_seconds=1
         tok, raw = create_security_token(
@@ -533,7 +533,7 @@ def test_verify_security_token_expired(app):
 def test_verify_email_with_token(app):
     """Verify email verification workflow via token."""
     with app.app_context():
-        user = register_user("verifyflow@pwd301.local", "Password@123", "Verify Flow")
+        user = register_user("verifyflow@backend.local", "Password@123", "Verify Flow")
         assert user.email_verified_at is None
 
         _, raw_token = create_security_token(user.id, SecurityTokenPurpose.EMAIL_VERIFY)
@@ -551,7 +551,7 @@ def test_role_change_notifications_use_auth_version_keys(app):
     """Each durable role mutation has a retry-stable notification identity."""
     with app.app_context():
         assigned_user = register_user(
-            "role-key-assigned@pwd301.local", "Password@123", "Role Assigned"
+            "role-key-assigned@backend.local", "Password@123", "Role Assigned"
         )
         assign_role_to_user(assigned_user.id, "INSTRUCTOR")
         assigned_key = uuid.uuid5(
@@ -567,7 +567,7 @@ def test_role_change_notifications_use_auth_version_keys(app):
         )
 
         updated_user = register_user(
-            "role-key-updated@pwd301.local", "Password@123", "Role Updated"
+            "role-key-updated@backend.local", "Password@123", "Role Updated"
         )
         set_user_roles(updated_user.id, {"STUDENT", "INSTRUCTOR"})
         updated_key = uuid.uuid5(
@@ -583,7 +583,7 @@ def test_role_change_notifications_use_auth_version_keys(app):
         )
 
         removed_user = register_user(
-            "role-key-removed@pwd301.local", "Password@123", "Role Removed"
+            "role-key-removed@backend.local", "Password@123", "Role Removed"
         )
         assign_role_to_user(removed_user.id, "INSTRUCTOR")
         remove_role_from_user(removed_user.id, "INSTRUCTOR")
@@ -603,7 +603,7 @@ def test_role_change_notifications_use_auth_version_keys(app):
 def test_reset_password_with_token(app):
     """Verify password reset workflow via token."""
     with app.app_context():
-        user = register_user("resetflow@pwd301.local", "InitialPass@123", "Reset Flow")
+        user = register_user("resetflow@backend.local", "InitialPass@123", "Reset Flow")
         assert user.auth_version == 1
 
         _, raw_token = create_security_token(user.id, SecurityTokenPurpose.PASSWORD_RESET)
@@ -630,7 +630,7 @@ def test_reset_password_with_token(app):
 def test_suspend_user_notification_uses_auth_version_key(app):
     """Account suspension security notice is keyed to the committed auth mutation."""
     with app.app_context():
-        user = register_user("suspend-key@pwd301.local", "InitialPass@123", "Suspend Key")
+        user = register_user("suspend-key@backend.local", "InitialPass@123", "Suspend Key")
 
         suspended = suspend_user(user.id, reason="Security review")
 
@@ -648,38 +648,38 @@ def test_suspend_user_notification_uses_auth_version_key(app):
 def test_apply_email_change_with_token(app):
     """Verify email change workflow via token."""
     with app.app_context():
-        user = register_user("old_address@pwd301.local", "Password@123", "Email Changer")
+        user = register_user("old_address@backend.local", "Password@123", "Email Changer")
         assert user.auth_version == 1
 
         _, raw_token = create_security_token(
             user.id,
             SecurityTokenPurpose.EMAIL_CHANGE,
-            pending_email="  NEW_ADDRESS@pwd301.local  ",
+            pending_email="  NEW_ADDRESS@backend.local  ",
         )
 
         updated_user = apply_email_change_with_token(raw_token)
         assert updated_user.id == user.id
-        assert updated_user.email == "new_address@pwd301.local"
+        assert updated_user.email == "new_address@backend.local"
         assert updated_user.email_verified_at is not None
         assert updated_user.auth_version == 2
 
         # Invariant: Looking up old email now yields None; new email yields user
-        assert get_user_by_email("old_address@pwd301.local") is None
-        assert get_user_by_email("new_address@pwd301.local") is not None
+        assert get_user_by_email("old_address@backend.local") is None
+        assert get_user_by_email("new_address@backend.local") is not None
 
 
 def test_apply_email_change_conflict_rejected(app):
     """Verify email change fails if target email is taken before token consumption."""
     with app.app_context():
-        user1 = register_user("user1@pwd301.local", "Password@123", "User 1")
-        _user2 = register_user("taken@pwd301.local", "Password@123", "User 2")
+        user1 = register_user("user1@backend.local", "Password@123", "User 1")
+        _user2 = register_user("taken@backend.local", "Password@123", "User 2")
 
-        # user1 requests change to taken@pwd301.local
+        # user1 requests change to taken@backend.local
         # Note: at creation time, suppose taken wasn't checked or was registered right after
         _, raw_token = create_security_token(
             user1.id,
             SecurityTokenPurpose.EMAIL_CHANGE,
-            pending_email="taken@pwd301.local",
+            pending_email="taken@backend.local",
         )
 
         with pytest.raises(UserAlreadyExistsError):

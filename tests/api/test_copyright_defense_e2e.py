@@ -18,22 +18,22 @@ import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 
-from pwd301.extensions import db
-from pwd301.models.course import Enrollment, EnrollmentPeriod
-from pwd301.models.file_import import (
+from backend.extensions import db
+from backend.models.course import Enrollment, EnrollmentPeriod
+from backend.models.file_import import (
     FileAsset,
     FileBlob,
     FileRevision,
     FileScanResult,
     LessonResource,
 )
-from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import AuditEvent
-from pwd301.services.course_service import change_course_status, create_course
-from pwd301.services.file_service import get_file_storage_root
-from pwd301.services.lesson_service import create_lesson
-from pwd301.services.user_service import assign_role_to_user, register_user
-from pwd301.services.video_drm_service import get_asset_hls_directory
+from backend.models.identity import Role, User
+from backend.models.notification_audit import AuditEvent
+from backend.services.course_service import change_course_status, create_course
+from backend.services.file_service import get_file_storage_root
+from backend.services.lesson_service import create_lesson
+from backend.services.user_service import assign_role_to_user, register_user
+from backend.services.video_drm_service import get_asset_hls_directory
 
 
 @pytest.fixture
@@ -262,7 +262,7 @@ def test_copyright_protection_end_to_end_defense(
     assert bad_k_resp.status_code == 403
 
     # DEFENSE 5: Zero-Trust Wall Clock Heartbeat vs Progress Jump Attack
-    from pwd301.services.jwt_auth_service import create_token_pair
+    from backend.services.jwt_auth_service import create_token_pair
 
     tokens = create_token_pair(student_user)
     jwt_token = tokens["access_token"]

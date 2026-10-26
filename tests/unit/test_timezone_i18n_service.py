@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from pwd301.services.assessment_service import _parse_iso_datetime
-from pwd301.services.i18n_service import (
+from backend.services.assessment_service import _parse_iso_datetime
+from backend.services.i18n_service import (
     format_tz_datetime,
     get_current_locale,
     parse_tz_offset,

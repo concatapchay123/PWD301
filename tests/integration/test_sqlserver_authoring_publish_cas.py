@@ -8,15 +8,15 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.assessment import (
+from backend.extensions import db
+from backend.models.assessment import (
     Assessment,
     AssessmentQuestionAssignment,
     AssessmentQuestionPool,
 )
-from pwd301.models.identity import User
-from pwd301.models.notification_audit import AuditEvent
-from pwd301.services.assessment_service import (
+from backend.models.identity import User
+from backend.models.notification_audit import AuditEvent
+from backend.services.assessment_service import (
     assessment_authoring_token,
     configure_blueprint,
     create_assessment,
@@ -24,10 +24,10 @@ from pwd301.services.assessment_service import (
     publish_assessment,
     update_assessment,
 )
-from pwd301.services.attempt_service import start_assessment_attempt
-from pwd301.services.enrollment_service import enroll_student
-from pwd301.services.exceptions import AssessmentLockedError, ConflictError
-from pwd301.services.question_bank_service import create_question, update_question
+from backend.services.attempt_service import start_assessment_attempt
+from backend.services.enrollment_service import enroll_student
+from backend.services.exceptions import AssessmentLockedError, ConflictError
+from backend.services.question_bank_service import create_question, update_question
 from tests.api.test_instructor_backend_remediation import login_session
 from tests.api.test_instructor_backend_remediation import remediation_env as remediation_env
 
@@ -259,7 +259,7 @@ def test_blueprint_publish_and_lost_ack_replay_keep_authoring_token(blueprint_au
 def test_blueprint_pool_and_publish_roll_back_together_on_audit_failure(
     blueprint_authored, monkeypatch, preexisting_pool
 ):
-    import pwd301.services.assessment_service as service
+    import backend.services.assessment_service as service
 
     actor_id, assessment_id, _ = blueprint_authored
     engine = db.engine
@@ -347,7 +347,7 @@ def test_cached_materializer_cannot_change_pool_after_first_attempt_commits(
     actor_id, assessment_id, token = blueprint_authored
     engine = db.engine
     assessment = db.session.get(Assessment, assessment_id)
-    student = db.session.query(User).filter_by(email="student_remed@pwd301.local").one()
+    student = db.session.query(User).filter_by(email="student_remed@backend.local").one()
     student_id = student.id
     enroll_student(student, assessment.course_id, session=db.session)
     db.session.commit()
@@ -398,7 +398,7 @@ def test_cached_materializer_cannot_change_pool_after_first_attempt_commits(
     ],
 )
 def test_legacy_structure_writer_refreshes_committed_first_attempt(blueprint_authored, operation):
-    from pwd301.services import assessment_service as service
+    from backend.services import assessment_service as service
 
     actor_id, assessment_id, _ = blueprint_authored
     engine = db.engine
@@ -415,7 +415,7 @@ def test_legacy_structure_writer_refreshes_committed_first_attempt(blueprint_aut
         .filter_by(course_id=assessment.course_id, status="ACTIVE")
         .first()[0]
     )
-    student = db.session.query(User).filter_by(email="student_remed@pwd301.local").one()
+    student = db.session.query(User).filter_by(email="student_remed@backend.local").one()
     student_id = student.id
     enroll_student(student, assessment.course_id, session=db.session)
     publish_assessment(actor, assessment)
@@ -454,13 +454,13 @@ def test_legacy_structure_writer_refreshes_committed_first_attempt(blueprint_aut
 def test_conditional_publish_replay_and_legacy_grading_repair_do_not_deadlock(
     authored, monkeypatch, iteration
 ):
-    from pwd301.models.attempt_regrade import AssessmentResult
-    from pwd301.models.types import utc_now
-    from pwd301.services import attempt_service
+    from backend.models.attempt_regrade import AssessmentResult
+    from backend.models.types import utc_now
+    from backend.services import attempt_service
 
     actor_id, assessment_id, _, token = authored
     engine = db.engine
-    student = db.session.query(User).filter_by(email="student_remed@pwd301.local").one()
+    student = db.session.query(User).filter_by(email="student_remed@backend.local").one()
     student_id = student.id
     assessment = db.session.get(Assessment, assessment_id)
     enroll_student(student, assessment.course_id, session=db.session)

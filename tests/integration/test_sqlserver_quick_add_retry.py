@@ -8,11 +8,11 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.assessment import Assessment, AssessmentQuestionAssignment
-from pwd301.models.question_bank import Question, QuestionProvenance, QuestionRevision
-from pwd301.models.types import utc_now
-from pwd301.services.assessment_service import create_assessment
+from backend.extensions import db
+from backend.models.assessment import Assessment, AssessmentQuestionAssignment
+from backend.models.question_bank import Question, QuestionProvenance, QuestionRevision
+from backend.models.types import utc_now
+from backend.services.assessment_service import create_assessment
 from tests.api.test_instructor_backend_remediation import login_session
 from tests.api.test_instructor_backend_remediation import remediation_env as remediation_env
 from tests.integration.test_sqlserver_import_atomic_retry import http_request
@@ -83,7 +83,7 @@ def test_sql_quick_add_frozen_new_creation_is_rejected_without_orphans(app, quic
 def test_sql_quick_add_assignment_freeze_failure_rolls_back_created_question(
     app, quick_add, http_server, monkeypatch
 ):
-    from pwd301.blueprints.instructor import routes
+    from backend.blueprints.instructor import routes
 
     engine = db.engine
     assessment_id, public_id, clients = quick_add

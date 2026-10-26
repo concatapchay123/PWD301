@@ -12,37 +12,37 @@ import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.assessment import Assessment
-from pwd301.models.course import Course
-from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import AuditEvent
-from pwd301.models.question_bank import Question
-from pwd301.services.assessment_service import (
+from backend.extensions import db
+from backend.models.assessment import Assessment
+from backend.models.course import Course
+from backend.models.identity import Role, User
+from backend.models.notification_audit import AuditEvent
+from backend.models.question_bank import Question
+from backend.services.assessment_service import (
     assign_question,
     create_assessment,
     create_section,
     publish_assessment,
 )
-from pwd301.services.attempt_service import (
+from backend.services.attempt_service import (
     _calculate_deadline,
     get_attempt_delivery,
     grade_attempt_objective_questions,
     list_student_assessment_attempts,
     start_assessment_attempt,
 )
-from pwd301.services.course_service import change_course_status, create_course
-from pwd301.services.course_workflow_service import applying_review
-from pwd301.services.enrollment_service import enroll_student, leave_course
-from pwd301.services.exceptions import (
+from backend.services.course_service import change_course_status, create_course
+from backend.services.course_workflow_service import applying_review
+from backend.services.enrollment_service import enroll_student, leave_course
+from backend.services.exceptions import (
     ActiveAttemptExistsError,
     AssessmentClosedError,
     AssessmentNotOpenError,
     AttemptLimitExceededError,
     AttemptValidationError,
 )
-from pwd301.services.question_bank_service import create_question
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.question_bank_service import create_question
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -321,7 +321,7 @@ def test_released_result_notification_opens_student_attempt_results(
         captured.update(kwargs)
 
     monkeypatch.setattr(
-        "pwd301.services.notification_service.dispatch_notification",
+        "backend.services.notification_service.dispatch_notification",
         capture_notification,
     )
 
@@ -634,7 +634,7 @@ def test_active_attempt_unique_index_concurrency(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify that DB unique index ux_attempt_single_active catches race condition."""
-    from pwd301.models.attempt_regrade import AssessmentAttempt
+    from backend.models.attempt_regrade import AssessmentAttempt
 
     assessment, _ = _create_published_assessment(instructor_user, published_course)
 

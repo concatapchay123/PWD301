@@ -16,13 +16,13 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import Course
-from pwd301.models.identity import Role, User
-from pwd301.services.course_service import create_course
-from pwd301.services.enrollment_service import enroll_student
-from pwd301.services.jwt_auth_service import create_token_pair
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.extensions import db
+from backend.models.course import Course
+from backend.models.identity import Role, User
+from backend.services.course_service import create_course
+from backend.services.enrollment_service import enroll_student
+from backend.services.jwt_auth_service import create_token_pair
+from backend.services.user_service import assign_role_to_user, register_user
 from tests.conftest import login_web_user
 
 
@@ -268,13 +268,13 @@ def test_admin_dashboard_resilient_when_telemetry_throws_exception(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify admin dashboard degrades safely without HTTP 500 when telemetry fails."""
-    import pwd301.services.operations_service
+    import backend.services.operations_service
 
     def _failing_telemetry() -> None:
         raise RuntimeError("Hardware telemetry probe hardware sensor bus failure.")
 
     monkeypatch.setattr(
-        pwd301.services.operations_service,
+        backend.services.operations_service,
         "get_real_system_telemetry",
         _failing_telemetry,
     )

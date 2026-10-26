@@ -8,16 +8,16 @@ import jwt
 import pytest
 from flask import Flask
 
-from pwd301.extensions import db
-from pwd301.models.identity import JwtTokenGrant, User
-from pwd301.models.types import utc_now
-from pwd301.services.exceptions import (
+from backend.extensions import db
+from backend.models.identity import JwtTokenGrant, User
+from backend.models.types import utc_now
+from backend.services.exceptions import (
     AccountNotActiveError,
     AuthVersionMismatchError,
     JwtTokenInvalidError,
     JwtTokenRevokedError,
 )
-from pwd301.services.jwt_auth_service import (
+from backend.services.jwt_auth_service import (
     ACCESS_TOKEN_LIFETIME,
     JWT_ALGORITHM,
     JWT_ISSUER,
@@ -27,7 +27,7 @@ from pwd301.services.jwt_auth_service import (
     revoke_token,
     verify_access_token,
 )
-from pwd301.services.user_service import register_user
+from backend.services.user_service import register_user
 
 
 @pytest.fixture

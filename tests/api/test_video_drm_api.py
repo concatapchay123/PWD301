@@ -13,20 +13,20 @@ import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 
-from pwd301.extensions import db
-from pwd301.models.course import Course, Enrollment, EnrollmentPeriod
-from pwd301.models.file_import import (
+from backend.extensions import db
+from backend.models.course import Course, Enrollment, EnrollmentPeriod
+from backend.models.file_import import (
     FileAsset,
     FileBlob,
     FileRevision,
     FileScanResult,
     LessonResource,
 )
-from pwd301.models.identity import Role, User
-from pwd301.services.course_service import change_course_status, create_course
-from pwd301.services.lesson_service import create_lesson
-from pwd301.services.user_service import assign_role_to_user, register_user
-from pwd301.services.video_drm_service import (
+from backend.models.identity import Role, User
+from backend.services.course_service import change_course_status, create_course
+from backend.services.lesson_service import create_lesson
+from backend.services.user_service import assign_role_to_user, register_user
+from backend.services.video_drm_service import (
     get_asset_hls_directory,
     transcode_to_encrypted_hls,
 )
@@ -107,7 +107,7 @@ def test_student_cannot_download_raw_lesson_video(
     change_course_status(instructor_user, course_sample.id, "PUBLISHED")
 
     # Create dummy video file on disk in app FILE_STORAGE_ROOT
-    from pwd301.services.file_service import get_file_storage_root
+    from backend.services.file_service import get_file_storage_root
 
     with app.app_context():
         storage_dir = get_file_storage_root()

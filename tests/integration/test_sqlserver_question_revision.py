@@ -9,13 +9,13 @@ import pytest
 import sqlalchemy as sa
 from flask_migrate import upgrade
 
-from pwd301 import create_app
-from pwd301.extensions import db
-from pwd301.models.identity import Role
-from pwd301.models.types import utc_now
-from pwd301.services.course_service import create_course
-from pwd301.services.question_bank_service import create_question, create_question_revision
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend import create_app
+from backend.extensions import db
+from backend.models.identity import Role
+from backend.models.types import utc_now
+from backend.services.course_service import create_course
+from backend.services.question_bank_service import create_question, create_question_revision
+from backend.services.user_service import assign_role_to_user, register_user
 from tests.conftest import require_disposable_sqlserver_target
 
 

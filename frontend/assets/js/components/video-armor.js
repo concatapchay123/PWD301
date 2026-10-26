@@ -55,12 +55,13 @@ class VideoArmor {
       if (VideoArmor._isGlobalLocked) return;
       const violation = VideoArmor.checkShortcutViolation(e);
       if (violation) {
+        if (typeof e.preventDefault === 'function') e.preventDefault();
+        if (typeof e.stopPropagation === 'function') e.stopPropagation();
+        VideoArmor._clearClipboardStatic();
+
+        const isExam = typeof ExamAntiCheatManager !== 'undefined' && ExamAntiCheatManager.activeInstance && ExamAntiCheatManager.activeInstance.isActive;
         if (violation === 'SCREEN_CAPTURE_ATTEMPT') {
-          const isExam = typeof ExamAntiCheatManager !== 'undefined' && ExamAntiCheatManager.activeInstance && ExamAntiCheatManager.activeInstance.isActive;
           if (isExam) {
-            if (typeof e.preventDefault === 'function') e.preventDefault();
-            if (typeof e.stopPropagation === 'function') e.stopPropagation();
-            VideoArmor._clearClipboardStatic();
             ExamAntiCheatManager.activeInstance.recordSecurityViolation('SCREENSHOT_ATTEMPT');
             if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
               UI.showToast('CẢNH BÁO KHẢO THÍ: Nghiêm cấm chụp màn hình trong bài thi!', 'warning');
@@ -68,10 +69,12 @@ class VideoArmor {
           }
           return;
         }
-        if (typeof e.preventDefault === 'function') e.preventDefault();
-        if (typeof e.stopPropagation === 'function') e.stopPropagation();
-        VideoArmor._clearClipboardStatic();
-        if (isExam) {
+
+        if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
+          UI.showToast('CẢNH BÁO AN NINH: Phím tắt DevTools / Kiểm tra mã nguồn đã bị chặn!', 'warning');
+        }
+
+        if (isExam && !VideoArmor.isAdminUser()) {
           VideoArmor.triggerGlobalLockdown(violation);
         }
       }
@@ -151,6 +154,23 @@ class VideoArmor {
         nav.clipboard.writeText('');
       } catch (_) {}
     }
+  }
+
+  static isAdminUser(user = null) {
+    const targetUser = user || VideoArmor._globalUser || (typeof window !== 'undefined' && window.App && window.App.currentUser ? window.App.currentUser : null);
+    if (!targetUser) return false;
+    if (targetUser.primary_role === 'ADMIN' || targetUser.active_role === 'ADMIN') return true;
+    if (Array.isArray(targetUser.role_codes) && targetUser.role_codes.includes('ADMIN')) return true;
+    return false;
+  }
+
+  static checkDevToolsOpen() {
+    const win = (typeof window !== 'undefined') ? window : (typeof global !== 'undefined' && global.window ? global.window : null);
+    if (!win) return false;
+    const threshold = 160;
+    const widthDiff = (win.outerWidth && win.innerWidth) ? (win.outerWidth - win.innerWidth > threshold) : false;
+    const heightDiff = (win.outerHeight && win.innerHeight) ? (win.outerHeight - win.innerHeight > threshold) : false;
+    return widthDiff || heightDiff;
   }
 
   static checkShortcutViolation(event) {
@@ -270,10 +290,10 @@ class VideoArmor {
       shield.innerHTML = `
         <div class="max-w-md w-full p-8 rounded-2xl bg-slate-900 border border-rose-500/40 shadow-2xl space-y-4 text-white">
           <div class="w-16 h-16 mx-auto rounded-full bg-rose-500/10 text-rose-500 flex items-center justify-center">
-            <span class="material-symbols-outlined text-[36px]">shield</span>
+            <span class="material-symbols-outlined text-[36px]">lock</span>
           </div>
           <h2 class="text-lg font-extrabold text-white tracking-wide">
-            🛡️ CẢNH BÁO AN NINH HỆ THỐNG
+            CẢNH BÁO AN NINH HỆ THỐNG
           </h2>
           <div class="text-xs font-bold text-rose-400 bg-rose-950/40 py-1.5 px-3 rounded-lg border border-rose-900/60 font-mono">
             ${reasonText}
@@ -611,7 +631,7 @@ class VideoArmor {
     header.style.fontSize = '20px';
     header.style.fontWeight = '700';
     header.style.marginBottom = '10px';
-    header.textContent = '🛡️ CẢNH BÁO AN NINH BẢN QUYỀN';
+    header.textContent = 'CẢNH BÁO AN NINH BẢN QUYỀN';
     card.appendChild(header);
 
     const sub = doc.createElement('div');

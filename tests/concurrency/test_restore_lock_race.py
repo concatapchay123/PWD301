@@ -17,17 +17,17 @@ from typing import Any
 import pytest
 from flask import Flask
 
-from pwd301.extensions import db
-from pwd301.models.identity import Role, User
-from pwd301.models.operations import BackupRun
-from pwd301.models.types import utc_now
-from pwd301.services.exceptions import ConflictError
-from pwd301.services.operations_service import (
+from backend.extensions import db
+from backend.models.identity import Role, User
+from backend.models.operations import BackupRun
+from backend.models.types import utc_now
+from backend.services.exceptions import ConflictError
+from backend.services.operations_service import (
     _restore_lock,
     is_database_restore_in_progress,
     restore_database_snapshot,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture

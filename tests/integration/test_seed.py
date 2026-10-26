@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from werkzeug.security import check_password_hash
 
-from pwd301.extensions import db
-from pwd301.models.identity import Role, User, UserRole
-from pwd301.seeds.baseline import seed_baseline
+from backend.extensions import db
+from backend.models.identity import Role, User, UserRole
+from backend.seeds.baseline import seed_baseline
 
 
 def test_seed_baseline_success(app):
@@ -88,7 +88,7 @@ def test_seed_baseline_cli_commands(app, runner):
 
 def test_seed_baseline_custom_env_vars(app, monkeypatch):
     """Verify seed_baseline respects custom admin environment variables."""
-    custom_email = "custom_admin@pwd301.local"
+    custom_email = "custom_admin@backend.local"
     custom_name = "Chief Security Officer"
     custom_pass = "CustomSecured@987654"
 

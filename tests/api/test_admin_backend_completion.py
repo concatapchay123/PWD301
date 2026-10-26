@@ -20,13 +20,13 @@ from typing import Any
 import pytest
 from flask.testing import FlaskClient
 
-from pwd301.extensions import db
-from pwd301.models.course import Course, LearningUnit, Lesson
-from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import Notification, NotificationEvent
-from pwd301.models.operations import BackgroundJob
-from pwd301.services.jwt_auth_service import create_token_pair
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.extensions import db
+from backend.models.course import Course, LearningUnit, Lesson
+from backend.models.identity import Role, User
+from backend.models.notification_audit import Notification, NotificationEvent
+from backend.models.operations import BackgroundJob
+from backend.services.jwt_auth_service import create_token_pair
+from backend.services.user_service import assign_role_to_user, register_user
 from tests.conftest import login_web_user
 
 
@@ -569,7 +569,7 @@ def test_instructor_applications_adr002_zero_pk_leakage(
     student_user: User,
 ) -> None:
     """Instructor application responses must not leak internal BigInt PK for applicant_user_id."""
-    from pwd301.models.identity import InstructorApplication
+    from backend.models.identity import InstructorApplication
 
     sess = db.session
     app_record = InstructorApplication(
@@ -620,8 +620,8 @@ def test_quarantine_override_min_5_chars_validation(
     admin_user: User,
 ) -> None:
     """Quarantine override requires reason of at least 5 characters."""
-    from pwd301.services.exceptions import FileValidationError
-    from pwd301.services.file_service import quarantine_override
+    from backend.services.exceptions import FileValidationError
+    from backend.services.file_service import quarantine_override
 
     with pytest.raises(FileValidationError) as exc:
         quarantine_override(

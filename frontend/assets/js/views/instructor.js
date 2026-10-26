@@ -768,7 +768,7 @@ class InstructorView {
 
                   <!-- Category / Description -->
                   <p class="text-xs text-[#5C5B57] dark:text-[#9E9D99] line-clamp-2 leading-relaxed">
-                    ${UI.escapeHtml(c.description || c.category || 'Chưa có mô tả chi tiết.')}
+                    ${UI.escapeHtml(UI.cleanCourseDescription(c.description) || c.category || 'Chưa có mô tả chi tiết.')}
                   </p>
                 </div>
 
@@ -966,6 +966,26 @@ class InstructorView {
           </div>
         </div>
 
+        <!-- Học phí môn học -->
+        <div class="space-y-1">
+          <label class="block text-xs font-bold uppercase tracking-wider text-[#5C5B57] dark:text-[#9E9D99]">
+            Học phí khóa học (VNĐ)
+          </label>
+          <div class="relative">
+            <input
+              type="number"
+              name="price"
+              min="0"
+              step="10000"
+              value="0"
+              placeholder="0 (Miễn phí)"
+              class="w-full px-3.5 py-2.5 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#202020] text-sm font-mono font-bold text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-primary"
+            />
+            <span class="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 font-mono">VNĐ</span>
+          </div>
+          <p class="text-[11px] text-slate-400">Nhập 0 để tạo khóa học Miễn phí. Giảng viên có thể điều chỉnh sau.</p>
+        </div>
+
         <div class="space-y-1">
           <label class="block text-xs font-bold uppercase tracking-wider text-[#5C5B57] dark:text-[#9E9D99]">
             Mô tả tóm tắt (Tùy chọn)
@@ -1004,6 +1024,7 @@ class InstructorView {
       const title = form.title.value.trim();
       const desc = form.description.value.trim();
       const cat = form.category.value.trim() || 'Khoa học máy tính & CNTT';
+      const price = Math.max(0, parseInt(form.price?.value, 10) || 0);
 
       if (!code || !title) {
         UI.showToast('Vui lòng nhập đầy đủ Tên khóa học và Mã khóa học.', 'warning');
@@ -1021,7 +1042,8 @@ class InstructorView {
           description: desc,
           category: cat,
           difficulty: 'INTERMEDIATE',
-          capacity: null
+          capacity: null,
+          price: price
         });
         UI.closeModal();
         UI.showToast(`Đã tạo khóa học ${code} thành công!`, 'success');
@@ -1269,6 +1291,12 @@ class InstructorView {
             qObj.blank_answer = ans;
           } else if (qType === 'MATCHING') {
             qObj.pairs = Array.isArray(b.pairs) ? b.pairs.filter(p => p.left && p.right) : [];
+          } else if (qType === 'TRUE_FALSE') {
+            qObj.type = 'TRUE_FALSE';
+            qObj.correct_value = b.correct_value !== false && String(b.correct_value) !== 'false';
+            qObj.options = ['Đúng', 'Sai'];
+            qObj.choices = ['Đúng', 'Sai'];
+            qObj.correct_index = qObj.correct_value ? 0 : 1;
           }
           quizzes.push(qObj);
         }
@@ -1865,6 +1893,12 @@ class InstructorView {
                 right: rightInput ? rightInput.value.trim() : ''
               };
             });
+          } else if (activeType === 'TRUE_FALSE') {
+            const tfRadio = card.querySelector('input[name^="quiz_tf_correct_"]:checked');
+            block.correct_value = tfRadio ? (tfRadio.value === 'true') : (block.correct_value !== false);
+            block.correct_index = block.correct_value ? 0 : 1;
+            block.options = ['Đúng', 'Sai'];
+            block.choices = ['Đúng', 'Sai'];
           }
 
           const expInput = card.querySelector('.block-quiz-explanation');
@@ -1924,6 +1958,12 @@ class InstructorView {
                 right: rightInput ? rightInput.value.trim() : ''
               };
             });
+          } else if (activeType === 'TRUE_FALSE') {
+            const tfRadio = card.querySelector('input[name^="quiz_tf_correct_"]:checked');
+            block.correct_value = tfRadio ? (tfRadio.value === 'true') : (block.correct_value !== false);
+            block.correct_index = block.correct_value ? 0 : 1;
+            block.options = ['Đúng', 'Sai'];
+            block.choices = ['Đúng', 'Sai'];
           }
 
           const expInput = card.querySelector('.block-quiz-explanation');
@@ -2145,8 +2185,15 @@ class InstructorView {
         `;
       }).join('');
 
-      // Dedicated Final Test Block at bottom of tree
-      const finalExam = assessments.find(a => a.assessment_type === 'FINAL_EXAM' || /final|kết thúc môn|thi hết môn/i.test(a.title) || (!a.learning_unit_id && !(a.description && a.description.includes('unit_id:'))));
+      // Dedicated Final Test Block at bottom of tree (TASK-130 / Invariant 10.29)
+      // Strictly genuine final exams; chapter assessments belong to chapters, never final test block
+      const isChapterExam = (a) => {
+        if (a.learning_unit_id) return true;
+        if (a.description && a.description.includes('unit_id:')) return true;
+        if (a.title && /chương\s*\d+/i.test(a.title)) return true;
+        return false;
+      };
+      const finalExam = assessments.find(a => !isChapterExam(a) && (a.assessment_type === 'FINAL_EXAM' || a.assessment_type === 'FINAL' || /final|kết thúc môn|thi hết môn|tốt nghiệp|toàn diện/i.test(a.title)));
       if (finalExam) {
         const fCount = Number(finalExam.questions_count ?? finalExam.question_count ?? (finalExam.questions ? finalExam.questions.length : 0));
         const fId = finalExam.assessment_id || finalExam.id;
@@ -3249,6 +3296,7 @@ class InstructorView {
           { left: '', right: '' }
         ];
         const qImg = block.image_url || block.question_image_url || '';
+        const tfCorrectVal = (block.correct_value !== false && String(block.correct_value) !== 'false' && block.correct_index !== 1);
 
         // Calculate quiz index among all quiz blocks
         const allQuizBlocks = activeBlocks.filter(b => b.type === 'quiz');
@@ -3307,6 +3355,14 @@ class InstructorView {
                 >
                   Nối từ
                 </button>
+                <button
+                  type="button"
+                  class="btn-quiz-type-select px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${qType === 'TRUE_FALSE' ? 'bg-primary text-white shadow-xs' : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#E8E6DF]/50 dark:hover:bg-[#2A2928]'}"
+                  data-qtype-select="TRUE_FALSE"
+                  ${isLocked ? 'disabled' : ''}
+                >
+                  Đúng / Sai
+                </button>
               </div>
             </div>
 
@@ -3314,7 +3370,7 @@ class InstructorView {
             <div class="space-y-2">
               <div class="flex items-center justify-between">
                 <label class="block text-xs font-bold text-[#5C5B57] dark:text-[#9E9D99]">
-                  ${qType === 'FILL_BLANK' ? 'Nội dung câu hỏi điền khuyết (dùng [___] làm chỗ trống):' : (qType === 'MATCHING' ? 'Lời dẫn bài tập nối từ:' : 'Nội dung câu hỏi trắc nghiệm:')} <span class="text-rose-500">*</span>
+                  ${qType === 'FILL_BLANK' ? 'Nội dung câu hỏi điền khuyết (dùng [___] làm chỗ trống):' : (qType === 'MATCHING' ? 'Lời dẫn bài tập nối từ:' : (qType === 'TRUE_FALSE' ? 'Nội dung câu phát biểu (Đúng/Sai):' : 'Nội dung câu hỏi trắc nghiệm:'))} <span class="text-rose-500">*</span>
                 </label>
                 ${!isLocked ? `
                   <label class="cursor-pointer text-[11px] font-bold text-primary hover:underline flex items-center gap-1" title="Dán ảnh (Ctrl+V) hoặc chọn ảnh từ máy">
@@ -3329,7 +3385,7 @@ class InstructorView {
                 <textarea
                   rows="2"
                   class="block-quiz-question w-full px-3.5 py-2.5 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E] text-xs text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-primary transition-all font-medium resize-y"
-                  placeholder="${qType === 'FILL_BLANK' ? 'Ví dụ: Thủ đô của Việt Nam là [___]. (Có thể ấn Ctrl+V để dán ảnh vào đây)' : (qType === 'MATCHING' ? 'Nối các khái niệm ở cột trái với ý nghĩa phù hợp ở cột phải:' : 'Ví dụ: Đâu là ngôn ngữ đánh dấu siêu văn bản? (Có thể ấn Ctrl+V để dán ảnh vào đây)')}"
+                  placeholder="${qType === 'FILL_BLANK' ? 'Ví dụ: Thủ đô của Việt Nam là [___]. (Có thể ấn Ctrl+V để dán ảnh vào đây)' : (qType === 'MATCHING' ? 'Nối các khái niệm ở cột trái với ý nghĩa phù hợp ở cột phải:' : (qType === 'TRUE_FALSE' ? 'Nhập câu phát biểu cần đánh giá Đúng/Sai (Ví dụ: Trái Đất quay quanh Mặt Trời):' : 'Ví dụ: Đâu là ngôn ngữ đánh dấu siêu văn bản? (Có thể ấn Ctrl+V để dán ảnh vào đây)'))}"
                   ${isLocked ? 'disabled' : ''}
                 >${UI.escapeHtml(block.question || '')}</textarea>
               </div>
@@ -3470,6 +3526,27 @@ class InstructorView {
               </div>
             ` : ''}
 
+            ${qType === 'TRUE_FALSE' ? `
+              <div class="space-y-2.5 p-3.5 rounded-xl border border-sky-200 dark:border-sky-900/60 bg-sky-50/40 dark:bg-sky-950/20">
+                <div class="flex items-center gap-1.5 text-xs font-bold text-sky-800 dark:text-sky-300">
+                  <span class="material-symbols-outlined text-[18px] text-sky-600">check_circle</span>
+                  <span>Chỉ định đáp án chính xác của câu phát biểu: <span class="text-rose-500">*</span></span>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <label class="flex items-center gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${tfCorrectVal === true ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 font-bold' : 'border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E] text-[#5C5B57] dark:text-[#9E9D99]'}">
+                    <input type="radio" name="quiz_tf_correct_${bId}" value="true" ${tfCorrectVal === true ? 'checked' : ''} class="text-emerald-600 focus:ring-emerald-500" ${isLocked ? 'disabled' : ''} />
+                    <span class="material-symbols-outlined text-emerald-600 text-[18px]">check_circle</span>
+                    <span class="text-xs font-bold">ĐÚNG (True)</span>
+                  </label>
+                  <label class="flex items-center gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${tfCorrectVal === false ? 'border-rose-500 bg-rose-50/70 dark:bg-rose-950/40 text-rose-900 dark:text-rose-200 font-bold' : 'border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E] text-[#5C5B57] dark:text-[#9E9D99]'}">
+                    <input type="radio" name="quiz_tf_correct_${bId}" value="false" ${tfCorrectVal === false ? 'checked' : ''} class="text-rose-600 focus:ring-rose-500" ${isLocked ? 'disabled' : ''} />
+                    <span class="material-symbols-outlined text-rose-600 text-[18px]">cancel</span>
+                    <span class="text-xs font-bold">SAI (False)</span>
+                  </label>
+                </div>
+              </div>
+            ` : ''}
+
             <!-- Explanation -->
             <div class="space-y-1">
               <label class="block text-[11px] font-semibold text-[#8F8E8A] dark:text-[#6D6C68]">
@@ -3578,6 +3655,7 @@ class InstructorView {
         { left: '', right: '' }
       ];
       const qImg = activeBlock.image_url || activeBlock.question_image_url || '';
+      const tfCorrectVal = (activeBlock.correct_value !== false && String(activeBlock.correct_value) !== 'false' && activeBlock.correct_index !== 1);
 
       return `
         <div class="curriculum-block-card curriculum-quiz-cluster-card rounded-2xl border border-purple-200 dark:border-purple-900/60 bg-white dark:bg-[#202020] p-4 sm:p-5 shadow-xs space-y-4 transition-all" data-cluster-key="${clusterKey}" data-active-quiz-id="${activeBlock.id}" data-active-qtype="${qType}">
@@ -3675,6 +3753,14 @@ class InstructorView {
                 >
                   Nối từ
                 </button>
+                <button
+                  type="button"
+                  class="btn-quiz-type-select px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${qType === 'TRUE_FALSE' ? 'bg-primary text-white shadow-xs' : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#E8E6DF]/50 dark:hover:bg-[#2A2928]'}"
+                  data-qtype-select="TRUE_FALSE"
+                  ${isLocked ? 'disabled' : ''}
+                >
+                  Đúng / Sai
+                </button>
               </div>
             </div>
 
@@ -3682,7 +3768,7 @@ class InstructorView {
             <div class="space-y-2">
               <div class="flex items-center justify-between">
                 <label class="block text-xs font-bold text-[#5C5B57] dark:text-[#9E9D99]">
-                  ${qType === 'FILL_BLANK' ? 'Nội dung câu hỏi điền khuyết (dùng [___] làm chỗ trống):' : (qType === 'MATCHING' ? 'Lời dẫn bài tập nối từ:' : 'Nội dung câu hỏi trắc nghiệm:')} <span class="text-rose-500">*</span>
+                  ${qType === 'FILL_BLANK' ? 'Nội dung câu hỏi điền khuyết (dùng [___] làm chỗ trống):' : (qType === 'MATCHING' ? 'Lời dẫn bài tập nối từ:' : (qType === 'TRUE_FALSE' ? 'Nội dung câu phát biểu (Đúng/Sai):' : 'Nội dung câu hỏi trắc nghiệm:'))} <span class="text-rose-500">*</span>
                 </label>
                 ${!isLocked ? `
                   <label class="cursor-pointer text-[11px] font-bold text-primary hover:underline flex items-center gap-1" title="Dán ảnh (Ctrl+V) hoặc chọn ảnh từ máy">
@@ -3697,7 +3783,7 @@ class InstructorView {
                 <textarea
                   rows="2"
                   class="block-quiz-question w-full px-3.5 py-2.5 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E] text-xs text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-primary transition-all font-medium resize-y"
-                  placeholder="${qType === 'FILL_BLANK' ? 'Ví dụ: Thủ đô của Việt Nam là [___]. (Có thể ấn Ctrl+V để dán ảnh vào đây)' : (qType === 'MATCHING' ? 'Nối các khái niệm ở cột trái với ý nghĩa phù hợp ở cột phải:' : 'Ví dụ: Đâu là ngôn ngữ đánh dấu siêu văn bản? (Có thể ấn Ctrl+V để dán ảnh vào đây)')}"
+                  placeholder="${qType === 'FILL_BLANK' ? 'Ví dụ: Thủ đô của Việt Nam là [___]. (Có thể ấn Ctrl+V để dán ảnh vào đây)' : (qType === 'MATCHING' ? 'Nối các khái niệm ở cột trái với ý nghĩa phù hợp ở cột phải:' : (qType === 'TRUE_FALSE' ? 'Nhập câu phát biểu cần đánh giá Đúng/Sai (Ví dụ: Trái Đất quay quanh Mặt Trời):' : 'Ví dụ: Đâu là ngôn ngữ đánh dấu siêu văn bản? (Có thể ấn Ctrl+V để dán ảnh vào đây)'))}"
                   ${isLocked ? 'disabled' : ''}
                 >${UI.escapeHtml(activeBlock.question || '')}</textarea>
               </div>
@@ -3834,6 +3920,27 @@ class InstructorView {
                       ` : ''}
                     </div>
                   `).join('')}
+                </div>
+              </div>
+            ` : ''}
+
+            ${qType === 'TRUE_FALSE' ? `
+              <div class="space-y-2.5 p-3.5 rounded-xl border border-sky-200 dark:border-sky-900/60 bg-sky-50/40 dark:bg-sky-950/20">
+                <div class="flex items-center gap-1.5 text-xs font-bold text-sky-800 dark:text-sky-300">
+                  <span class="material-symbols-outlined text-[18px] text-sky-600">check_circle</span>
+                  <span>Chỉ định đáp án chính xác của câu phát biểu: <span class="text-rose-500">*</span></span>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <label class="flex items-center gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${tfCorrectVal === true ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 font-bold' : 'border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E] text-[#5C5B57] dark:text-[#9E9D99]'}">
+                    <input type="radio" name="quiz_tf_correct_${bId}" value="true" ${tfCorrectVal === true ? 'checked' : ''} class="text-emerald-600 focus:ring-emerald-500" ${isLocked ? 'disabled' : ''} />
+                    <span class="material-symbols-outlined text-emerald-600 text-[18px]">check_circle</span>
+                    <span class="text-xs font-bold">ĐÚNG (True)</span>
+                  </label>
+                  <label class="flex items-center gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${tfCorrectVal === false ? 'border-rose-500 bg-rose-50/70 dark:bg-rose-950/40 text-rose-900 dark:text-rose-200 font-bold' : 'border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E] text-[#5C5B57] dark:text-[#9E9D99]'}">
+                    <input type="radio" name="quiz_tf_correct_${bId}" value="false" ${tfCorrectVal === false ? 'checked' : ''} class="text-rose-600 focus:ring-rose-500" ${isLocked ? 'disabled' : ''} />
+                    <span class="material-symbols-outlined text-rose-600 text-[18px]">cancel</span>
+                    <span class="text-xs font-bold">SAI (False)</span>
+                  </label>
                 </div>
               </div>
             ` : ''}
@@ -5710,7 +5817,7 @@ class InstructorView {
                 </div>
 
                 <div id="course-display-desc" class="text-xs sm:text-sm text-[#5C5B57] dark:text-[#9E9D99] leading-relaxed max-w-3xl cursor-pointer hover:opacity-85 transition-opacity" title="Nhấp đúp để chỉnh sửa nhanh">
-                  ${UI.escapeHtml(course.description || 'Chưa có mô tả chi tiết cho môn học này. (Nhấp đúp hoặc bấm Sửa thông tin để cập nhật)')}
+                  ${UI.escapeHtml(UI.cleanCourseDescription(course.description) || 'Chưa có mô tả chi tiết cho môn học này. (Nhấp đúp hoặc bấm Sửa thông tin để cập nhật)')}
                 </div>
               </div>
 
@@ -5767,7 +5874,7 @@ class InstructorView {
                     rows="4"
                     class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#141414] text-xs sm:text-sm text-slate-800 dark:text-slate-100 leading-relaxed outline-none focus:border-primary resize-y"
                     placeholder="Mô tả chi tiết nội dung, mục tiêu học tập của khóa học..."
-                  >${UI.escapeHtml(course.description || '')}</textarea>
+                  >${UI.escapeHtml(UI.cleanCourseDescription(course.description || ''))}</textarea>
                 </div>
 
                 <div class="flex items-center justify-between pt-2">
@@ -7206,6 +7313,32 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
       minScoreVal = minScoreVal / 10;
     }
 
+    // Trailer State & Mode Resolution
+    let currentTrailerMode = 'upload';
+    window._uploadedTrailerAssetId = null;
+    let uploadedStreamUrl = '';
+
+    const initialAssetId = course.trailer_file_asset_id || null;
+    const rawTrUrl = (course.trailer_url || course.video_url || videoUrl || '').trim();
+    const isDirectUploaded = Boolean(initialAssetId || rawTrUrl.includes('/api/files/'));
+    const isYouTubeTrailer = !isDirectUploaded && Boolean(rawTrUrl && UI.parseYouTubeId(rawTrUrl));
+    let persistedUploadedTrailerAssetId = initialAssetId || null;
+
+    if (isDirectUploaded) {
+      currentTrailerMode = 'upload';
+      if (initialAssetId) {
+        window._uploadedTrailerAssetId = initialAssetId;
+        uploadedStreamUrl = `/api/files/${encodeURIComponent(initialAssetId)}/stream`;
+      } else if (rawTrUrl.includes('/api/files/')) {
+        uploadedStreamUrl = rawTrUrl;
+        const m = rawTrUrl.match(/\/api\/files\/([^\/?#]+)/);
+        if (m) window._uploadedTrailerAssetId = decodeURIComponent(m[1]);
+      }
+    } else if (isYouTubeTrailer || rawTrUrl) {
+      currentTrailerMode = 'link';
+      window._uploadedTrailerAssetId = null;
+    }
+
     const modalBodyHtml = `
       <div class="space-y-5 text-sans">
         <!-- Sub-tabs Navigation Bar -->
@@ -7266,14 +7399,114 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
               >${UI.escapeHtml(rawDesc)}</textarea>
             </div>
 
-            <!-- Video Trailer Section: YouTube URL on top, File Upload below -->
+            <!-- Video Trailer Section: Segmented Toggle (Upload vs YouTube/HLS) -->
             <div class="space-y-3 pt-2">
-              <div class="space-y-1.5">
+              <div class="flex items-center justify-between">
+                <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Video Trailer giới thiệu khóa học
+                </label>
+                <span class="text-[11px] text-slate-400">Chọn nguồn phát video hiển thị cho sinh viên</span>
+              </div>
+
+              <!-- Segmented Control for Trailer Mode -->
+              <div class="p-1 rounded-xl bg-slate-200/70 dark:bg-slate-800/80 border border-slate-300/60 dark:border-slate-700/60 inline-flex items-center gap-1 w-full sm:w-auto">
+                <button
+                  type="button"
+                  id="tab-btn-trailer-upload"
+                  class="trailer-mode-tab flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-bold transition-all bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+                  data-trailer-mode="upload"
+                >
+                  <span class="material-symbols-outlined text-[16px]">cloud_upload</span>
+                  <span>Tải video trực tiếp từ máy tính</span>
+                </button>
+                <button
+                  type="button"
+                  id="tab-btn-trailer-link"
+                  class="trailer-mode-tab flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                  data-trailer-mode="link"
+                >
+                  <span class="material-symbols-outlined text-[16px]">smart_display</span>
+                  <span>Link YouTube / HLS trực tuyến</span>
+                </button>
+              </div>
+
+              <!-- PANE 1: Tải video trực tiếp từ máy tính -->
+              <div id="trailer-pane-upload" class="space-y-3">
+                <!-- Dropzone -->
+                <div
+                  id="unified-video-dropzone"
+                  class="border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-400 rounded-xl p-5 text-center cursor-pointer transition-colors bg-white/60 dark:bg-slate-900/40 relative group"
+                >
+                  <input type="file" id="unified-video-file-input" accept="video/mp4,video/webm" class="hidden" />
+                  <div class="flex flex-col items-center justify-center gap-2">
+                    <div class="w-11 h-11 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <span class="material-symbols-outlined text-[24px]">cloud_upload</span>
+                    </div>
+                    <div>
+                      <p class="text-xs font-bold text-slate-800 dark:text-slate-200">
+                        Bấm để chọn file video hoặc kéo thả file vào đây
+                      </p>
+                      <p class="text-[11px] text-slate-400 mt-0.5">Dung lượng tối đa 100 MB • Định dạng MP4 / WebM • Quét an toàn fail-closed tự động</p>
+                    </div>
+                  </div>
+
+                  <div id="unified-video-upload-progress" class="hidden mt-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+                    <div class="flex items-center justify-between text-xs font-bold text-emerald-600 dark:text-emerald-400 mb-1.5">
+                      <span id="upload-progress-text">Đang tải video lên máy chủ...</span>
+                      <span id="upload-progress-percent">0%</span>
+                    </div>
+                    <div class="w-full bg-slate-200 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
+                      <div id="upload-progress-bar" class="bg-emerald-500 h-full w-0 transition-all duration-300"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Card thông tin tệp video đã tải/lưu -->
+                <div id="unified-uploaded-video-card" class="hidden p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-10 h-10 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                      <span class="material-symbols-outlined text-[22px]">video_file</span>
+                    </div>
+                    <div class="min-w-0">
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <span id="uploaded-video-name" class="text-xs font-bold text-slate-800 dark:text-slate-200 truncate max-w-[260px]">video_trailer.mp4</span>
+                        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 flex items-center gap-1 shrink-0">
+                          <span class="material-symbols-outlined text-[12px]">verified_user</span> Tệp nội bộ • Đã kiểm tra an toàn
+                        </span>
+                      </div>
+                      <div class="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
+                        <span id="uploaded-video-size">Đã lưu trên hệ thống</span>
+                        <span>•</span>
+                        <span>Sẵn sàng phát stream</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      id="btn-change-uploaded-video"
+                      class="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-medium transition-colors flex items-center gap-1 cursor-pointer"
+                    >
+                      <span class="material-symbols-outlined text-[15px]">sync</span>
+                      <span>Thay đổi video khác</span>
+                    </button>
+                    <button
+                      type="button"
+                      id="btn-remove-uploaded-video"
+                      class="px-3 py-1.5 rounded-lg border border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-medium transition-colors flex items-center gap-1 cursor-pointer"
+                    >
+                      <span class="material-symbols-outlined text-[15px]">delete</span>
+                      <span>Gỡ bỏ video</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- PANE 2: Link YouTube / HLS trực tuyến -->
+              <div id="trailer-pane-link" class="space-y-2 hidden">
                 <div class="flex items-center justify-between">
-                  <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                    Video Trailer trực tuyến (Link YouTube hoặc HLS stream)
-                  </label>
-                  <span class="text-[11px] text-slate-400">Hỗ trợ link youtube.com, youtu.be, embed hoặc link m3u8</span>
+                  <span class="text-[11px] text-slate-500 dark:text-slate-400">Hỗ trợ link youtube.com, youtu.be hoặc luồng trực tuyến</span>
+                  <span class="text-[10px] font-mono font-bold text-rose-600 dark:text-rose-400 px-1.5 py-0.5 rounded bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800">YouTube 16:9</span>
                 </div>
                 <div class="flex items-center gap-2">
                   <div class="relative flex-1">
@@ -7281,7 +7514,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
                     <input
                       type="url"
                       id="unified-trailer-url"
-                      value="${UI.escapeHtml(videoUrl)}"
+                      value="${UI.escapeHtml(isYouTubeTrailer ? rawTrUrl : '')}"
                       placeholder="VD: https://www.youtube.com/watch?v=dQw4w9WgXcQ hoặc https://youtu.be/..."
                       class="w-full pl-9 pr-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500 font-mono"
                     />
@@ -7297,49 +7530,16 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
                 </div>
               </div>
 
-              <!-- Upload File Video below -->
-              <div class="space-y-1.5">
-                <div class="flex items-center justify-between">
-                  <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                    Hoặc tải lên file Video Trailer từ máy tính
-                  </label>
-                  <span class="text-[11px] text-slate-400">Dung lượng tối đa 100 MB • Định dạng MP4 / WebM</span>
-                </div>
-                <div
-                  id="unified-video-dropzone"
-                  class="border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-400 rounded-xl p-4 text-center cursor-pointer transition-colors bg-white/50 dark:bg-slate-900/40 relative group"
-                >
-                  <input type="file" id="unified-video-file-input" accept="video/mp4,video/webm" class="hidden" />
-                  <div class="flex flex-col items-center justify-center gap-1.5">
-                    <div class="w-10 h-10 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center group-hover:scale-110 transition-transform">
-                      <span class="material-symbols-outlined text-[20px]">cloud_upload</span>
-                    </div>
-                    <p class="text-xs font-bold text-slate-700 dark:text-slate-200">
-                      Bấm để chọn file video hoặc kéo thả file vào đây
-                    </p>
-                    <p class="text-[11px] text-slate-400">Hệ thống quét an toàn fail-closed tự động</p>
-                  </div>
-                  <div id="unified-video-upload-progress" class="hidden mt-2 pt-2 border-t border-slate-200 dark:border-slate-800">
-                    <div class="flex items-center justify-between text-xs font-bold text-emerald-500 mb-1">
-                      <span id="upload-progress-text">Đang tải video lên máy chủ...</span>
-                      <span id="upload-progress-percent">0%</span>
-                    </div>
-                    <div class="w-full bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden">
-                      <div id="upload-progress-bar" class="bg-emerald-500 h-full w-0 transition-all duration-300"></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
               <!-- Preview Box (Inline preview container) -->
-              <div id="unified-trailer-preview-box" class="${videoUrl ? '' : 'hidden'} p-3 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2">
+              <div id="unified-trailer-preview-box" class="hidden p-3.5 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2">
                 <div class="flex items-center justify-between text-xs text-slate-700 dark:text-slate-300">
                   <span class="font-bold flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
                     <span class="material-symbols-outlined text-[16px]">visibility</span>
                     <span>Xem trước Trailer</span>
                   </span>
-                  <button type="button" id="btn-close-trailer-preview" class="text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white text-xs cursor-pointer">
-                    Đóng preview
+                  <button type="button" id="btn-close-trailer-preview" class="text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white text-xs cursor-pointer flex items-center gap-1">
+                    <span class="material-symbols-outlined text-[14px]">close</span>
+                    <span>Đóng preview</span>
                   </button>
                 </div>
                 <div id="unified-trailer-preview-player" class="aspect-video w-full rounded-lg overflow-hidden bg-black flex items-center justify-center">
@@ -7884,9 +8084,64 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
       }
     };
 
+    // Trailer Tab Switching & Preview Wiring
+    const tabUploadBtn = document.getElementById('tab-btn-trailer-upload');
+    const tabLinkBtn = document.getElementById('tab-btn-trailer-link');
+    const paneUpload = document.getElementById('trailer-pane-upload');
+    const paneLink = document.getElementById('trailer-pane-link');
+    const trailerInput = document.getElementById('unified-trailer-url');
+    const uploadedCard = document.getElementById('unified-uploaded-video-card');
+    const uploadedName = document.getElementById('uploaded-video-name');
+    const uploadedSize = document.getElementById('uploaded-video-size');
+    const changeVideoBtn = document.getElementById('btn-change-uploaded-video');
+    const removeVideoBtn = document.getElementById('btn-remove-uploaded-video');
+
+    const setTrailerTab = (mode) => {
+      currentTrailerMode = mode;
+      if (mode === 'upload') {
+        tabUploadBtn?.classList.remove('font-medium', 'text-slate-600', 'dark:text-slate-400');
+        tabUploadBtn?.classList.add('bg-white', 'dark:bg-slate-900', 'text-emerald-600', 'dark:text-emerald-400', 'shadow-xs', 'font-bold');
+        tabLinkBtn?.classList.remove('bg-white', 'dark:bg-slate-900', 'text-emerald-600', 'dark:text-emerald-400', 'shadow-xs', 'font-bold');
+        tabLinkBtn?.classList.add('font-medium', 'text-slate-600', 'dark:text-slate-400');
+        paneUpload?.classList.remove('hidden');
+        paneLink?.classList.add('hidden');
+        if (persistedUploadedTrailerAssetId) {
+          window._uploadedTrailerAssetId = persistedUploadedTrailerAssetId;
+        }
+
+        if (uploadedStreamUrl) {
+          mountTrailerPreview(uploadedStreamUrl);
+        } else {
+          const previewBox = document.getElementById('unified-trailer-preview-box');
+          const playerContainer = document.getElementById('unified-trailer-preview-player');
+          if (previewBox) previewBox.classList.add('hidden');
+          if (playerContainer) playerContainer.innerHTML = '';
+        }
+      } else {
+        tabLinkBtn?.classList.remove('font-medium', 'text-slate-600', 'dark:text-slate-400');
+        tabLinkBtn?.classList.add('bg-white', 'dark:bg-slate-900', 'text-emerald-600', 'dark:text-emerald-400', 'shadow-xs', 'font-bold');
+        tabUploadBtn?.classList.remove('bg-white', 'dark:bg-slate-900', 'text-emerald-600', 'dark:text-emerald-400', 'shadow-xs', 'font-bold');
+        tabUploadBtn?.classList.add('font-medium', 'text-slate-600', 'dark:text-slate-400');
+        paneLink?.classList.remove('hidden');
+        paneUpload?.classList.add('hidden');
+
+        const trUrl = trailerInput?.value.trim() || '';
+        if (trUrl) {
+          mountTrailerPreview(trUrl);
+        } else {
+          const previewBox = document.getElementById('unified-trailer-preview-box');
+          const playerContainer = document.getElementById('unified-trailer-preview-player');
+          if (previewBox) previewBox.classList.add('hidden');
+          if (playerContainer) playerContainer.innerHTML = '';
+        }
+      }
+    };
+
+    if (tabUploadBtn) tabUploadBtn.onclick = () => setTrailerTab('upload');
+    if (tabLinkBtn) tabLinkBtn.onclick = () => setTrailerTab('link');
+
     // Wire Test Video Button
     const testVideoBtn = document.getElementById('btn-test-trailer-video');
-    const trailerInput = document.getElementById('unified-trailer-url');
     if (testVideoBtn && trailerInput) {
       testVideoBtn.onclick = () => {
         const url = trailerInput.value.trim();
@@ -7895,6 +8150,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
           return;
         }
         mountTrailerPreview(url);
+        window._uploadedTrailerAssetId = null;
       };
     }
 
@@ -7940,17 +8196,30 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
         try {
           const res = await ApiClient.uploadCourseFile(cId, file, file.name, 'RESOURCE');
           const uploadedAsset = res?.asset || res?.data || res;
-          const downloadUrl = uploadedAsset?.download_url || (uploadedAsset?.public_id ? `/student/courses/${cId}/files/${uploadedAsset.public_id}/download` : '');
+          const assetPubId = uploadedAsset?.asset_id || uploadedAsset?.public_id || (uploadedAsset?.id ? String(uploadedAsset.id) : '');
+          const streamUrl = assetPubId ? `/api/files/${encodeURIComponent(assetPubId)}/stream` : (uploadedAsset?.download_url || '');
 
           if (progressBar) progressBar.style.width = '100%';
           if (progressPercent) progressPercent.textContent = '100%';
           if (progressText) progressText.textContent = 'Tải lên hoàn tất & Đã sẵn sàng!';
 
-          if (downloadUrl && trailerInput) {
-            trailerInput.value = downloadUrl;
-            UI.showToast('Tải video trailer thành công! Đã tự động cập nhật đường dẫn.', 'success');
-            mountTrailerPreview(downloadUrl);
+          window._uploadedTrailerAssetId = assetPubId;
+          persistedUploadedTrailerAssetId = assetPubId;
+          uploadedStreamUrl = streamUrl;
+
+          // Smooth UX: allow user to see 100% completion state before transitioning to file card
+          await new Promise(r => setTimeout(r, 700));
+
+          // Hiển thị Card thông tin tệp video đã tải
+          if (uploadedCard) {
+            uploadedCard.classList.remove('hidden');
+            if (uploadedName) uploadedName.textContent = file.name;
+            if (uploadedSize) uploadedSize.textContent = `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
           }
+          if (dropzone) dropzone.classList.add('hidden');
+
+          UI.showToast('Tải video trailer thành công! Đã tự động cập nhật và sẵn sàng phát.', 'success');
+          mountTrailerPreview(streamUrl);
         } catch (err) {
           UI.showToast(err.message || 'Lỗi khi tải video lên máy chủ.', 'error');
           if (progressText) progressText.textContent = 'Lỗi tải lên!';
@@ -7977,6 +8246,49 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
       };
     }
 
+    if (changeVideoBtn && fileInput) {
+      changeVideoBtn.onclick = () => {
+        fileInput.click();
+      };
+    }
+
+    if (removeVideoBtn) {
+      removeVideoBtn.onclick = () => {
+        window._uploadedTrailerAssetId = null;
+        persistedUploadedTrailerAssetId = null;
+        uploadedStreamUrl = '';
+        if (uploadedCard) uploadedCard.classList.add('hidden');
+        if (dropzone) dropzone.classList.remove('hidden');
+        if (fileInput) fileInput.value = '';
+        const previewBox = document.getElementById('unified-trailer-preview-box');
+        const playerContainer = document.getElementById('unified-trailer-preview-player');
+        if (previewBox) previewBox.classList.add('hidden');
+        if (playerContainer) playerContainer.innerHTML = '';
+        UI.showToast('Đã gỡ bỏ video trailer tải lên.', 'info');
+      };
+    }
+
+    // Restore initial trailer state on modal open
+    if (isDirectUploaded) {
+      setTrailerTab('upload');
+      if (uploadedCard) {
+        uploadedCard.classList.remove('hidden');
+        if (uploadedName) uploadedName.textContent = course.trailer_file_name || 'video_trailer_khoa_hoc.mp4';
+        if (uploadedSize) uploadedSize.textContent = course.trailer_file_size || 'Đã lưu trên hệ thống';
+      }
+      if (dropzone) dropzone.classList.add('hidden');
+      if (uploadedStreamUrl) {
+        mountTrailerPreview(uploadedStreamUrl);
+      }
+    } else if (isYouTubeTrailer || rawTrUrl) {
+      setTrailerTab('link');
+      if (rawTrUrl) {
+        mountTrailerPreview(rawTrUrl);
+      }
+    } else {
+      setTrailerTab('upload');
+    }
+
     // Wire Unified Save Button
     const saveBtn = document.getElementById('btn-save-unified-intro');
     if (saveBtn) {
@@ -7984,7 +8296,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
         const titleVal = (document.getElementById('unified-course-title')?.value || '').trim() || course.title;
         const catVal = (document.getElementById('unified-course-category')?.value || '').trim() || course.category;
         const descVal = (document.getElementById('unified-course-description')?.value || '').trim();
-        const trUrlVal = (document.getElementById('unified-trailer-url')?.value || '').trim();
+        const ytUrlVal = (document.getElementById('unified-trailer-url')?.value || '').trim();
         const cEmail = (document.getElementById('unified-contact-email')?.value || '').trim();
         const cPhone = (document.getElementById('unified-contact-phone')?.value || '').trim();
         const cGroup = (document.getElementById('unified-contact-group')?.value || '').trim();
@@ -8034,10 +8346,27 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
             minimum_progress_percent: Number.isNaN(minProg) ? 80 : minProg,
             minimum_grade_score: Number.isNaN(minSc) ? 5 : minSc
           };
-          const metadata = { title: titleVal, category: catVal, description: descVal,
-            trailer_url: trUrlVal, video_url: trUrlVal, contact_info: contactPayload };
+
+          const metadata = {
+            title: titleVal,
+            category: catVal,
+            description: descVal,
+            contact_info: contactPayload
+          };
+
+          if (currentTrailerMode === 'upload') {
+            metadata.trailer_file_asset_id = window._uploadedTrailerAssetId || persistedUploadedTrailerAssetId || (isDirectUploaded ? (course.trailer_file_asset_id || null) : null);
+            metadata.trailer_url = '';
+            metadata.video_url = '';
+          } else {
+            metadata.trailer_url = ytUrlVal;
+            metadata.video_url = ytUrlVal;
+            metadata.trailer_file_asset_id = null;
+          }
+
           const result = await ApiClient.saveCourseAcademicSettings(cId, {
-            course_metadata: metadata, learning_objectives: slos,
+            course_metadata: metadata,
+            learning_objectives: slos,
             completion_rules: rulesPayload,
             prerequisites: InstructorView.getPrerequisiteEdits(initialPrerequisites, selectedPrerequisites)
           });
@@ -8858,14 +9187,13 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
                       `}
                     </td>
                     <td class="px-5 py-3.5 text-right">
-                      <button
-                        type="button"
+                      <a
+                        href="#/instructor/appeals/grade-editor?attempt_id=${encodeURIComponent(att.attempt_id)}"
                         class="px-3 py-1.5 rounded-xl bg-primary-subtle text-primary hover:bg-primary hover:text-white text-xs font-bold transition-colors inline-flex items-center gap-1 cursor-pointer"
-                        onclick="InstructorView.openAttemptDetailModal('${att.attempt_id}')"
                       >
                         <span class="material-symbols-outlined text-[14px]">visibility</span>
                         <span>Đối chiếu bài làm</span>
-                      </button>
+                      </a>
                     </td>
                   </tr>
                 `;
@@ -8908,560 +9236,9 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
     }
   }
 
-  static async openAttemptDetailModal(attemptId, accessReason = '') {
-    const modalId = 'modal-attempt-detail';
-    const previousFocus = document.activeElement;
-    let modal = document.getElementById(modalId);
-    if (!modal) {
-      modal = document.createElement('div');
-      modal.id = modalId;
-      modal.setAttribute('role', 'dialog');
-      modal.setAttribute('aria-modal', 'true');
-      modal.setAttribute('aria-labelledby', 'modal-att-title');
-      modal.className = 'fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in';
-      document.body.appendChild(modal);
-    }
-
-    modal.innerHTML = `
-      <div class="bg-white dark:bg-slate-900 rounded-2xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden" tabindex="-1">
-        <div class="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-          <div>
-            <h3 id="modal-att-title" class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <span class="material-symbols-outlined text-primary">fact_check</span>
-              Chi tiết câu trả lời & Đối chiếu đáp án
-            </h3>
-            <p class="text-xs text-slate-500 mt-0.5" id="modal-att-student">Đang nạp bài làm...</p>
-          </div>
-          <button type="button" aria-label="Đóng chi tiết bài làm" class="attempt-detail-close w-8 h-8 rounded-full flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
-            <span class="material-symbols-outlined text-[20px]">close</span>
-          </button>
-        </div>
-        <div class="p-6 overflow-y-auto space-y-6" id="modal-att-content">
-          <div class="py-12 text-center text-slate-400">
-            <span class="inline-block animate-spin text-2xl mb-2">⏳</span>
-            <p class="text-xs">Đang tải từng câu hỏi của bài thi...</p>
-          </div>
-        </div>
-      </div>
-    `;
-
-    const closeModal = () => {
-      document.removeEventListener('keydown', onKeyDown);
-      modal.remove();
-      if (previousFocus && typeof previousFocus.focus === 'function') previousFocus.focus();
-    };
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        closeModal();
-        return;
-      }
-      if (event.key !== 'Tab') return;
-      const focusable = Array.from(modal.querySelectorAll('button, a, input, select, textarea, [tabindex]:not([tabindex="-1"])'));
-      if (!focusable.length) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener('keydown', onKeyDown);
-    modal.querySelector('.attempt-detail-close')?.addEventListener('click', closeModal);
-    modal.addEventListener('click', event => {
-      if (event.target === modal) closeModal();
-    });
-    modal.querySelector('[tabindex="-1"]')?.focus();
-
-    try {
-      const [data, appealRes, focusRes] = await Promise.all([
-        ApiClient.getInstructorAttemptResult(attemptId, accessReason),
-        ApiClient.getAttemptAppeal(attemptId).catch(() => ({ appeal: null })),
-        ApiClient.getInstructorAttemptFocusEvents(attemptId).catch(() => null)
-      ]);
-
-      const appeal = appealRes?.appeal;
-      const studentEl = document.getElementById('modal-att-student');
-      if (studentEl) {
-        studentEl.textContent = `Thí sinh: ${data.student_name || 'Học viên'} • Điểm: ${data.total_awarded_points ?? 0} / ${data.total_possible_points ?? 0} (${data.percent_score ?? 0}%)`;
-      }
-
-      const contentEl = document.getElementById('modal-att-content');
-      if (!contentEl) return;
-
-      let appealBannerHtml = '';
-      if (appeal) {
-        const isPending = appeal.status === 'PENDING';
-        const isApproved = appeal.status === 'APPROVED';
-        const borderCls = isApproved ? 'border-emerald-300 bg-emerald-50/60 dark:bg-emerald-950/30' : isPending ? 'border-amber-300 bg-amber-50/60 dark:bg-amber-950/30' : 'border-rose-300 bg-rose-50/60 dark:bg-rose-950/30';
-        appealBannerHtml = `
-          <div class="p-4 rounded-xl border ${borderCls} space-y-3 mb-6">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <span class="material-symbols-outlined ${isApproved ? 'text-emerald-600' : isPending ? 'text-amber-600' : 'text-rose-600'}">gavel</span>
-                <h4 class="font-bold text-xs uppercase tracking-wider text-slate-800 dark:text-slate-200">Đơn yêu cầu phúc khảo bài thi</h4>
-              </div>
-              <span class="px-2 py-0.5 rounded text-xs font-bold ${isApproved ? 'bg-emerald-100 text-emerald-800' : isPending ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800'}">
-                ${isApproved ? 'ĐÃ DUYỆT' : isPending ? 'CHỜ XÉT DUYỆT' : 'ĐÃ BÁC BỎ'}
-              </span>
-            </div>
-            <div class="space-y-1 text-xs text-slate-700 dark:text-slate-300">
-              <div><strong>Lý do:</strong> ${UI.escapeHtml(appeal.reason || '')}</div>
-              <div><strong>Giải trình thí sinh:</strong> <span class="italic">${UI.escapeHtml(appeal.note || 'Không có')}</span></div>
-              ${appeal.evidence_url ? `
-                <div class="mt-2 pt-2 border-t border-slate-200 dark:border-slate-700 flex items-center gap-2 not-italic">
-                  <span class="material-symbols-outlined text-amber-600 text-sm">attachment</span>
-                  <span class="text-xs font-semibold text-slate-700 dark:text-slate-300">Minh chứng đính kèm:</span>
-                  <a href="${UI.escapeHtml(appeal.evidence_url)}" target="_blank" rel="noopener noreferrer" class="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1">
-                    <span>${UI.escapeHtml(appeal.evidence_filename || 'Tệp minh chứng')}</span>
-                    <span class="material-symbols-outlined text-[14px]">open_in_new</span>
-                  </a>
-                </div>
-              ` : ''}
-              <div class="text-[11px] text-slate-400">Gửi lúc: ${UI.formatDateTime(appeal.created_at)}</div>
-              ${appeal.reviewer_note ? `
-                <div class="mt-2 pt-2 border-t border-slate-200 dark:border-slate-700 font-medium">
-                  <strong>Kết luận:</strong> ${UI.escapeHtml(appeal.reviewer_note)}
-                  ${appeal.score_delta !== undefined && appeal.score_delta !== null ? ` (Điều chỉnh: ${appeal.score_delta > 0 ? '+' : ''}${appeal.score_delta}đ)` : ''}
-                </div>
-              ` : ''}
-            </div>
-
-            ${isPending ? `
-              <div class="pt-2 flex items-center justify-end gap-2 border-t border-amber-200 dark:border-amber-800">
-                <button type="button" id="reject-appeal-btn" class="px-3 py-1.5 rounded-lg border border-rose-300 text-rose-700 dark:text-rose-300 text-xs font-bold hover:bg-rose-50 transition">
-                  Bác bỏ đơn
-                </button>
-                <button type="button" id="approve-appeal-btn" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1 shadow-sm">
-                  <span class="material-symbols-outlined text-[15px]">edit_note</span>
-                  <span>Duyệt & Điều chỉnh điểm</span>
-                </button>
-              </div>
-            ` : ''}
-
-          </div>
-        `;
-      }
-
-      const questions = data.questions || [];
-      const focusEvents = focusRes?.events || [];
-      const knownSeconds = focusEvents.reduce((sum, event) => sum + (event.duration_seconds || 0), 0);
-      const focusBannerHtml = focusRes === null
-        ? '<div class="rounded-2xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-4 text-xs font-semibold text-amber-800 dark:text-amber-200 mb-6 flex items-center gap-2"><span class="material-symbols-outlined text-base">warning</span><span>Không tải được dữ liệu giám sát phòng thi. Vui lòng thử lại.</span></div>'
-        : `<section class="rounded-2xl border ${focusEvents.length > 0 ? 'border-rose-300 dark:border-rose-900/60 bg-rose-50/50 dark:bg-rose-950/20' : 'border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/30 dark:bg-emerald-950/20'} p-5 text-xs mb-6 shadow-xs space-y-3">
-            <div class="flex items-center justify-between flex-wrap gap-2">
-              <h4 class="font-extrabold text-sm flex items-center gap-2 ${focusEvents.length > 0 ? 'text-rose-700 dark:text-rose-300' : 'text-emerald-700 dark:text-emerald-300'}">
-                <span class="material-symbols-outlined text-[18px]">${focusEvents.length > 0 ? 'gavel' : 'verified_user'}</span>
-                <span>Kết quả giám sát: ${focusEvents.length} lần vi phạm</span>
-              </h4>
-              <span class="px-2.5 py-0.5 rounded-full font-bold text-[11px] ${focusEvents.length > 0 ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-200 border border-rose-300 dark:border-rose-700' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 border border-emerald-300'}">
-                Tổng thời gian vi phạm: ${knownSeconds} giây
-              </span>
-            </div>
-            ${focusEvents.length ? `
-              <ul class="space-y-2 pt-2 border-t border-rose-200/80 dark:border-rose-900/40">
-                ${focusEvents.map(event => {
-                  const errorLabelMap = {
-                    FULLSCREEN_EXIT: 'Thoát toàn màn hình',
-                    SCREENSHOT_ATTEMPT: 'Chụp màn hình',
-                    TAB_HIDDEN: 'Rời khỏi tab thi',
-                    WINDOW_BLUR: 'Mất tiêu điểm / Chuyển cửa sổ'
-                  };
-                  const errorIconMap = {
-                    FULLSCREEN_EXIT: 'fullscreen_exit',
-                    SCREENSHOT_ATTEMPT: 'screenshot',
-                    TAB_HIDDEN: 'tab',
-                    WINDOW_BLUR: 'visibility_off'
-                  };
-                  const label = errorLabelMap[event.event_type] || event.event_type;
-                  const icon = errorIconMap[event.event_type] || 'warning';
-                  const timeFormatted = event.started_at ? new Date(event.started_at).toLocaleTimeString('vi-VN') : '';
-                  const durationText = event.duration_seconds === null ? 'Chưa xác định thời lượng' : `${event.duration_seconds} giây`;
-                  return `
-                    <li class="p-2.5 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-rose-200 dark:border-rose-900/50 flex flex-wrap items-center justify-between gap-2">
-                      <div class="flex items-center gap-2">
-                        <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
-                          <span class="material-symbols-outlined text-[14px]">${icon}</span>
-                          <span>${UI.escapeHtml(label)}</span>
-                        </span>
-                        ${timeFormatted ? `<span class="text-[11px] text-slate-500 font-mono">Lúc ${timeFormatted}</span>` : ''}
-                      </div>
-                      <div class="text-xs font-mono font-bold text-rose-600 dark:text-rose-400">
-                        Thời gian vi phạm: ${durationText}
-                      </div>
-                    </li>
-                  `;
-                }).join('')}
-              </ul>
-            ` : '<p class="text-emerald-700 dark:text-emerald-300 font-medium text-xs">Thí sinh làm bài nghiêm túc, không ghi nhận hành vi vi phạm nào.</p>'}
-          </section>`;
-      if (questions.length === 0) {
-        contentEl.innerHTML = appealBannerHtml + focusBannerHtml + `<div class="text-center py-8 text-slate-400 text-xs">Không có dữ liệu câu hỏi.</div>`;
-      } else {
-        contentEl.innerHTML = appealBannerHtml + focusBannerHtml + questions.map((q, idx) => {
-        const isEssay = q.question_type === 'ESSAY';
-        const canGradeEssay = isEssay && ['PENDING', 'MANUAL_GRADED'].includes(q.grading_status);
-        const isCorr = q.is_correct;
-        const cardTone = canGradeEssay && q.grading_status === 'PENDING'
-          ? 'border-amber-200 dark:border-amber-900/50 bg-amber-50/20'
-          : isCorr
-            ? 'border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/20'
-            : 'border-rose-200 dark:border-rose-900/50 bg-rose-50/20';
-        const choices = q.choices || [];
-        return `
-          <div class="p-4 rounded-xl border ${cardTone} space-y-3">
-            <div class="flex items-start justify-between gap-3">
-              <div class="flex items-center gap-2">
-                <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${isCorr ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300'}">
-                  ${idx + 1}
-                </span>
-                <span class="text-xs font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                  ${UI.escapeHtml(q.question_type || 'QUESTION')}
-                </span>
-              </div>
-              <div class="text-xs font-bold font-mono ${isCorr ? 'text-emerald-600' : 'text-rose-600'}">
-                ${q.awarded_points ?? 0} / ${q.points_assigned ?? 0} điểm
-              </div>
-            </div>
-
-            <div class="text-sm font-semibold text-slate-900 dark:text-white pl-8">
-              ${UI.escapeHtml(q.stem || q.content || '')}
-            </div>
-
-            <!-- Choices list or student answer -->
-            <div class="space-y-1.5 pl-8 text-xs">
-              ${choices.length > 0 ? choices.map(c => {
-                const isSelected = c.is_selected;
-                const isCorrectChoice = c.is_correct;
-                let choiceCls = 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300';
-                if (isSelected && isCorrectChoice) {
-                  choiceCls = 'bg-emerald-100 dark:bg-emerald-950/60 border-emerald-300 text-emerald-900 dark:text-emerald-200 font-bold';
-                } else if (isSelected && !isCorrectChoice) {
-                  choiceCls = 'bg-rose-100 dark:bg-rose-950/60 border-rose-300 text-rose-900 dark:text-rose-200 font-bold';
-                } else if (!isSelected && isCorrectChoice) {
-                  choiceCls = 'bg-emerald-50 dark:bg-emerald-950/30 border-dashed border-emerald-400 text-emerald-800 dark:text-emerald-300';
-                }
-
-                return `
-                  <div class="p-2.5 rounded-lg border ${choiceCls} flex items-center justify-between gap-2">
-                    <div class="flex items-center gap-2">
-                      <span class="material-symbols-outlined text-[16px] ${isSelected ? (isCorrectChoice ? 'text-emerald-600' : 'text-rose-600') : 'text-slate-400'}">
-                        ${isSelected ? (isCorrectChoice ? 'check_circle' : 'cancel') : 'radio_button_unchecked'}
-                      </span>
-                      <span>${UI.escapeHtml(UI.cleanChoiceText(c.content || ''))}</span>
-                    </div>
-                    <div class="flex items-center gap-1.5 shrink-0 text-[11px]">
-                      ${isSelected ? '<span class="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-[10px]">Đã chọn</span>' : ''}
-                      ${isCorrectChoice ? '<span class="px-1.5 py-0.5 rounded bg-emerald-200 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 text-[10px] font-bold">Đáp án đúng</span>' : ''}
-                    </div>
-                  </div>
-                `;
-              }).join('') : (
-                q.student_answer_text ? `
-                  <div class="p-3 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                    <span class="text-[11px] text-slate-500 font-semibold block mb-1">Câu trả lời của thí sinh:</span>
-                    <span class="font-mono text-slate-900 dark:text-white">${UI.escapeHtml(UI.cleanChoiceText(q.student_answer_text))}</span>
-                  </div>
-                ` : ''
-              )}
-            </div>
-
-            ${q.explanation ? `
-              <div class="mt-2 pl-8 pt-2 border-t border-slate-200 dark:border-slate-800/60 text-xs text-slate-500 dark:text-slate-400 flex items-start gap-1.5">
-                <span class="material-symbols-outlined text-[15px] text-amber-500 shrink-0 mt-0.5">lightbulb</span>
-                <span><em>Giải thích:</em> ${UI.escapeHtml(q.explanation)}</span>
-              </div>
-            ` : ''}
-
-            ${canGradeEssay ? `
-              <div class="pl-8 pt-3 border-t border-amber-200 dark:border-amber-900/50 space-y-3" data-essay-grading="${UI.escapeHtml(q.attempt_question_id)}">
-                <div class="flex items-center gap-2 text-xs font-bold text-amber-800 dark:text-amber-200">
-                  <span class="material-symbols-outlined text-[16px]">edit_note</span>
-                  <span>${q.grading_status === 'PENDING' ? 'Lưu điểm tự luận' : 'Cập nhật điểm tự luận'}</span>
-                </div>
-                <div class="space-y-1.5">
-                  <label class="block text-[11px] font-bold text-slate-700 dark:text-slate-300" for="essay-score-${UI.escapeHtml(q.attempt_question_id)}">
-                    Điểm tự luận (0–${q.points_assigned})
-                  </label>
-                  <input
-                    id="essay-score-${UI.escapeHtml(q.attempt_question_id)}"
-                    data-essay-score
-                    type="number"
-                    min="0"
-                    max="${q.points_assigned}"
-                    step="0.25"
-                    value="${q.awarded_points ?? 0}"
-                    class="c-input w-full"
-                    aria-describedby="essay-reason-${UI.escapeHtml(q.attempt_question_id)}"
-                  />
-                </div>
-                <div class="space-y-1.5">
-                  <label class="block text-[11px] font-bold text-slate-700 dark:text-slate-300" for="essay-reason-${UI.escapeHtml(q.attempt_question_id)}">
-                    Căn cứ chấm <span class="text-rose-500">(Bắt buộc)</span>
-                  </label>
-                  <textarea
-                    id="essay-reason-${UI.escapeHtml(q.attempt_question_id)}"
-                    data-essay-reason
-                    rows="2"
-                    class="c-input w-full resize-y"
-                    placeholder="Nêu ngắn gọn căn cứ cho số điểm này"
-                  >${UI.escapeHtml(q.feedback || '')}</textarea>
-                </div>
-                <div class="flex justify-end">
-                  <button
-                    type="button"
-                    data-essay-grade
-                    data-attempt-question-id="${UI.escapeHtml(q.attempt_question_id)}"
-                    data-max-points="${q.points_assigned}"
-                    data-row-version="${UI.escapeHtml(q.row_version || '')}"
-                    class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-colors"
-                  >
-                    Lưu điểm tự luận
-                  </button>
-                </div>
-              </div>
-            ` : ''}
-          </div>
-        `;
-      }).join('');
-      }
-
-      contentEl.querySelectorAll('[data-essay-grade]').forEach(button => {
-        button.addEventListener('click', async () => {
-          const panel = button.closest('[data-essay-grading]');
-          const scoreInput = panel?.querySelector('[data-essay-score]');
-          const reasonInput = panel?.querySelector('[data-essay-reason]');
-          const score = Number(scoreInput?.value);
-          const maxPoints = Number(button.dataset.maxPoints);
-          const reason = reasonInput?.value.trim() || '';
-          if (!Number.isFinite(score) || score < 0 || score > maxPoints) {
-            UI.showToast(`Điểm phải nằm trong khoảng 0 đến ${maxPoints}.`, 'warning');
-            scoreInput?.focus();
-            return;
-          }
-          if (!reason) {
-            UI.showToast('Vui lòng nhập căn cứ chấm trước khi lưu.', 'warning');
-            reasonInput?.focus();
-            return;
-          }
-
-          button.disabled = true;
-          try {
-            await ApiClient.gradeInstructorAttemptQuestion(
-              attemptId,
-              button.dataset.attemptQuestionId,
-              score,
-              reason,
-              button.dataset.rowVersion || null,
-            );
-            UI.showToast('Đã lưu điểm tự luận và cập nhật kết quả.', 'success');
-            closeModal();
-            await InstructorView.openAttemptDetailModal(attemptId, accessReason);
-          } catch (error) {
-            button.disabled = false;
-            UI.showToast(error.message || 'Không thể lưu điểm tự luận.', 'error');
-          }
-        });
-      });
-
-      // Event handlers for appeal review
-      const approveBtn = document.getElementById('approve-appeal-btn');
-      if (approveBtn) {
-        approveBtn.onclick = () => {
-          UI.openModal({
-            title: `
-              <span class="material-symbols-outlined text-emerald-600 text-[20px]">verified</span>
-              <span>Duyệt Phúc Khảo & Điều Chỉnh Điểm Số</span>
-            `,
-            bodyHtml: `
-              <div class="space-y-3.5 text-xs text-slate-700 dark:text-slate-300">
-                <div class="p-3 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200 space-y-1">
-                  <div class="font-bold flex items-center gap-1">
-                    <span class="material-symbols-outlined text-[16px]">info</span>
-                    <span>Cập nhật điểm:</span>
-                  </div>
-                  <p class="text-[11px] leading-relaxed">
-                    Hệ thống sẽ tính lại kết quả học tập và lưu lịch sử thay đổi điểm.
-                  </p>
-                </div>
-
-                <div class="space-y-1">
-                  <label class="block font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider text-[11px]">
-                    Điểm số cộng thêm (Score Delta) <span class="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    step="0.25"
-                    id="appeal-delta-input"
-                    value="1.0"
-                    placeholder="VD: 1.0 (hoặc -0.5 nếu trừ điểm)"
-                    class="c-input"
-                  />
-                </div>
-
-                <div class="space-y-1">
-                  <label class="block font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider text-[11px]">
-                    Ghi chú kết luận & Căn cứ phê duyệt <span class="text-rose-500">*</span>
-                  </label>
-                  <textarea
-                    id="appeal-reviewer-note"
-                    rows="3"
-                    class="c-input resize-none"
-                    placeholder="VD: Chấp thuận phúc khảo câu 3 do lỗi chính tả trong đề gốc, cộng thêm 1.0 điểm..."
-                  ></textarea>
-                </div>
-              </div>
-            `,
-            footerHtml: `
-              <div class="flex items-center justify-end gap-2 w-full">
-                <button type="button" class="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-semibold hover:bg-slate-100" onclick="UI.closeModal()">
-                  Hủy
-                </button>
-                <button type="button" id="confirm-approve-appeal-btn" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
-                  <span class="material-symbols-outlined text-[16px]">save</span>
-                  <span>Lưu & Cập nhật điểm</span>
-                </button>
-              </div>
-            `
-          });
-
-          const confirmApproveBtn = document.getElementById('confirm-approve-appeal-btn');
-          if (confirmApproveBtn) {
-            confirmApproveBtn.onclick = async () => {
-              const deltaVal = parseFloat(document.getElementById('appeal-delta-input')?.value || '0');
-              const noteVal = (document.getElementById('appeal-reviewer-note')?.value || '').trim();
-              if (!noteVal) {
-                UI.showToast('Vui lòng nhập căn cứ kết luận của Giảng viên.', 'warning');
-                return;
-              }
-
-              confirmApproveBtn.disabled = true;
-              confirmApproveBtn.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> Đang lưu...';
-
-              try {
-                await ApiClient.reviewAttemptAppeal(attemptId, {
-                  decision: 'APPROVED',
-                  score_delta: deltaVal,
-                  reviewer_note: noteVal
-                });
-                UI.closeModal();
-                UI.showToast('Đã phê duyệt phúc khảo và cập nhật điểm thành công.', 'success');
-                InstructorView.openAttemptDetailModal(attemptId);
-              } catch (err) {
-                UI.showToast(err.message || 'Lỗi cập nhật phúc khảo.', 'error');
-                confirmApproveBtn.disabled = false;
-                confirmApproveBtn.innerHTML = '<span class="material-symbols-outlined text-[16px]">save</span><span>Lưu & Cập nhật điểm</span>';
-              }
-            };
-          }
-        };
-      }
-
-      const rejectBtn = document.getElementById('reject-appeal-btn');
-      if (rejectBtn) {
-        rejectBtn.onclick = () => {
-          UI.openModal({
-            title: `
-              <span class="material-symbols-outlined text-rose-600 text-[20px]">cancel</span>
-              <span>Bác Bỏ Đơn Yêu Cầu Phúc Khảo</span>
-            `,
-            bodyHtml: `
-              <div class="space-y-3.5 text-xs text-slate-700 dark:text-slate-300">
-                <p class="text-slate-600 dark:text-slate-400">
-                  Vui lòng cung cấp lý do bác bỏ để giải trình rõ ràng cho thí sinh về kết quả chấm điểm ban đầu.
-                </p>
-
-                <div class="space-y-1">
-                  <label class="block font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider text-[11px]">
-                    Lý do bác bỏ đơn <span class="text-rose-500">*</span>
-                  </label>
-                  <textarea
-                    id="reject-appeal-note"
-                    rows="3"
-                    class="c-input resize-none"
-                    placeholder="VD: Sau khi đối chiếu đáp án, câu trả lời của thí sinh chưa thỏa mãn điều kiện theo đề bài..."
-                  ></textarea>
-                </div>
-              </div>
-            `,
-            footerHtml: `
-              <div class="flex items-center justify-end gap-2 w-full">
-                <button type="button" class="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-semibold hover:bg-slate-100" onclick="UI.closeModal()">
-                  Hủy
-                </button>
-                <button type="button" id="confirm-reject-appeal-btn" class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
-                  <span class="material-symbols-outlined text-[16px]">block</span>
-                  <span>Xác nhận bác bỏ</span>
-                </button>
-              </div>
-            `
-          });
-
-          const confirmRejectBtn = document.getElementById('confirm-reject-appeal-btn');
-          if (confirmRejectBtn) {
-            confirmRejectBtn.onclick = async () => {
-              const noteVal = (document.getElementById('reject-appeal-note')?.value || '').trim();
-              if (!noteVal) {
-                UI.showToast('Vui lòng nhập lý do bác bỏ đơn.', 'warning');
-                return;
-              }
-
-              confirmRejectBtn.disabled = true;
-              confirmRejectBtn.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> Đang xử lý...';
-
-              try {
-                await ApiClient.reviewAttemptAppeal(attemptId, {
-                  decision: 'REJECTED',
-                  reviewer_note: noteVal
-                });
-                UI.closeModal();
-                UI.showToast('Đã bác bỏ đơn phúc khảo.', 'info');
-                InstructorView.openAttemptDetailModal(attemptId);
-              } catch (err) {
-                UI.showToast(err.message || 'Lỗi xử lý bác bỏ.', 'error');
-                confirmRejectBtn.disabled = false;
-                confirmRejectBtn.innerHTML = '<span class="material-symbols-outlined text-[16px]">block</span><span>Xác nhận bác bỏ</span>';
-              }
-            };
-          }
-        };
-      }
-    } catch (err) {
-      const errEl = document.getElementById('modal-att-content');
-      if (errEl) {
-        const reasonRequired = err?.status === 400 && /reason is required/i.test(err.message || '');
-        if (reasonRequired) {
-          errEl.innerHTML = `
-            <div class="p-6 space-y-4 text-sm text-slate-700 dark:text-slate-300">
-              <p>Để xem dữ liệu chi tiết của thí sinh, vui lòng ghi rõ lý do truy cập.</p>
-              <div class="space-y-2">
-                <label for="attempt-detail-reason" class="block text-xs font-bold text-slate-800 dark:text-slate-200">Lý do truy cập</label>
-                <textarea id="attempt-detail-reason" rows="3" class="c-input resize-none" placeholder="VD: Đối chiếu bài làm theo yêu cầu chấm phúc khảo"></textarea>
-                <p id="attempt-detail-reason-error" class="text-xs text-rose-600 hidden">Vui lòng nhập lý do truy cập.</p>
-              </div>
-              <button type="button" id="attempt-detail-reason-submit" class="w-full px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold">Tiếp tục</button>
-            </div>
-          `;
-          const reasonInput = document.getElementById('attempt-detail-reason');
-          const reasonError = document.getElementById('attempt-detail-reason-error');
-          const submitReason = document.getElementById('attempt-detail-reason-submit');
-          reasonInput?.focus();
-          submitReason?.addEventListener('click', () => {
-            const reason = (reasonInput?.value || '').trim();
-            if (!reason) {
-              reasonError?.classList.remove('hidden');
-              reasonInput?.focus();
-              return;
-            }
-            InstructorView.openAttemptDetailModal(attemptId, reason);
-          });
-          return;
-        }
-        errEl.innerHTML = `<div class="p-6 text-center text-rose-500 text-xs">Lỗi nạp bài làm. Vui lòng thử lại.</div>`;
-      }
+  static openAttemptDetailModal(attemptId, accessReason = '') {
+    if (attemptId) {
+      window.location.hash = `#/instructor/appeals/grade-editor?attempt_id=${encodeURIComponent(attemptId)}`;
     }
   }
 
@@ -9491,7 +9268,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
 
           <div class="space-y-1">
             <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">Mô tả tóm tắt</label>
-            <textarea name="description" rows="3" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm outline-none focus:border-primary resize-none">${UI.escapeHtml(course.description || '')}</textarea>
+            <textarea name="description" rows="3" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm outline-none focus:border-primary resize-none">${UI.escapeHtml(UI.cleanCourseDescription(course.description || ''))}</textarea>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -9528,6 +9305,20 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
               <div class="px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                 <span class="material-symbols-outlined text-[18px] text-emerald-500">all_inclusive</span>
                 <span>Không giới hạn (Theo quy định hệ thống)</span>
+              </div>
+            </div>
+            <div class="space-y-1">
+              <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">Học phí niêm yết (VNĐ)</label>
+              <div class="relative">
+                <input
+                  type="number"
+                  name="price"
+                  min="0"
+                  step="10000"
+                  value="${course.price || 0}"
+                  class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none focus:border-primary"
+                />
+                <span class="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 font-mono">VNĐ</span>
               </div>
             </div>
           </div>
@@ -9654,13 +9445,16 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
       const capacityVal = null;
 
       try {
+        const priceVal = Math.max(0, parseInt(form.price?.value, 10) || 0);
         await ApiClient.updateCourse(cId, {
           title: form.title.value.trim(),
           description: form.description.value.trim(),
           category: form.category.value.trim(),
           contact_info: contactData,
-          capacity: capacityVal
+          capacity: capacityVal,
+          price: priceVal
         });
+        course.price = priceVal;
         course.contact_info = contactData;
         if (capacityVal !== undefined) course.capacity = capacityVal;
         UI.showToast('Đã lưu thông tin khóa học & liên hệ thành công!', 'success');
@@ -10150,19 +9944,31 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
         btn.onclick = async () => {
           const reqCid = btn.dataset.reqCid;
           const prereqCid = btn.dataset.prereqCid;
+
+          // Optimistic UI update: instantly mark as APPROVED in local state
+          const targetItem = allRequests.find(r => 
+            String(r.requesting_course_id) === String(reqCid) && 
+            String(r.prerequisite_course_id) === String(prereqCid)
+          );
+          if (targetItem) {
+            targetItem.approval_status = 'APPROVED';
+            renderUI();
+          }
+
           try {
-            btn.disabled = true;
-            btn.textContent = 'Đang duyệt...';
             await ApiClient.reviewInstructorIncomingPrerequisiteRequest(reqCid, prereqCid, { action: 'APPROVE', note: 'Đồng ý liên kết môn tiên quyết.' });
-            UI.showToast('Đã phê duyệt yêu cầu môn tiên quyết thành công!', 'success');
+            // Immediate badge counter synchronization without noisy toast
             if (window.AppRouter && AppRouter.fetchInstructorPendingCounts) {
               AppRouter.fetchInstructorPendingCounts();
             }
             await fetchAndRender();
           } catch (err) {
+            // Revert on error
+            if (targetItem) {
+              targetItem.approval_status = 'PENDING_APPROVAL';
+              renderUI();
+            }
             UI.showToast('Lỗi phê duyệt: ' + (err.message || err), 'error');
-            btn.disabled = false;
-            btn.textContent = 'Chấp thuận';
           }
         };
       });
@@ -10174,19 +9980,31 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
           const prereqCid = btn.dataset.prereqCid;
           const reason = prompt('Vui lòng nhập lý do từ chối yêu cầu môn tiên quyết này:');
           if (reason === null) return;
+
+          // Optimistic UI update: instantly mark as REJECTED in local state
+          const targetItem = allRequests.find(r => 
+            String(r.requesting_course_id) === String(reqCid) && 
+            String(r.prerequisite_course_id) === String(prereqCid)
+          );
+          if (targetItem) {
+            targetItem.approval_status = 'REJECTED';
+            renderUI();
+          }
+
           try {
-            btn.disabled = true;
-            btn.textContent = 'Đang xử lý...';
             await ApiClient.reviewInstructorIncomingPrerequisiteRequest(reqCid, prereqCid, { action: 'REJECT', note: reason || 'Chưa phù hợp với mục tiêu đào tạo.' });
-            UI.showToast('Đã từ chối yêu cầu liên kết môn tiên quyết.', 'info');
+            // Immediate badge counter synchronization without noisy toast
             if (window.AppRouter && AppRouter.fetchInstructorPendingCounts) {
               AppRouter.fetchInstructorPendingCounts();
             }
             await fetchAndRender();
           } catch (err) {
+            // Revert on error
+            if (targetItem) {
+              targetItem.approval_status = 'PENDING_APPROVAL';
+              renderUI();
+            }
             UI.showToast('Lỗi từ chối: ' + (err.message || err), 'error');
-            btn.disabled = false;
-            btn.textContent = 'Từ chối';
           }
         };
       });
@@ -10424,12 +10242,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
       box.querySelectorAll('.btn-resolve-appeal').forEach(btn => {
         btn.onclick = () => {
           const appealId = btn.dataset.appealId;
-          const targetAppeal = allAppeals.find(a => String(a.appeal_id) === String(appealId));
-          if (targetAppeal) {
-            InstructorView.openAppealResolveModal(targetAppeal, async () => {
-              await loadAppeals();
-            });
-          }
+          window.location.hash = `#/instructor/appeals/grade-editor?id=${encodeURIComponent(appealId)}`;
         };
       });
     };
@@ -10487,6 +10300,483 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
   // =========================================================================
   // 7.1. Inspection & Final Score Input Modal for Grade Appeals
   // Single Authoritative Final Score Input (Replaces Previous Score)
+  // =========================================================================
+  // Dedicated Full-Screen 2-Column Regrading Editor (TASK-132)
+  // Left: Submission, Answer Key & Focus Events | Right: Student Info & Grade Input
+  // =========================================================================
+  static async renderAppealGradeEditor(container, appealId, attemptId = null) {
+    if (!container) return;
+    // Parse attempt_id from URL query if not passed explicitly
+    if (!attemptId && window.location.hash.includes('attempt_id=')) {
+      try {
+        const queryParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+        attemptId = queryParams.get('attempt_id');
+      } catch (_) {}
+    }
+
+    if (!appealId && !attemptId) {
+      container.innerHTML = `
+        <div class="p-12 text-center text-slate-500 max-w-lg mx-auto">
+          <span class="material-symbols-outlined text-4xl text-amber-500 mb-2">warning</span>
+          <p class="font-bold text-base text-slate-800 dark:text-slate-100">Thiếu mã bài thi hoặc đơn phúc khảo</p>
+          <a href="#/instructor/appeals" class="mt-4 inline-block px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold">Quay lại danh sách</a>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="py-12 text-center text-slate-400">
+        <span class="inline-block animate-spin text-3xl mb-3">⏳</span>
+        <p class="text-sm font-semibold text-slate-700 dark:text-slate-200">Đang tải toàn bộ dữ liệu bài làm và đơn phúc khảo...</p>
+      </div>
+    `;
+
+    try {
+      let appeal = null;
+      let effectiveAttemptId = attemptId;
+      if (appealId) {
+        try {
+          const appealRes = await ApiClient.getInstructorAppealDetail(appealId);
+          appeal = appealRes.data || appealRes.appeal || appealRes;
+          effectiveAttemptId = appeal.attempt_id || (appeal.attempt && (appeal.attempt.attempt_id || appeal.attempt.id || appeal.attempt.public_id)) || appeal.assessment_attempt_id || effectiveAttemptId;
+        } catch (_) {}
+      }
+
+      const [attemptResult, focusRes, attemptAppealRes] = await Promise.all([
+        effectiveAttemptId ? ApiClient.getInstructorAttemptResult(effectiveAttemptId, 'Chấm và xem chi tiết bài thi').catch(() => null) : null,
+        effectiveAttemptId ? ApiClient.getInstructorAttemptFocusEvents(effectiveAttemptId).catch(() => null) : null,
+        (!appeal && effectiveAttemptId) ? ApiClient.getAttemptAppeal(effectiveAttemptId).catch(() => ({ appeal: null })) : Promise.resolve({ appeal: null }),
+      ]);
+
+      if (!appeal && attemptAppealRes && attemptAppealRes.appeal) {
+        appeal = attemptAppealRes.appeal;
+        appealId = appeal.id || appeal.appeal_id;
+      }
+
+      if (!appeal) {
+        appeal = {
+          appeal_id: 'DIRECT_' + (effectiveAttemptId ? String(effectiveAttemptId).slice(0, 8) : 'ATTEMPT'),
+          status: 'DIRECT_REVIEW',
+          student_name: (attemptResult && attemptResult.student_name) || 'Học viên',
+          student_email: (attemptResult && attemptResult.student_email) || '',
+          assessment_title: (attemptResult && attemptResult.assessment_title) || 'Chi tiết bài làm học viên',
+          reason: 'Giảng viên mở xem đối chiếu bài làm trực tiếp từ bảng điểm.',
+          original_score: (attemptResult && attemptResult.total_awarded_points) ?? 0,
+          final_score: (attemptResult && attemptResult.total_awarded_points) ?? 0,
+          max_points: (attemptResult && (attemptResult.total_possible_points || attemptResult.max_points)) ?? 10.0,
+        };
+      }
+
+      const questions = (attemptResult && attemptResult.questions) || appeal.questions || [];
+      const focusEvents = (focusRes && focusRes.events) || [];
+      const totalViolationSeconds = focusEvents.reduce((acc, ev) => acc + (ev.duration_seconds || 0), 0);
+      const isPending = appeal.status === 'PENDING';
+      const isApproved = appeal.status === 'RESOLVED' || appeal.status === 'APPROVED';
+
+      const maxScore = (attemptResult && (attemptResult.total_possible_points || attemptResult.max_points)) || appeal.max_points || 10.0;
+      const originalScore = appeal.original_score ?? appeal.previous_score ?? (attemptResult ? attemptResult.total_awarded_points : 0.0);
+      const currentFinalScore = appeal.final_score !== null && appeal.final_score !== undefined ? appeal.final_score : originalScore;
+
+      container.innerHTML = `
+        <div id="appeal-grade-editor" class="py-4 sm:py-6 lg:py-8 space-y-6 max-w-[1720px] w-full mx-auto px-4 sm:px-6 lg:px-10 animate-fade-in font-sans">
+          
+          <div class="bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl p-4 sm:p-6 shadow-subtle flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+              <a href="#/instructor/appeals" class="w-10 h-10 rounded-xl bg-[#F4F1EA] dark:bg-[#262524] hover:bg-[#E8E6DF] dark:hover:bg-[#333] border border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-center text-[#222120] dark:text-[#EDEDEB] transition-all cursor-pointer shadow-2xs" title="Quay lại danh sách đơn">
+                <span class="material-symbols-outlined text-[20px]">arrow_back</span>
+              </a>
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-bold text-primary uppercase tracking-wider font-mono">PHÚC KHẢO & ĐIỀU CHỈNH ĐIỂM</span>
+                  <span class="px-2 py-0.5 rounded text-[10px] font-bold ${
+                    isPending ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300' :
+                    isApproved ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300' :
+                    'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-300'
+                  }">
+                    ${isPending ? 'Đang Chờ Xử Lý' : isApproved ? 'Đã Giải Quyết' : 'Đã Bác Bỏ'}
+                  </span>
+                </div>
+                <h1 class="text-xl sm:text-2xl font-extrabold text-[#222120] dark:text-[#EDEDEB] tracking-tight">
+                  ${UI.escapeHtml(appeal.assessment_title || appeal.lesson_title || (attemptResult && attemptResult.assessment_title) || 'Chấm lại bài thi học viên')}
+                </h1>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-3 text-xs font-mono">
+              <span class="text-slate-500">Mã đơn: <strong class="text-slate-800 dark:text-slate-200">${String(appealId).slice(0, 8)}</strong></span>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            
+            <div class="lg:col-span-8 space-y-6">
+              
+              <div class="rounded-2xl border ${focusEvents.length > 0 ? 'border-rose-300 dark:border-rose-900/60 bg-rose-50/40 dark:bg-rose-950/20' : 'border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/40 dark:bg-emerald-950/20'} p-5 text-xs shadow-2xs space-y-3">
+                <div class="flex items-center justify-between flex-wrap gap-2">
+                  <div class="flex items-center gap-2">
+                    <span class="w-8 h-8 rounded-xl flex items-center justify-center font-bold ${focusEvents.length > 0 ? 'bg-rose-100 text-rose-700 dark:bg-rose-900 dark:text-rose-200' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-200'}">
+                      <span class="material-symbols-outlined text-[18px]">${focusEvents.length > 0 ? 'gavel' : 'verified_user'}</span>
+                    </span>
+                    <div>
+                      <h3 class="font-extrabold text-sm ${focusEvents.length > 0 ? 'text-rose-800 dark:text-rose-300' : 'text-emerald-800 dark:text-emerald-300'}">
+                        Kết quả giám sát phòng thi: ${focusEvents.length} lần ghi nhận bất thường
+                      </h3>
+                      <p class="text-[11px] text-slate-500 dark:text-slate-400">
+                        Hệ thống tự động theo dõi hành vi chuyển tab, thoát toàn màn hình và mất tiêu điểm.
+                      </p>
+                    </div>
+                  </div>
+                  <span class="px-3 py-1 rounded-full font-bold font-mono text-xs ${focusEvents.length > 0 ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-200 border border-rose-300' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 border border-emerald-300'}">
+                    Tổng thời gian vi phạm: ${totalViolationSeconds} giây
+                  </span>
+                </div>
+
+                ${focusEvents.length > 0 ? `
+                  <div class="divide-y divide-rose-200/60 dark:divide-rose-900/40 pt-2 border-t border-rose-200/60 dark:border-rose-900/40 space-y-2">
+                    ${focusEvents.map(event => {
+                      const errorLabelMap = {
+                        FULLSCREEN_EXIT: 'Thoát toàn màn hình',
+                        SCREENSHOT_ATTEMPT: 'Chụp ảnh màn hình',
+                        TAB_HIDDEN: 'Rời khỏi tab thi',
+                        WINDOW_BLUR: 'Mất tiêu điểm / Chuyển cửa sổ'
+                      };
+                      const label = errorLabelMap[event.event_type] || event.event_type;
+                      const timeStr = event.started_at ? new Date(event.started_at).toLocaleTimeString('vi-VN') : '';
+                      const durStr = event.duration_seconds === null ? 'Chưa rõ' : `${event.duration_seconds}s`;
+                      return `
+                        <div class="flex items-center justify-between pt-2 text-xs">
+                          <div class="flex items-center gap-2">
+                            <span class="material-symbols-outlined text-rose-600 text-[16px]">warning</span>
+                            <span class="font-semibold text-rose-900 dark:text-rose-200">${UI.escapeHtml(label)}</span>
+                            ${timeStr ? `<span class="text-[11px] text-slate-400 font-mono">(${timeStr})</span>` : ''}
+                          </div>
+                          <span class="font-mono font-bold text-rose-700 dark:text-rose-300">${durStr}</span>
+                        </div>
+                      `;
+                    }).join('')}
+                  </div>
+                ` : `
+                  <p class="text-xs text-emerald-700 dark:text-emerald-300 font-medium pt-1">
+                    ✓ Thí sinh làm bài nghiêm túc, tập trung hoàn toàn trong phòng thi.
+                  </p>
+                `}
+              </div>
+
+              <div class="bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl p-5 sm:p-7 shadow-subtle space-y-6">
+                <div class="flex items-center justify-between pb-4 border-b border-[#E8E6DF] dark:border-[#2E2D2B]">
+                  <h3 class="font-extrabold text-base text-[#222120] dark:text-[#EDEDEB] flex items-center gap-2">
+                    <span class="material-symbols-outlined text-primary text-[20px]">fact_check</span>
+                    <span>Chi tiết từng câu hỏi & Bài nộp của học viên</span>
+                  </h3>
+                  <span class="text-xs font-semibold text-[#8F8E8A] font-mono">${questions.length} câu hỏi</span>
+                </div>
+
+                ${questions.length === 0 ? `
+                  <div class="p-12 text-center text-slate-400 text-xs">
+                    Không có chi tiết từng câu hỏi cho bài thi này.
+                  </div>
+                ` : `
+                  <div class="space-y-6">
+                    ${questions.map((q, idx) => {
+                      const isCorrect = q.is_correct === true;
+                      const isEssay = q.question_type === 'ESSAY';
+                      const choices = q.choices || [];
+                      const awardedPts = q.awarded_points ?? (q.points_awarded ?? 0);
+                      const maxPts = q.points_assigned ?? (q.points ?? 1);
+
+                      return `
+                        <div class="p-5 rounded-xl border ${
+                          isCorrect ? 'border-emerald-200 bg-emerald-50/20 dark:border-emerald-900/40 dark:bg-emerald-950/10' :
+                          'border-rose-200 bg-rose-50/20 dark:border-rose-900/40 dark:bg-rose-950/10'
+                        } space-y-3.5">
+                          <div class="flex items-center justify-between flex-wrap gap-2">
+                            <div class="flex items-center gap-2">
+                              <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                                isCorrect ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' :
+                                'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300'
+                              }">
+                                ${idx + 1}
+                              </span>
+                              <span class="text-xs font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold">
+                                ${UI.escapeHtml(q.question_type || 'QUESTION')}
+                              </span>
+                            </div>
+                            <span class="font-mono font-bold text-xs ${isCorrect ? 'text-emerald-600' : 'text-rose-600'}">
+                              ${awardedPts} / ${maxPts} điểm
+                            </span>
+                          </div>
+
+                          <div class="text-sm font-semibold text-slate-900 dark:text-white pl-8">
+                            ${UI.escapeHtml(q.stem || q.content || q.prompt || '')}
+                          </div>
+
+                          ${choices.length > 0 ? `
+                            <div class="space-y-2 pl-8 text-xs">
+                              ${choices.map(c => {
+                                const isSelected = c.is_selected;
+                                const isCorrectChoice = c.is_correct;
+                                let choiceClass = 'bg-white dark:bg-[#1E1E1E] border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300';
+                                let statusTag = '';
+
+                                if (isSelected && isCorrectChoice) {
+                                  choiceClass = 'bg-emerald-100 dark:bg-emerald-950/60 border-emerald-300 text-emerald-900 dark:text-emerald-200 font-bold';
+                                  statusTag = '<span class="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 ml-auto">✓ Học viên chọn (Đúng)</span>';
+                                } else if (isSelected && !isCorrectChoice) {
+                                  choiceClass = 'bg-rose-100 dark:bg-rose-950/60 border-rose-300 text-rose-900 dark:text-rose-200 font-bold';
+                                  statusTag = '<span class="text-[10px] font-bold text-rose-700 dark:text-rose-300 ml-auto">✗ Học viên chọn (Sai)</span>';
+                                } else if (!isSelected && isCorrectChoice) {
+                                  choiceClass = 'bg-emerald-50 dark:bg-emerald-950/30 border-dashed border-emerald-400 text-emerald-800 dark:text-emerald-300';
+                                  statusTag = '<span class="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 ml-auto">Đáp án đúng của đề</span>';
+                                }
+
+                                return `
+                                  <div class="p-3 rounded-lg border ${choiceClass} flex items-center justify-between gap-2">
+                                    <span>${UI.escapeHtml(c.text || c.content || c.title || '')}</span>
+                                    ${statusTag}
+                                  </div>
+                                `;
+                              }).join('')}
+                            </div>
+                          ` : ''}
+
+                          ${isEssay || q.text_answer ? `
+                            <div class="pl-8 text-xs space-y-2">
+                              <p class="font-bold text-slate-600 dark:text-slate-400">Câu trả lời tự luận của học viên:</p>
+                              <div class="p-3.5 rounded-lg bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 whitespace-pre-wrap leading-relaxed">
+                                ${UI.escapeHtml(q.text_answer || 'Chưa có câu trả lời.')}
+                              </div>
+                            </div>
+                          ` : ''}
+
+                          ${q.explanation ? `
+                            <div class="pl-8 pt-1 text-xs text-slate-500 italic">
+                              <strong>Căn cứ / Giải thích:</strong> ${UI.escapeHtml(q.explanation)}
+                            </div>
+                          ` : ''}
+                        </div>
+                      `;
+                    }).join('')}
+                  </div>
+                `}
+              </div>
+
+            </div>
+
+            <div class="lg:col-span-4 space-y-6 lg:sticky lg:top-20">
+              
+              <div class="bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl p-5 shadow-subtle space-y-3">
+                <h4 class="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                  <span class="material-symbols-outlined text-[16px] text-primary">person</span>
+                  <span>Thông tin học viên</span>
+                </h4>
+                <div class="space-y-1.5 text-xs">
+                  <div class="font-bold text-base text-[#222120] dark:text-[#EDEDEB]">${UI.escapeHtml(appeal.student_name || 'Học viên')}</div>
+                  <div class="text-[#8F8E8A] font-mono">${UI.escapeHtml(appeal.student_email || 'N/A')}</div>
+                  <div class="pt-2 border-t border-[#E8E6DF] dark:border-[#2E2D2B] text-[11px] text-slate-600 dark:text-slate-400 space-y-1">
+                    <div><strong>Khóa học:</strong> ${UI.escapeHtml(appeal.course_title || 'Khóa học')}</div>
+                    <div><strong>Điểm ban đầu:</strong> <span class="font-bold text-rose-600 font-mono">${originalScore} / ${maxScore}đ</span></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl p-5 shadow-subtle space-y-3">
+                <h4 class="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                  <span class="material-symbols-outlined text-[16px] text-amber-500">rate_review</span>
+                  <span>Đơn & Minh chứng phúc khảo</span>
+                </h4>
+                <div class="space-y-2.5 text-xs text-slate-700 dark:text-slate-300">
+                  <div class="p-3 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/50 space-y-1">
+                    <strong class="text-amber-900 dark:text-amber-200">Lý do học viên:</strong>
+                    <p class="italic text-slate-800 dark:text-slate-200">"${UI.escapeHtml(appeal.reason || 'Yêu cầu kiểm tra lại điểm số.')}"</p>
+                  </div>
+
+                  ${appeal.note ? `
+                    <div class="text-[11px] text-slate-600 dark:text-slate-400">
+                      <strong>Giải trình chi tiết:</strong> ${UI.escapeHtml(appeal.note)}
+                    </div>
+                  ` : ''}
+
+                  ${(appeal.evidence_filename || appeal.evidence_url) ? `
+                    <div class="pt-2 border-t border-[#E8E6DF] dark:border-[#2E2D2B]">
+                      <a href="/instructor/appeals/${encodeURIComponent(appealId)}/evidence" target="_blank" rel="noopener noreferrer" class="p-3 rounded-xl bg-indigo-50/60 hover:bg-indigo-100/80 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-800 flex items-center justify-between text-indigo-700 dark:text-indigo-300 transition-all font-semibold">
+                        <div class="flex items-center gap-2 truncate">
+                          <span class="material-symbols-outlined text-[18px]">attachment</span>
+                          <span class="truncate">${UI.escapeHtml(appeal.evidence_filename || 'Tệp minh chứng')}</span>
+                        </div>
+                        <span class="material-symbols-outlined text-[16px]">open_in_new</span>
+                      </a>
+                    </div>
+                  ` : `
+                    <p class="text-[11px] text-slate-400 italic">Học viên không gửi kèm tệp minh chứng.</p>
+                  `}
+                </div>
+              </div>
+
+              <div class="bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl p-5 shadow-subtle space-y-4">
+                <h4 class="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                  <span class="material-symbols-outlined text-[16px] text-emerald-600">gavel</span>
+                  <span>Quyết định điểm số chính thức</span>
+                </h4>
+
+                <div class="space-y-3 text-xs">
+                  <div>
+                    <label for="grade-editor-final-score" class="block font-bold text-slate-800 dark:text-slate-200 mb-1">
+                      Điểm số chính thức mới (Thang điểm ${maxScore}) <span class="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="${maxScore}"
+                      id="grade-editor-final-score"
+                      value="${currentFinalScore}"
+                      class="w-full h-11 px-3.5 rounded-xl bg-[#FAF9F5] dark:bg-[#262524] text-base font-bold font-mono text-[#222120] dark:text-[#EDEDEB] border border-[#E8E6DF] dark:border-[#2E2D2B] focus:border-primary focus:outline-none"
+                    />
+                    <p class="text-[10px] text-slate-400 mt-1">
+                      Điểm số này sẽ thay thế trực tiếp điểm cũ của học viên trên bảng điểm.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label for="grade-editor-note" class="block font-bold text-slate-800 dark:text-slate-200 mb-1">
+                      Nhận xét & Căn cứ phê duyệt <span class="text-rose-500">*</span>
+                    </label>
+                    <textarea
+                      id="grade-editor-note"
+                      rows="3"
+                      class="w-full p-3 rounded-xl bg-[#FAF9F5] dark:bg-[#262524] text-xs text-[#222120] dark:text-[#EDEDEB] border border-[#E8E6DF] dark:border-[#2E2D2B] focus:border-primary focus:outline-none resize-none"
+                      placeholder="Nhập căn cứ điều chỉnh điểm hoặc lý do bác bỏ đơn..."
+                    >${UI.escapeHtml(appeal.reviewer_note || appeal.resolution_note || '')}</textarea>
+                  </div>
+
+                  <div class="pt-2 flex flex-col gap-2">
+                    <button
+                      type="button"
+                      id="btn-confirm-regrade-appeal"
+                      class="w-full h-11 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      <span class="material-symbols-outlined text-[18px]">verified</span>
+                      <span>Duyệt & Lưu Điểm Mới</span>
+                    </button>
+                    <button
+                      type="button"
+                      id="btn-reject-regrade-appeal"
+                      class="w-full h-10 rounded-xl bg-transparent hover:bg-rose-50 dark:hover:bg-rose-950/30 text-rose-600 border border-rose-300 dark:border-rose-800 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      <span class="material-symbols-outlined text-[16px]">close</span>
+                      <span>Bác Bỏ Đơn Phúc Khảo</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+      `;
+
+      const confirmBtn = document.getElementById('btn-confirm-regrade-appeal');
+      const rejectBtn = document.getElementById('btn-reject-regrade-appeal');
+      const scoreInput = document.getElementById('grade-editor-final-score');
+      const noteInput = document.getElementById('grade-editor-note');
+
+      if (confirmBtn) {
+        confirmBtn.onclick = async () => {
+          const newScore = parseFloat(scoreInput.value);
+          if (isNaN(newScore) || newScore < 0 || newScore > maxScore) {
+            UI.showToast(`Điểm số không hợp lệ. Vui lòng nhập từ 0 đến ${maxScore}.`, 'warning');
+            return;
+          }
+          const note = (noteInput.value || '').trim();
+          if (!note) {
+            UI.showToast('Vui lòng nhập nhận xét / căn cứ phê duyệt.', 'warning');
+            return;
+          }
+
+          confirmBtn.disabled = true;
+          confirmBtn.innerHTML = '<span class="animate-spin mr-1">⏳</span> Đang lưu kết quả...';
+
+          try {
+            if (appealId && appeal.status !== 'DIRECT_REVIEW') {
+              await ApiClient.resolveInstructorAppeal(appealId, {
+                action: 'RESOLVE',
+                final_score: newScore,
+                score_delta: newScore - originalScore,
+                reviewer_note: note,
+                feedback: note,
+                resolution_note: note,
+              });
+            } else if (effectiveAttemptId) {
+              await ApiClient.reviewAttemptAppeal(effectiveAttemptId, {
+                decision: 'APPROVED',
+                new_score: newScore,
+                reviewer_note: note,
+              });
+            }
+            UI.showToast('Đã lưu điểm và cập nhật kết quả bài thi thành công!', 'success');
+            setTimeout(() => {
+              if (window.history.length > 1) {
+                window.history.back();
+              } else {
+                window.location.hash = '#/instructor/appeals';
+              }
+            }, 800);
+          } catch (err) {
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = '<span class="material-symbols-outlined text-[18px]">verified</span> <span>Duyệt & Lưu Điểm Mới</span>';
+            UI.showToast(err.message || 'Lỗi khi cập nhật điểm phúc khảo.', 'error');
+          }
+        };
+      }
+
+      if (rejectBtn) {
+        rejectBtn.onclick = async () => {
+          const note = (noteInput.value || '').trim();
+          if (!note) {
+            UI.showToast('Vui lòng nhập lý do bác bỏ đơn phúc khảo.', 'warning');
+            return;
+          }
+          const confirmed = await UI.confirm('Xác nhận bác bỏ đơn phúc khảo này của học viên?');
+          if (!confirmed) return;
+
+          rejectBtn.disabled = true;
+          rejectBtn.innerHTML = '<span class="animate-spin mr-1">⏳</span> Đang xử lý...';
+
+          try {
+            await ApiClient.resolveInstructorAppeal(appealId, {
+              action: 'REJECT',
+              final_score: originalScore,
+              reviewer_note: note,
+              feedback: note,
+              resolution_note: note,
+            });
+            UI.showToast('Đã bác bỏ đơn phúc khảo.', 'info');
+            setTimeout(() => {
+              window.location.hash = '#/instructor/appeals';
+            }, 800);
+          } catch (err) {
+            rejectBtn.disabled = false;
+            rejectBtn.innerHTML = '<span class="material-symbols-outlined text-[16px]">close</span> <span>Bác Bỏ Đơn Phúc Khảo</span>';
+            UI.showToast(err.message || 'Lỗi khi bác bỏ đơn phúc khảo.', 'error');
+          }
+        };
+      }
+
+    } catch (err) {
+      container.innerHTML = `
+        <div class="p-12 text-center text-rose-500 max-w-lg mx-auto space-y-3">
+          <span class="material-symbols-outlined text-4xl">error</span>
+          <p class="font-bold text-base">Không thể tải trang chấm phúc khảo</p>
+          <p class="text-xs text-slate-500">${UI.escapeHtml(err.message || 'Lỗi kết nối máy chủ.')}</p>
+          <a href="#/instructor/appeals" class="inline-block px-4 py-2 rounded-xl bg-slate-200 text-slate-800 text-xs font-bold">Quay lại danh sách</a>
+        </div>
+      `;
+    }
+  }
+
   // =========================================================================
   static async openAppealResolveModal(appeal, onResolved = null) {
     UI.startMicroLoading();

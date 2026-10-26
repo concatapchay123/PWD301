@@ -12,21 +12,21 @@ import pytest
 import sqlalchemy as sa
 from flask_migrate import upgrade
 
-from pwd301 import create_app
-from pwd301.extensions import db
-from pwd301.models.assessment import Assessment
-from pwd301.models.attempt_regrade import (
+from backend import create_app
+from backend.extensions import db
+from backend.models.assessment import Assessment
+from backend.models.attempt_regrade import (
     AssessmentAttempt,
     AttemptQuestion,
     AttemptQuestionGrade,
     AttemptQuestionGradeHistory,
 )
-from pwd301.models.course import Course, Enrollment, EnrollmentPeriod
-from pwd301.models.identity import Role, User
-from pwd301.models.question_bank import Question, QuestionRevision
-from pwd301.services.attempt_service import grade_essay_question
-from pwd301.services.exceptions import ConflictError
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.models.course import Course, Enrollment, EnrollmentPeriod
+from backend.models.identity import Role, User
+from backend.models.question_bank import Question, QuestionRevision
+from backend.services.attempt_service import grade_essay_question
+from backend.services.exceptions import ConflictError
+from backend.services.user_service import assign_role_to_user, register_user
 from tests.conftest import require_disposable_sqlserver_target
 
 

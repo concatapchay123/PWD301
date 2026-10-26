@@ -25,51 +25,51 @@ import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.attempt_regrade import (
+from backend.extensions import db
+from backend.models.attempt_regrade import (
     AssessmentResultHistory,
     AttemptQuestionGrade,
     AttemptQuestionGradeHistory,
     RegradeJob,
 )
-from pwd301.models.identity import User
-from pwd301.models.question_bank import Question, QuestionProvenance
-from pwd301.services.assessment_service import (
+from backend.models.identity import User
+from backend.models.question_bank import Question, QuestionProvenance
+from backend.services.assessment_service import (
     assign_question,
     create_assessment,
     create_section,
     publish_assessment,
 )
-from pwd301.services.attempt_service import (
+from backend.services.attempt_service import (
     grade_essay_question,
     save_attempt_answer,
     start_assessment_attempt,
     submit_assessment_attempt,
 )
-from pwd301.services.course_service import change_course_status, create_course
-from pwd301.services.enrollment_service import enroll_student
-from pwd301.services.exceptions import (
+from backend.services.course_service import change_course_status, create_course
+from backend.services.enrollment_service import enroll_student
+from backend.services.exceptions import (
     AssessmentLockedError,
     FileAccessDeniedError,
 )
-from pwd301.services.file_service import (
+from backend.services.file_service import (
     attach_resource_to_lesson,
     get_file_for_download,
     store_file_stream,
 )
-from pwd301.services.import_service import (
+from backend.services.import_service import (
     commit_import_job,
     create_import_job,
     process_import_job,
     set_import_question_decision,
 )
-from pwd301.services.lesson_service import change_lesson_status, create_lesson
-from pwd301.services.question_bank_service import (
+from backend.services.lesson_service import change_lesson_status, create_lesson
+from backend.services.question_bank_service import (
     create_question,
     create_question_revision,
 )
-from pwd301.services.regrade_worker import process_regrade_job
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.regrade_worker import process_regrade_job
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 def _create_sample_docx(paragraphs: list[str]) -> bytes:
@@ -439,7 +439,7 @@ def test_instructor_complete_lifecycle_e2e(
     # -------------------------------------------------------------------------
     # 7. Instructor Inspects Results & Optional Score Adjustment
     # -------------------------------------------------------------------------
-    from pwd301.services.attempt_service import (
+    from backend.services.attempt_service import (
         get_instructor_attempt_evaluation,
         list_assessment_student_results,
     )

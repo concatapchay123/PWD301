@@ -7,17 +7,17 @@ import datetime
 import pytest
 from flask import Flask
 
-from pwd301.extensions import db
-from pwd301.models.identity import User
-from pwd301.models.types import utc_now
-from pwd301.services.exceptions import (
+from backend.extensions import db
+from backend.models.identity import User
+from backend.models.types import utc_now
+from backend.services.exceptions import (
     AccountNotActiveError,
     AuthVersionMismatchError,
     InvalidCredentialsError,
     SessionExpiredError,
     SessionRevokedError,
 )
-from pwd301.services.session_auth_service import (
+from backend.services.session_auth_service import (
     create_auth_session,
     hash_session_key,
     hash_user_agent,
@@ -26,7 +26,7 @@ from pwd301.services.session_auth_service import (
     validate_auth_session,
     verify_auth_session_or_raise,
 )
-from pwd301.services.user_service import register_user
+from backend.services.user_service import register_user
 
 
 @pytest.fixture

@@ -19,24 +19,24 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.attempt_regrade import AssessmentAttempt
-from pwd301.models.course import Enrollment, EnrollmentPeriod, LessonProgress
-from pwd301.models.types import utc_now
-from pwd301.seeds.baseline import seed_baseline
-from pwd301.services.assessment_service import (
+from backend.extensions import db
+from backend.models.attempt_regrade import AssessmentAttempt
+from backend.models.course import Enrollment, EnrollmentPeriod, LessonProgress
+from backend.models.types import utc_now
+from backend.seeds.baseline import seed_baseline
+from backend.services.assessment_service import (
     assign_question,
     create_assessment,
     get_assessment_detail,
     publish_assessment,
     update_assessment,
 )
-from pwd301.services.course_service import create_course
-from pwd301.services.exceptions import AssessmentLockedError, AssessmentValidationError
-from pwd301.services.file_service import attach_resource_to_lesson, store_file_stream
-from pwd301.services.lesson_service import create_lesson
-from pwd301.services.question_bank_service import create_question
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.course_service import create_course
+from backend.services.exceptions import AssessmentLockedError, AssessmentValidationError
+from backend.services.file_service import attach_resource_to_lesson, store_file_stream
+from backend.services.lesson_service import create_lesson
+from backend.services.question_bank_service import create_question
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -47,7 +47,7 @@ def exam_env(app: Flask) -> dict[str, Any]:
 
     # 1. Instructor & Student
     inst_user = register_user(
-        email="instructor_exam@pwd301.local",
+        email="instructor_exam@backend.local",
         password="Password@123",
         display_name="TS. Nguyen Van Giang Vien",
         session=sess,
@@ -55,7 +55,7 @@ def exam_env(app: Flask) -> dict[str, Any]:
     assign_role_to_user(inst_user.id, "INSTRUCTOR", session=sess)
 
     student_user = register_user(
-        email="student_exam@pwd301.local",
+        email="student_exam@backend.local",
         password="Password@123",
         display_name="Le Van Hoc Vien",
         session=sess,
@@ -260,8 +260,8 @@ def test_exam_display_and_monitoring_policy_is_validated_and_delivered(
         session=db.session,
     )
     publish_assessment(instructor, assessment.id, session=db.session)
-    from pwd301.models.identity import User
-    from pwd301.services.lesson_service import (
+    from backend.models.identity import User
+    from backend.services.lesson_service import (
         approve_course_change_request,
         submit_course_changeset,
     )
@@ -279,7 +279,7 @@ def test_exam_display_and_monitoring_policy_is_validated_and_delivered(
             instructor, assessment.id, {"monitoring_enabled": False}, session=db.session
         )
 
-    csrf = login_client(client, "student_exam@pwd301.local")
+    csrf = login_client(client, "student_exam@backend.local")
     start = client.post(
         f"/student/assessments/{assessment.public_id}/start",
         headers={"X-CSRFToken": csrf},
@@ -304,7 +304,7 @@ def test_monitored_focus_event_is_deduplicated_and_visible_to_instructor(
 ) -> None:
     exam_env["assessment"].monitoring_enabled = True
     db.session.commit()
-    csrf = login_client(client, "student_exam@pwd301.local")
+    csrf = login_client(client, "student_exam@backend.local")
     started = client.post(
         f"/student/assessments/{exam_env['assessment'].public_id}/start",
         headers={"X-CSRFToken": csrf},
@@ -322,7 +322,7 @@ def test_monitored_focus_event_is_deduplicated_and_visible_to_instructor(
         assert response.status_code == 200
     assert response.get_json()["event_count"] == 1
     client.post("/auth/logout", headers={"X-CSRFToken": csrf})
-    login_client(client, "instructor_exam@pwd301.local")
+    login_client(client, "instructor_exam@backend.local")
     review = client.get(f"/instructor/attempts/{attempt_id}/focus-events")
     assert review.status_code == 200
     assert len(review.get_json()["events"]) == 1
@@ -334,7 +334,7 @@ def test_attempt_lease_duration_is_independent_of_exam_timelimit(
 ) -> None:
     """Algorithm 07 lease is configurable; the exam deadline retains its full duration."""
     monkeypatch.setitem(app.config, "ATTEMPT_LEASE_SECONDS", 30)
-    csrf = login_client(client, "student_exam@pwd301.local")
+    csrf = login_client(client, "student_exam@backend.local")
     asm_id = str(exam_env["assessment"].public_id)
 
     res = client.post(
@@ -363,7 +363,7 @@ def test_autosave_choice_compatibility_and_question_id_resolution(
     client: FlaskClient, exam_env: dict[str, Any]
 ) -> None:
     """Verify autosave accepts selected_choice_id, resolves ID, and saves choice."""
-    csrf = login_client(client, "student_exam@pwd301.local")
+    csrf = login_client(client, "student_exam@backend.local")
     asm_id = str(exam_env["assessment"].public_id)
 
     res = client.post(
@@ -412,7 +412,7 @@ def test_deadline_expiration_auto_finalization(
     client: FlaskClient, exam_env: dict[str, Any]
 ) -> None:
     """Verify that submitting an attempt past deadline auto-finalizes and grades cleanly."""
-    csrf = login_client(client, "student_exam@pwd301.local")
+    csrf = login_client(client, "student_exam@backend.local")
     asm_id = str(exam_env["assessment"].public_id)
 
     res = client.post(
@@ -477,7 +477,7 @@ def test_attempt_result_payload_completeness_for_quiz_review(
     client: FlaskClient, exam_env: dict[str, Any]
 ) -> None:
     """Verify get_attempt_result_for_student returns complete question text and choices."""
-    csrf = login_client(client, "student_exam@pwd301.local")
+    csrf = login_client(client, "student_exam@backend.local")
     asm_id = str(exam_env["assessment"].public_id)
 
     res = client.post(
@@ -526,7 +526,7 @@ def test_resource_vault_dual_id_resolution_and_streaming(
     client: FlaskClient, exam_env: dict[str, Any]
 ) -> None:
     """Verify download works for LessonResource ID and FileAsset ID with inline disposition."""
-    login_client(client, "student_exam@pwd301.local")
+    login_client(client, "student_exam@backend.local")
     course_id = str(exam_env["course"].public_id)
     lesson_id = str(exam_env["lesson"].public_id)
     resource_id = str(exam_env["resource"].public_id)

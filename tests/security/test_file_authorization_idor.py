@@ -21,19 +21,19 @@ import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 
-from pwd301.extensions import db
-from pwd301.models.course import Course, Enrollment
-from pwd301.models.file_import import FileScanResult
-from pwd301.models.identity import Role, User
-from pwd301.models.types import utc_now
-from pwd301.services.course_service import create_course
-from pwd301.services.enrollment_service import enroll_student
-from pwd301.services.exceptions import (
+from backend.extensions import db
+from backend.models.course import Course, Enrollment
+from backend.models.file_import import FileScanResult
+from backend.models.identity import Role, User
+from backend.models.types import utc_now
+from backend.services.course_service import create_course
+from backend.services.enrollment_service import enroll_student
+from backend.services.exceptions import (
     FileAccessDeniedError,
     FileSecurityQuarantineError,
     ForbiddenError,
 )
-from pwd301.services.file_service import (
+from backend.services.file_service import (
     _serialize_file_asset,
     _serialize_lesson_resource,
     add_file_revision,
@@ -44,9 +44,9 @@ from pwd301.services.file_service import (
     store_file_stream,
     trash_file_asset,
 )
-from pwd301.services.jwt_auth_service import create_token_pair
-from pwd301.services.lesson_service import create_lesson
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.jwt_auth_service import create_token_pair
+from backend.services.lesson_service import create_lesson
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture

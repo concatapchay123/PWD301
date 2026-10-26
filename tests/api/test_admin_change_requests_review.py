@@ -4,10 +4,10 @@ import json
 
 import pytest
 
-from pwd301.extensions import db
-from pwd301.models.course import CourseChangeRequest, Lesson
-from pwd301.models.notification_audit import AuditEvent
-from pwd301.services.lesson_service import approve_course_change_request, create_lesson
+from backend.extensions import db
+from backend.models.course import CourseChangeRequest, Lesson
+from backend.models.notification_audit import AuditEvent
+from backend.services.lesson_service import approve_course_change_request, create_lesson
 from tests.api.test_video_preview_stream import video_env as video_fixture
 from tests.conftest import login_web_user
 
@@ -149,7 +149,7 @@ def test_service_does_not_commit_caller_owned_transaction(approval_env):
 def test_foreign_lesson_target_cannot_be_mutated(client, approval_env):
     users, course, lesson, req = approval_env
     # A valid foreign course is used so integrity validation cannot mask authorization.
-    from pwd301.services.course_service import create_course
+    from backend.services.course_service import create_course
 
     foreign_course = create_course(
         users["foreign"], {"course_code": "FOREIGN090", "title": "Foreign course"}

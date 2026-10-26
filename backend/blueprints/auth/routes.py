@@ -1,0 +1,1439 @@
+"""Route handlers for Web UI authentication (Flask-Login with session cookies)."""
+
+from __future__ import annotations
+
+from datetime import timedelta, timezone
+from typing import Any
+from urllib.parse import urlsplit
+
+from flask import (
+    current_app,
+    flash,
+    g,
+    jsonify,
+    make_response,
+    redirect,
+    request,
+    session,
+    url_for,
+)
+from flask_login import current_user, login_required, login_user, logout_user
+import hmac
+
+from backend.blueprints.auth import auth_bp
+from backend.extensions import db
+from backend.models.identity import AuthSession
+from backend.models.types import utc_now
+from backend.services.email_service import enqueue_email
+from backend.services.exceptions import InvalidPasswordError, ServiceError
+from backend.services.rate_limit_service import (
+    clear_login_attempts,
+    is_login_locked,
+    record_failed_login,
+)
+from backend.services.session_auth_service import (
+    create_auth_session,
+    hash_session_key,
+    revoke_auth_session,
+)
+from backend.services.user_service import (
+    change_password,
+    generate_password_reset_token,
+    get_user_by_email,
+    register_user,
+    verify_email_verification_token,
+    verify_password,
+    verify_password_reset_token,
+)
+
+
+@auth_bp.route("/security-key", methods=["GET"])
+def security_key():
+    """Publish the server's RSA-OAEP 2048 public key for hybrid in-transit payload encryption."""
+    from backend.services.in_transit_crypto_service import get_server_rsa_public_key_pem
+    pem = get_server_rsa_public_key_pem()
+    return jsonify({
+        "success": True,
+        "data": {
+            "public_key": pem,
+            "format": "SPKI",
+            "algorithm": "RSA-OAEP-256",
+            "prefix": "PPTQ LMS",
+        },
+        "error": None,
+    }), 200
+
+
+@auth_bp.get("/runtime-config")
+def runtime_config():
+    """Publish only UI environment flags; secrets are never included."""
+    environment = current_app.config.get("APP_ENV", "production")
+    if environment not in {"development", "testing", "production"}:
+        environment = "production"
+    enabled = environment in {"development", "testing"} and bool(
+        current_app.config.get("SEED_DEMO_DATA", False)
+    )
+    response = jsonify(
+        success=True,
+        data={"environment": environment, "demo_accounts_enabled": enabled},
+        error=None,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def _is_safe_redirect_url(target: str) -> bool:
+    """Validate that target redirect URL is strictly local and cannot trigger open redirect."""
+    if not target or not isinstance(target, str):
+        return False
+    # Backslashes are normalized to slashes in modern browsers (e.g. /\attacker.com)
+    if "\\" in target:
+        return False
+    try:
+        parsed = urlsplit(target)
+    except Exception:
+        return False
+    if parsed.scheme or parsed.netloc:
+        return False
+    return parsed.path.startswith("/") and not parsed.path.startswith("//")
+
+
+def _is_json_request() -> bool:
+    """Determine whether request expects a JSON/API response (Always True in headless backend)."""
+    return True
+
+
+@auth_bp.route("/session", methods=["GET"])
+def session_info():
+    """Dedicated session inspection and telemetry endpoint (DEFECT-AUTH-02)."""
+    from flask_wtf.csrf import generate_csrf
+    from backend.services.in_transit_crypto_service import get_server_rsa_public_key_pem
+
+    token = generate_csrf()
+    server_public_key = get_server_rsa_public_key_pem()
+    if current_user.is_authenticated:
+        user_info = {
+            "id": str(getattr(current_user, "public_id", current_user.id)),
+            "email": current_user.email,
+            "display_name": getattr(current_user, "display_name", ""),
+            "full_name": getattr(current_user, "full_name", None)
+            or getattr(current_user, "display_name", "")
+            or "",
+            "primary_role": getattr(current_user, "primary_role", "STUDENT"),
+            "active_role": session.get("active_role")
+            or getattr(current_user, "primary_role", "STUDENT"),
+            "role_codes": sorted(getattr(current_user, "role_codes", ["STUDENT"])),
+            "admin_sub_role": getattr(current_user, "admin_sub_role", None),
+            "admin_sub_role_label": getattr(current_user, "admin_sub_role_label", ""),
+            "is_primary_admin": getattr(current_user, "is_primary_admin", False),
+            "avatar_url": getattr(current_user, "avatar_url", None),
+        }
+        resp = make_response(
+            jsonify({
+                "success": True,
+                "status": "authenticated",
+                "is_authenticated": True,
+                "csrf_token": token,
+                "public_key": server_public_key,
+                "security_key": server_public_key,
+                "user": user_info,
+                "data": user_info,
+            }),
+            200,
+        )
+        resp.set_cookie("csrf_token", token, samesite="Lax")
+        return resp
+
+    resp = make_response(
+        jsonify({
+            "success": True,
+            "status": "unauthenticated",
+            "is_authenticated": False,
+            "csrf_token": token,
+            "public_key": server_public_key,
+            "security_key": server_public_key,
+            "user": None,
+            "data": None,
+        }),
+        200,
+    )
+    resp.set_cookie("csrf_token", token, samesite="Lax")
+    return resp
+
+
+@auth_bp.route("/login", methods=["GET", "POST"])
+def login() -> Any:
+    """Handle user login for Web UI and same-origin AJAX."""
+    if request.method == "GET":
+        from flask_wtf.csrf import generate_csrf
+
+        token = generate_csrf()
+        if current_user.is_authenticated:
+            resp = make_response(
+                jsonify(
+                    {
+                        "status": "authenticated",
+                        "csrf_token": token,
+                        "user": {
+                            "id": str(getattr(current_user, "public_id", current_user.id)),
+                            "email": current_user.email,
+                            "display_name": getattr(current_user, "display_name", ""),
+                            "full_name": getattr(current_user, "full_name", None)
+                            or getattr(current_user, "display_name", "")
+                            or "",
+                            "primary_role": getattr(current_user, "primary_role", "STUDENT"),
+                            "active_role": session.get("active_role")
+                            or getattr(current_user, "primary_role", "STUDENT"),
+                            "role_codes": sorted(getattr(current_user, "role_codes", ["STUDENT"])),
+                            "admin_sub_role": getattr(current_user, "admin_sub_role", None),
+                            "admin_sub_role_label": (
+                                getattr(current_user, "admin_sub_role_label", "")
+                            ),
+                            "is_primary_admin": getattr(current_user, "is_primary_admin", False),
+                            "avatar_url": getattr(current_user, "avatar_url", None),
+                        },
+                    }
+                ),
+                200,
+            )
+            resp.set_cookie("csrf_token", token, samesite="Lax")
+            return resp
+        resp = make_response(
+            jsonify(
+                {
+                    "status": "ok",
+                    "csrf_token": token,
+                    "message": "PWD301 Authentication Endpoint. POST credentials to login.",
+                }
+            ),
+            200,
+        )
+        resp.set_cookie("csrf_token", token, samesite="Lax")
+        return resp
+
+    # POST processing
+    data: dict[str, Any] = {}
+    if request.is_json:
+        data = request.get_json() or {}
+    else:
+        try:
+            data = request.get_json(silent=True, force=True) or {}
+        except Exception:
+            data = {}
+
+    if data:
+        if "encrypted_envelope" in data or data.get("prefix") == "PPTQ LMS":
+            from backend.services.in_transit_crypto_service import decrypt_hybrid_payload
+            try:
+                env = data.get("encrypted_envelope") or data
+                decrypted = decrypt_hybrid_payload(env)
+                email = str(decrypted.get("email", "")).strip()
+                password = str(decrypted.get("password", ""))
+                remember = bool(data.get("remember", decrypted.get("remember", False)))
+                next_url = str(data.get("next", decrypted.get("next", "")))
+            except Exception as exc:
+                return jsonify({
+                    "success": False,
+                    "data": None,
+                    "error": {"code": "INVALID_ENCRYPTION_ENVELOPE", "message": str(exc)},
+                    "message": str(exc),
+                }), 400
+        else:
+            email = str(data.get("email", "")).strip()
+            password = str(data.get("password", ""))
+            remember = bool(data.get("remember", False))
+            next_url = str(data.get("next", ""))
+    else:
+        email = request.form.get("email", "").strip()
+        password = request.form.get("password", "")
+        remember = bool(request.form.get("remember"))
+        next_url = request.args.get("next") or request.form.get("next", "")
+
+    # Rate limiting & lockout check
+    remote_ip = request.remote_addr or ""
+    is_locked, retry_after = is_login_locked(remote_ip, email)
+    if is_locked:
+        msg = f"Quá nhiều lần đăng nhập thất bại. Vui lòng thử lại sau {retry_after} giây."
+        resp = jsonify(
+            {
+                "success": False,
+                "data": None,
+                "error": {
+                    "code": "RATE_LIMIT_EXCEEDED",
+                    "message": msg,
+                },
+            }
+        )
+        resp.status_code = 429
+        resp.headers["Retry-After"] = str(retry_after)
+        return resp
+
+    # Credential verification (timing-safe against email enumeration)
+    user = get_user_by_email(email)
+    if not verify_password(user, password) or user is None:
+        record_failed_login(remote_ip, email)
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "data": None,
+                    "error": {
+                        "code": "INVALID_CREDENTIALS",
+                        "message": "Email hoặc mật khẩu không chính xác.",
+                    },
+                }
+            ),
+            401,
+        )
+
+    clear_login_attempts(remote_ip, email)
+
+    # Active status verification
+    if not user.is_active:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "data": None,
+                    "error": {
+                        "code": "ACCOUNT_INACTIVE",
+                        "message": "Tài khoản đã bị tạm khóa hoặc ngừng kích hoạt.",
+                    },
+                }
+            ),
+            403,
+        )
+
+    # Email verification gate (Required for active login)
+    if not user.email_verified_at:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "data": {"email": user.email, "requires_verification": True},
+                    "error": {
+                        "code": "EMAIL_NOT_VERIFIED",
+                        "message": "Tài khoản của bạn chưa được xác thực email. Vui lòng kiểm tra hộp thư hoặc bấm 'Gửi lại email xác thực'.",
+                    },
+                }
+            ),
+            403,
+        )
+
+    # Single Active Device Takeover (Eviction Invariant)
+    # New valid login ALWAYS succeeds (HTTP 200). If older sessions exist:
+    # - If active within 5 minutes: emit SSE event to politely notify and evict older device.
+    # - If idle (> 5 minutes, tab closed): silently revoke in database.
+    now = utc_now()
+    existing_active_sessions = (
+        db.session.query(AuthSession)
+        .filter(
+            AuthSession.user_id == user.id,
+            AuthSession.revoked_at.is_(None),
+            AuthSession.expires_at > now,
+        )
+        .all()
+    )
+
+    current_raw_key = session.get("auth_session_key")
+    current_key_hash = hash_session_key(current_raw_key) if current_raw_key else None
+
+    other_active = [
+        s for s in existing_active_sessions
+        if not (current_key_hash and hmac.compare_digest(s.session_key_hash, current_key_hash))
+    ]
+
+    if other_active:
+        active_threshold = timedelta(minutes=5)
+        truly_active = []
+        for s in other_active:
+            if s.last_seen_at:
+                s_seen = s.last_seen_at.replace(tzinfo=timezone.utc) if s.last_seen_at.tzinfo is None else s.last_seen_at
+                if (now - s_seen) <= active_threshold:
+                    truly_active.append(s)
+
+        # Revoke all existing sessions in DB to enforce single active session
+        for s in existing_active_sessions:
+            s.revoked_at = now
+        user.auth_version = (user.auth_version or 1) + 1
+        db.session.commit()
+
+        # If an existing session was actively in use (<= 5 min), notify that client via SSE
+        if truly_active:
+            try:
+                from backend.services.realtime_service import emit_domain_event
+
+                target_ids = [user.id]
+                if hasattr(user, "public_id") and user.public_id:
+                    target_ids.append(str(user.public_id))
+                emit_domain_event(
+                    event_type="auth:concurrent_session_revoked",
+                    payload={
+                        "user_id": user.id,
+                        "public_id": str(getattr(user, "public_id", user.id)),
+                        "message": "Tài khoản của bạn vừa được đăng nhập trên một thiết bị khác. Phiên làm việc trên thiết bị này đã kết thúc để đảm bảo an toàn.",
+                    },
+                    target_user_ids=target_ids,
+                )
+            except Exception as sse_err:
+                current_app.logger.warning("Could not emit concurrent session SSE: %s", sse_err)
+    else:
+        # Same client re-authenticating or clean session: revoke current matching session
+        for s in existing_active_sessions:
+            if current_key_hash and hmac.compare_digest(s.session_key_hash, current_key_hash):
+                s.revoked_at = now
+        db.session.commit()
+
+    # Create server-side AuthSession in database
+    user_agent_str = request.user_agent.string if request.user_agent else None
+    session_duration = timedelta(days=30) if remember else timedelta(days=7)
+    auth_session, raw_session_key = create_auth_session(
+        user=user,
+        ip_address=request.remote_addr,
+        user_agent=user_agent_str,
+        session_duration=session_duration,
+    )
+
+    # Establish Flask-Login session identity
+    # (clear existing unauthenticated session to prevent session fixation)
+    session.clear()
+    login_user(user, remember=remember)
+    # Enable persistent session cookie so closing/reopening tabs preserves login
+    current_app.permanent_session_lifetime = session_duration
+    session.permanent = True
+
+    # Store session-integrity values in Flask session cookie
+    session["auth_session_key"] = raw_session_key
+    session["auth_version"] = user.auth_version
+
+    # Regenerate fresh CSRF token post-login to prevent session fixation and ensure
+    # state-changing API readiness
+    from flask_wtf.csrf import generate_csrf
+
+    # Evict cached request-scoped CSRF token on Flask's g object so generate_csrf()
+    # is forced to generate a brand-new token and populate session['csrf_token'].
+    g.pop("csrf_token", None)
+    new_csrf_token = generate_csrf()
+
+    # Determine role-aware default landing dashboard and active role
+    primary_role = user.primary_role
+    session["active_role"] = primary_role
+
+    if primary_role == "ADMIN":
+        default_landing = url_for("admin.dashboard")
+    elif primary_role == "INSTRUCTOR":
+        default_landing = url_for("instructor.dashboard")
+    elif primary_role == "STUDENT":
+        default_landing = url_for("student.dashboard")
+    else:
+        default_landing = url_for("core.index")
+
+    # Safe next_url redirect to prevent open-redirect vulnerabilities
+    target_url = default_landing
+    if next_url and _is_safe_redirect_url(next_url):
+        target_url = next_url
+
+    if _is_json_request():
+        login_data = {
+            "status": "ok",
+            "message": "Đăng nhập thành công.",
+            "csrf_token": new_csrf_token,
+            "redirect_url": target_url,
+            "user": {
+                "id": str(user.public_id),
+                "public_id": str(user.public_id),
+                "email": user.email,
+                "display_name": user.display_name,
+                "full_name": getattr(user, "full_name", None)
+                or getattr(user, "display_name", "")
+                or "",
+                "primary_role": getattr(user, "primary_role", "STUDENT"),
+                "active_role": session.get("active_role")
+                or getattr(user, "primary_role", "STUDENT"),
+                "role_codes": sorted(getattr(user, "role_codes", ["STUDENT"])),
+                "admin_sub_role": getattr(user, "admin_sub_role", None),
+                "admin_sub_role_label": getattr(user, "admin_sub_role_label", ""),
+                "is_primary_admin": getattr(user, "is_primary_admin", False),
+                "is_email_verified": getattr(user, "is_email_verified", False),
+                "avatar_url": getattr(user, "avatar_url", None),
+            },
+        }
+        resp = make_response(
+            jsonify(
+                {
+                    "success": True,
+                    "data": login_data,
+                    "error": None,
+                    **login_data,
+                }
+            ),
+            200,
+        )
+        resp.set_cookie("csrf_token", new_csrf_token, samesite="Lax")
+        return resp
+
+    flash("Đăng nhập thành công!", "success")
+    resp_redirect = make_response(redirect(target_url))
+    resp_redirect.set_cookie("csrf_token", new_csrf_token, samesite="Lax")
+    return resp_redirect
+
+
+@auth_bp.route("/switch-role", methods=["POST"])
+def switch_role() -> Any:
+    """Switch the current active role for multi-role authenticated users."""
+    if not current_user.is_authenticated:
+        if _is_json_request():
+            return (
+                jsonify(
+                    {
+                        "error": {
+                            "code": "UNAUTHORIZED",
+                            "message": "Authentication required to switch role.",
+                        }
+                    }
+                ),
+                401,
+            )
+        return redirect(url_for("auth.login"))
+
+    # Student cannot switch roles
+    if not (current_user.is_admin or current_user.is_instructor):
+        if _is_json_request():
+            return (
+                jsonify(
+                    {
+                        "error": {
+                            "code": "FORBIDDEN",
+                            "message": "Tài khoản học viên không thể chuyển đổi vai trò.",
+                        }
+                    }
+                ),
+                403,
+            )
+        flash("Tài khoản học viên không thể chuyển đổi vai trò.", "danger")
+        return redirect(request.referrer or url_for("student.dashboard")), 403
+
+    target_role = ""
+    if request.is_json:
+        target_role = str((request.get_json() or {}).get("role", "")).strip().upper()
+    else:
+        target_role = request.form.get("role", "").strip().upper()
+
+    # Allowed target roles:
+    # Admin can switch between ADMIN, INSTRUCTOR, STUDENT
+    # Instructor can switch between INSTRUCTOR, STUDENT
+    if current_user.is_admin:
+        allowed_roles = {"ADMIN", "INSTRUCTOR", "STUDENT"}
+    elif current_user.is_instructor:
+        allowed_roles = {"INSTRUCTOR", "STUDENT"}
+    else:
+        allowed_roles = set()
+
+    if target_role not in allowed_roles:
+        if _is_json_request():
+            return (
+                jsonify(
+                    {
+                        "error": {
+                            "code": "FORBIDDEN",
+                            "message": (
+                                f"Tài khoản không có quyền hoạt động với vai trò {target_role}."
+                            ),
+                        }
+                    }
+                ),
+                403,
+            )
+        flash(f"Bạn không có quyền chuyển sang vai trò {target_role}.", "danger")
+        return redirect(request.referrer or url_for("student.dashboard")), 403
+
+    session["active_role"] = target_role
+    role_labels = {
+        "ADMIN": "Quản trị viên (Admin)",
+        "INSTRUCTOR": "Giảng viên (Instructor)",
+        "STUDENT": "Học viên (Student)",
+    }
+    flash(f"Đã chuyển sang vai trò {role_labels.get(target_role, target_role)}.", "success")
+
+    if target_role == "ADMIN":
+        dest_url = url_for("admin.dashboard")
+    elif target_role == "INSTRUCTOR":
+        dest_url = url_for("instructor.dashboard")
+    else:
+        dest_url = url_for("student.dashboard")
+
+    if _is_json_request():
+        return (
+            jsonify(
+                {
+                    "status": "ok",
+                    "active_role": target_role,
+                    "redirect_url": dest_url,
+                }
+            ),
+            200,
+        )
+
+    return redirect(dest_url)
+
+
+@auth_bp.route("/logout", methods=["POST"])
+def logout() -> Any:
+    """Handle user logout: revokes server-side session and clears client session."""
+    raw_session_key = session.get("auth_session_key")
+    if raw_session_key:
+        revoke_auth_session(raw_session_key)
+
+    logout_user()
+    session.clear()
+
+    if _is_json_request():
+        resp = make_response(jsonify({"status": "ok", "message": "Đăng xuất thành công."}), 200)
+        resp.delete_cookie("csrf_token", path="/")
+        return resp
+
+    flash("Bạn đã đăng xuất thành công.", "info")
+    resp_redirect = make_response(redirect(url_for("auth.login")))
+    resp_redirect.delete_cookie("csrf_token", path="/")
+    return resp_redirect
+
+
+@auth_bp.route("/register", methods=["GET", "POST"])
+def register() -> Any:
+    """Handle user registration for Web UI."""
+    if request.method == "GET":
+        from flask_wtf.csrf import generate_csrf
+
+        token = generate_csrf()
+        if current_user.is_authenticated:
+            resp = make_response(jsonify({"status": "authenticated", "csrf_token": token}), 200)
+            resp.set_cookie("csrf_token", token, samesite="Lax")
+            return resp
+        resp = make_response(
+            jsonify(
+                {
+                    "status": "ok",
+                    "csrf_token": token,
+                    "message": "PWD301 Registration Endpoint. POST name, email, password.",
+                }
+            ),
+            200,
+        )
+        resp.set_cookie("csrf_token", token, samesite="Lax")
+        return resp
+
+    # POST processing
+    data: dict[str, Any] = {}
+    if request.is_json:
+        data = request.get_json() or {}
+    else:
+        try:
+            data = request.get_json(silent=True, force=True) or {}
+        except Exception:
+            data = {}
+
+    if data:
+        if "encrypted_envelope" in data or data.get("prefix") == "PPTQ LMS":
+            from backend.services.in_transit_crypto_service import decrypt_hybrid_payload
+            try:
+                env = data.get("encrypted_envelope") or data
+                decrypted = decrypt_hybrid_payload(env)
+                display_name = str(decrypted.get("name", decrypted.get("display_name", ""))).strip()
+                email = str(decrypted.get("email", "")).strip()
+                password = str(decrypted.get("password", ""))
+            except Exception as exc:
+                return jsonify({
+                    "success": False,
+                    "data": None,
+                    "error": {"code": "INVALID_ENCRYPTION_ENVELOPE", "message": str(exc)},
+                    "message": str(exc),
+                }), 400
+        else:
+            display_name = str(data.get("name", "")).strip()
+            email = str(data.get("email", "")).strip()
+            password = str(data.get("password", ""))
+    else:
+        display_name = request.form.get("name", "").strip()
+        email = request.form.get("email", "").strip()
+        password = request.form.get("password", "")
+
+    try:
+        user = register_user(
+            email=email,
+            password=password,
+            display_name=display_name,
+        )
+    except ServiceError as exc:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "VALIDATION_ERROR",
+                        "message": str(exc),
+                    }
+                }
+            ),
+            400,
+        )
+
+    # Generate single-use verification token and dispatch branded confirmation email
+    try:
+        from backend.services.user_service import generate_email_verification_token
+        from backend.services.email_service import send_verification_email
+
+        token = generate_email_verification_token(user.id)
+        frontend_url = request.host_url
+        if request.headers.get("Origin"):
+            frontend_url = request.headers.get("Origin")
+        elif request.headers.get("Referer"):
+            from urllib.parse import urlsplit
+            parts = urlsplit(request.headers.get("Referer"))
+            frontend_url = f"{parts.scheme}://{parts.netloc}"
+
+        send_verification_email(user=user, token=token, frontend_url=frontend_url)
+    except Exception as mail_err:
+        current_app.logger.warning("Could not dispatch registration verification email: %s", mail_err)
+
+    return (
+        jsonify(
+            {
+                "status": "ok",
+                "message": "Đăng ký tài khoản thành công! Vui lòng kiểm tra email để kích hoạt tài khoản trước khi đăng nhập.",
+                "requires_email_verification": True,
+                "email": user.email,
+                "public_id": str(user.public_id),
+            }
+        ),
+        201,
+    )
+
+
+@auth_bp.route("/change-password", methods=["GET", "POST"])
+@login_required
+def change_password_view() -> Any:
+    """Handle password change for authenticated users."""
+    if request.method == "GET":
+        return (
+            jsonify(
+                {
+                    "message": "PWD301 Change Password Endpoint. POST current and new password.",
+                }
+            ),
+            200,
+        )
+
+    if request.is_json:
+        data: dict[str, Any] = request.get_json() or {}
+        current_pwd = str(data.get("current_password", ""))
+        new_pwd = str(data.get("new_password", ""))
+        confirm_pwd = str(data.get("confirm_password", ""))
+    else:
+        current_pwd = request.form.get("current_password", "")
+        new_pwd = request.form.get("new_password", "")
+        confirm_pwd = request.form.get("confirm_password", "")
+
+    if not current_pwd or not new_pwd:
+        msg = "Vui lòng nhập đầy đủ mật khẩu hiện tại và mật khẩu mới."
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": msg}}), 400
+
+    if new_pwd != confirm_pwd:
+        msg = "Mật khẩu xác nhận không khớp với mật khẩu mới."
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": msg}}), 400
+
+    try:
+        user = change_password(
+            user_id=current_user.id,
+            current_password=current_pwd,
+            new_password=new_pwd,
+        )
+    except (InvalidPasswordError, ServiceError) as exc:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": str(exc)}}), 400
+
+    user_agent_str = request.user_agent.string if request.user_agent else None
+    auth_session, raw_session_key = create_auth_session(
+        user=user,
+        ip_address=request.remote_addr,
+        user_agent=user_agent_str,
+    )
+    login_user(user)
+    session["auth_session_key"] = raw_session_key
+    session["auth_version"] = user.auth_version
+
+    return jsonify({"status": "ok", "message": "Đổi mật khẩu thành công."}), 200
+
+
+@auth_bp.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password() -> Any:
+    """Handle password reset request."""
+    if request.method == "GET":
+        if current_user.is_authenticated:
+            return jsonify({"status": "authenticated"}), 200
+        return (
+            jsonify(
+                {
+                    "message": "PWD301 Forgot Password Endpoint. POST email to request reset.",
+                }
+            ),
+            200,
+        )
+
+    if request.is_json:
+        data: dict[str, Any] = request.get_json() or {}
+        email = str(data.get("email", "")).strip().lower()
+        display_name = str(data.get("display_name", "") or data.get("name", "")).strip()
+    else:
+        email = request.form.get("email", "").strip().lower()
+        display_name = (request.form.get("display_name", "") or request.form.get("name", "")).strip()
+
+    if not email:
+        msg = "Vui lòng nhập địa chỉ email."
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": msg}}), 400
+
+    from backend.services.audit_service import record_audit_event
+    from backend.services.email_service import send_password_reset_email
+
+    user = get_user_by_email(email)
+    reset_token: str | None = None
+
+    # 2-Tier Validation: If display_name is supplied, strictly verify that it matches user.display_name
+    is_name_match = True
+    if display_name:
+        is_name_match = (
+            user is not None
+            and user.display_name is not None
+            and user.display_name.strip().lower() == display_name.strip().lower()
+        )
+
+    if user is not None and user.is_active and is_name_match:
+        reset_token = generate_password_reset_token(user.id)
+        try:
+            send_password_reset_email(user, reset_token)
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            current_app.logger.warning(
+                "Failed to dispatch password reset email for user %s: %s", user.id, exc
+            )
+    else:
+        # Security: Log mismatched or failed recovery attempt
+        try:
+            record_audit_event(
+                event_type="SECURITY",
+                action="PASSWORD_RESET_MISMATCH",
+                entity_type="USER",
+                entity_id=getattr(user, "id", None),
+                details={
+                    "email": email,
+                    "attempted_display_name": display_name,
+                    "user_found": user is not None,
+                    "is_name_match": is_name_match,
+                },
+            )
+        except Exception as audit_err:
+            current_app.logger.debug("Failed to record recovery audit event: %s", audit_err)
+
+    msg = (
+        "Nếu thông tin họ tên và email trùng khớp với hồ sơ đăng ký, hướng dẫn đặt lại mật khẩu đã được "
+        "gửi đến hộp thư của bạn."
+    )
+    payload: dict[str, Any] = {"status": "ok", "message": msg}
+    if current_app.config.get("TESTING") and reset_token is not None:
+        payload["reset_token"] = reset_token
+    return jsonify(payload), 200
+
+
+
+@auth_bp.route("/reset-password/<token>", methods=["GET", "POST"])
+def reset_password(token: str) -> Any:
+    """Handle password reset using timed secure single-use token (valid for 15 minutes)."""
+    from backend.models.identity import User
+    from backend.services.auth_token_service import (
+        SecurityTokenPurpose,
+        TokenAlreadyConsumedError,
+        TokenExpiredError,
+        reset_password_with_token,
+        verify_security_token,
+    )
+
+    try:
+        token_record = verify_security_token(token, SecurityTokenPurpose.PASSWORD_RESET)
+    except TokenExpiredError:
+        msg = "Liên kết đặt lại mật khẩu đã hết hạn (chỉ có hiệu lực trong vòng 15 phút). Vui lòng gửi lại yêu cầu mới."
+        return jsonify({"error": {"code": "TOKEN_EXPIRED", "message": msg}}), 400
+    except TokenAlreadyConsumedError:
+        msg = "Liên kết đặt lại mật khẩu đã được sử dụng. Mỗi liên kết chỉ có tác dụng đổi mật khẩu 1 lần."
+        return jsonify({"error": {"code": "TOKEN_ALREADY_USED", "message": msg}}), 400
+    except Exception:
+        msg = "Liên kết đặt lại mật khẩu không hợp lệ hoặc không tồn tại."
+        return jsonify({"error": {"code": "INVALID_TOKEN", "message": msg}}), 400
+
+    user = db.session.get(User, token_record.user_id)
+    if not user or not user.is_active:
+        msg = "Tài khoản liên kết với liên kết đặt lại mật khẩu không khả dụng hoặc đã bị vô hiệu hóa."
+        return jsonify({"error": {"code": "ACCOUNT_INACTIVE", "message": msg}}), 400
+
+    if request.method == "GET":
+        return (
+            jsonify(
+                {
+                    "valid": True,
+                    "message": "Mã xác thực đặt lại mật khẩu hợp lệ.",
+                    "token": token,
+                    "user_id": user.id,
+                    "email": user.email,
+                    "display_name": user.display_name or (user.email.split("@")[0] if user.email else "Học viên"),
+                }
+            ),
+            200,
+        )
+
+    if request.is_json:
+        data: dict[str, Any] = request.get_json() or {}
+        new_pwd = str(data.get("password", "") or data.get("new_password", ""))
+        confirm_pwd = str(data.get("confirm_password", ""))
+    else:
+        new_pwd = request.form.get("password", "") or request.form.get("new_password", "")
+        confirm_pwd = request.form.get("confirm_password", "")
+
+    if not new_pwd:
+        msg = "Vui lòng nhập mật khẩu mới."
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": msg}}), 400
+
+    if new_pwd != confirm_pwd:
+        msg = "Mật khẩu xác nhận không khớp với mật khẩu mới."
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": msg}}), 400
+
+    try:
+        reset_password_with_token(token, new_pwd)
+    except TokenExpiredError:
+        msg = "Liên kết đặt lại mật khẩu đã hết hạn (chỉ có hiệu lực trong vòng 15 phút). Vui lòng gửi lại yêu cầu mới."
+        return jsonify({"error": {"code": "TOKEN_EXPIRED", "message": msg}}), 400
+    except TokenAlreadyConsumedError:
+        msg = "Liên kết đặt lại mật khẩu đã được sử dụng. Mỗi liên kết chỉ có tác dụng đổi mật khẩu 1 lần."
+        return jsonify({"error": {"code": "TOKEN_ALREADY_USED", "message": msg}}), 400
+    except (InvalidPasswordError, ServiceError) as exc:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": str(exc)}}), 400
+
+    msg = "Đặt lại mật khẩu thành công! Vui lòng đăng nhập bằng mật khẩu mới."
+    return jsonify({"status": "ok", "message": msg}), 200
+
+
+@auth_bp.route("/verify-email/<token>", methods=["GET"])
+def verify_email(token: str) -> Any:
+    """Verify user email address using secure timed token."""
+    user_id = verify_email_verification_token(token)
+    if not user_id:
+        msg = "Liên kết xác thực email không hợp lệ hoặc đã hết hạn."
+        if _is_json_request() and not (
+            request.accept_mimetypes.accept_html and "text/html" in request.headers.get("Accept", "")
+        ):
+            return jsonify({"error": {"code": "INVALID_TOKEN", "message": msg}}), 400
+        return redirect("/#/auth/login?verification_failed=1")
+
+    try:
+        from backend.services.auth_token_service import (
+            SecurityTokenPurpose,
+            verify_email_with_token,
+            verify_security_token,
+        )
+
+        verify_security_token(token, SecurityTokenPurpose.EMAIL_VERIFY)
+        verify_email_with_token(token)
+    except ServiceError as exc:
+        if _is_json_request() and not (
+            request.accept_mimetypes.accept_html and "text/html" in request.headers.get("Accept", "")
+        ):
+            return jsonify({"error": {"code": "VERIFICATION_ERROR", "message": str(exc)}}), 400
+        return redirect("/#/auth/login?verification_failed=1")
+
+    msg = "Email đã được xác thực thành công!"
+    if _is_json_request() and not (
+        request.accept_mimetypes.accept_html and "text/html" in request.headers.get("Accept", "")
+    ):
+        return jsonify({"status": "ok", "message": msg}), 200
+
+    return redirect("/#/auth/login?verified=1")
+
+
+@auth_bp.route("/resend-verification", methods=["POST"])
+def resend_verification() -> Any:
+    """Resend email verification link to unverified users."""
+    data: dict[str, Any] = request.get_json() or {} if request.is_json else {}
+    email = str(data.get("email", "")).strip()
+    if not email:
+        email = request.form.get("email", "").strip()
+
+    if not email:
+        return (
+            jsonify({"error": {"code": "VALIDATION_ERROR", "message": "Vui lòng nhập địa chỉ email."}}),
+            400,
+        )
+
+    from backend.services.email_service import send_verification_email
+    from backend.services.user_service import (
+        generate_email_verification_token,
+        get_user_by_email,
+    )
+
+    user = get_user_by_email(email)
+    if user is not None and user.is_active and not user.email_verified_at:
+        try:
+            token = generate_email_verification_token(user.id)
+            frontend_url = request.host_url
+            if request.headers.get("Origin"):
+                frontend_url = request.headers.get("Origin")
+            elif request.headers.get("Referer"):
+                from urllib.parse import urlsplit
+
+                parts = urlsplit(request.headers.get("Referer"))
+                frontend_url = f"{parts.scheme}://{parts.netloc}"
+
+            send_verification_email(user=user, token=token, frontend_url=frontend_url)
+        except Exception as exc:
+            current_app.logger.warning("Failed to resend verification email for %s: %s", email, exc)
+
+    return (
+        jsonify(
+            {
+                "status": "ok",
+                "message": "Nếu email tồn tại trong hệ thống và chưa được kích hoạt, liên kết xác thực mới đã được gửi vào hộp thư của bạn.",
+            }
+        ),
+        200,
+    )
+
+
+@auth_bp.route("/set-language", methods=["POST"])
+def set_language() -> Any:
+    """Set the active language ('vi' or 'en') in session and cookie."""
+    new_lang = ""
+    if request.is_json:
+        new_lang = str((request.get_json() or {}).get("lang", "")).strip().lower()
+    else:
+        new_lang = request.form.get("lang", "").strip().lower()
+
+    if new_lang not in ("vi", "en"):
+        new_lang = "vi"
+
+    session["lang"] = new_lang
+
+    target_url = request.referrer or url_for("core.index")
+    if not _is_safe_redirect_url(target_url):
+        target_url = url_for("core.index")
+
+    if _is_json_request():
+        resp = make_response(jsonify({"status": "ok", "lang": new_lang}))
+    else:
+        resp = make_response(redirect(target_url))
+
+    resp.set_cookie(
+        "pwd301_lang",
+        new_lang,
+        max_age=30 * 86400,
+        httponly=False,
+        samesite="Lax",
+    )
+    return resp
+
+
+@auth_bp.route("/set-timezone", methods=["POST"])
+def set_timezone() -> Any:
+    """Set the active timezone offset in session and cookie."""
+    new_tz = ""
+    if request.is_json:
+        new_tz = str((request.get_json() or {}).get("timezone", "")).strip()
+    else:
+        new_tz = request.form.get("timezone", "").strip()
+
+    from backend.services.i18n_service import format_tz_offset_label, parse_tz_offset
+
+    offset_seconds = parse_tz_offset(new_tz)
+    sign = "+" if offset_seconds >= 0 else "-"
+    abs_sec = abs(offset_seconds)
+    standard_offset_str = f"{sign}{abs_sec // 3600:02d}:{(abs_sec % 3600) // 60:02d}"
+
+    session["user_timezone"] = standard_offset_str
+
+    target_url = request.referrer or url_for("core.index")
+    if not _is_safe_redirect_url(target_url):
+        target_url = url_for("core.index")
+
+    if _is_json_request():
+        resp = make_response(
+            jsonify(
+                {
+                    "status": "ok",
+                    "timezone": standard_offset_str,
+                    "label": format_tz_offset_label(offset_seconds),
+                }
+            )
+        )
+    else:
+        resp = make_response(redirect(target_url))
+
+    resp.set_cookie(
+        "pwd301_timezone",
+        standard_offset_str,
+        max_age=30 * 86400,
+        httponly=False,
+        samesite="Lax",
+    )
+    return resp
+
+
+# ==============================================================================
+# Unified Session Notifications (Cross-Role: Student, Instructor, Admin)
+# ==============================================================================
+
+
+@auth_bp.route("/notifications", methods=["GET"])
+def auth_notifications_center() -> Any:
+    """Retrieve in-app notifications for authenticated session user across all roles."""
+    if not current_user.is_authenticated:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "UNAUTHORIZED",
+                        "message": "Authentication required to access notifications.",
+                    }
+                }
+            ),
+            401,
+        )
+
+    from backend.extensions import db
+    from backend.services.notification_service import (
+        get_unread_count,
+        get_user_preferences,
+        list_user_notifications,
+    )
+
+    try:
+        page = int(request.args.get("page", 1))
+    except (ValueError, TypeError):
+        page = 1
+    try:
+        per_page = int(request.args.get("per_page", 20))
+    except (ValueError, TypeError):
+        per_page = 20
+
+    status = request.args.get("status")
+    unread_only_arg = request.args.get("unread_only", "").strip().lower()
+    unread_only = unread_only_arg in ("true", "1", "yes")
+    category = request.args.get("category")
+    target_role = request.args.get("role") or request.args.get("target_role")
+
+    items, total = list_user_notifications(
+        actor=current_user,
+        target_role=target_role,
+        status=status,
+        unread_only=unread_only,
+        category=category,
+        page=page,
+        per_page=per_page,
+        session=db.session,
+    )
+    prefs = get_user_preferences(actor=current_user, session=db.session)
+    unread = get_unread_count(actor=current_user, target_role=target_role, session=db.session)
+
+    response_data = {
+        "items": items,
+        "total": total,
+        "unread_count": unread,
+        "preferences": prefs,
+        "page": max(1, page),
+        "per_page": min(max(1, per_page), 100),
+    }
+    return jsonify({"success": True, "data": response_data, **response_data}), 200
+
+
+@auth_bp.route("/notifications/unread-count", methods=["GET"])
+def auth_notifications_unread_count() -> Any:
+    """Fast unread notification count for authenticated web session topbar badge."""
+    if not current_user.is_authenticated:
+        response_data = {"unread_count": 0}
+        return jsonify({"success": True, "data": response_data, **response_data}), 200
+
+    from backend.extensions import db
+    from backend.services.notification_service import get_unread_count
+
+    target_role = request.args.get("role") or request.args.get("target_role")
+    unread = get_unread_count(actor=current_user, target_role=target_role, session=db.session)
+    response_data = {"unread_count": unread}
+    return jsonify({"success": True, "data": response_data, **response_data}), 200
+
+
+@auth_bp.route("/notifications/<notification_id>/read", methods=["POST"])
+def auth_mark_notification_read(notification_id: str) -> Any:
+    """Mark a notification as read for the authenticated session user."""
+    if not current_user.is_authenticated:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "UNAUTHORIZED",
+                        "message": "Authentication required to modify notifications.",
+                    }
+                }
+            ),
+            401,
+        )
+
+    from backend.extensions import db
+    from backend.services.notification_service import mark_notification_as_read
+
+    result = mark_notification_as_read(
+        actor=current_user,
+        notification_id=notification_id,
+        session=db.session,
+    )
+    return jsonify({"success": True, "data": result, **result}), 200
+
+
+@auth_bp.route("/notifications/mark-all-read", methods=["POST"])
+def auth_mark_all_notifications_read() -> Any:
+    """Mark all unread notifications of the current actor as read."""
+    if not current_user.is_authenticated:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "UNAUTHORIZED",
+                        "message": "Authentication required to modify notifications.",
+                    }
+                }
+            ),
+            401,
+        )
+
+    from backend.extensions import db
+    from backend.services.notification_service import mark_all_as_read
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    category = payload.get("category") or request.args.get("category")
+    target_role = (
+        payload.get("role")
+        or payload.get("target_role")
+        or request.args.get("role")
+        or request.args.get("target_role")
+    )
+    count = mark_all_as_read(
+        actor=current_user, category=category, target_role=target_role, session=db.session
+    )
+    response_data = {"marked_count": count}
+    return jsonify({"success": True, "data": response_data, **response_data}), 200
+
+
+@auth_bp.route("/notifications/<notification_id>", methods=["DELETE", "POST"])
+@auth_bp.route("/notifications/<notification_id>/delete", methods=["POST"])
+def auth_delete_notification(notification_id: str) -> Any:
+    """Soft-delete an in-app notification for the authenticated session user."""
+    if not current_user.is_authenticated:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "UNAUTHORIZED",
+                        "message": "Authentication required to modify notifications.",
+                    }
+                }
+            ),
+            401,
+        )
+
+    from backend.extensions import db
+    from backend.services.notification_service import dismiss_notification
+
+    result = dismiss_notification(
+        actor=current_user,
+        notification_id=notification_id,
+        session=db.session,
+    )
+    return jsonify({"success": True, "data": result, **result}), 200
+
+
+@auth_bp.route("/notifications", methods=["DELETE"])
+@auth_bp.route("/notifications/clear", methods=["POST"])
+def auth_clear_all_notifications() -> Any:
+    """Soft-delete all notifications for the authenticated session user."""
+    if not current_user.is_authenticated:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "UNAUTHORIZED",
+                        "message": "Authentication required to modify notifications.",
+                    }
+                }
+            ),
+            401,
+        )
+
+    from backend.extensions import db
+    from backend.services.notification_service import delete_all_notifications
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    target_role = (
+        payload.get("role")
+        or payload.get("target_role")
+        or request.args.get("role")
+        or request.args.get("target_role")
+    )
+    count = delete_all_notifications(
+        actor=current_user, target_role=target_role, session=db.session
+    )
+    response_data = {"deleted_count": count}
+    return jsonify({"success": True, "data": response_data, **response_data}), 200
+
+
+@auth_bp.route("/profile", methods=["GET", "PUT", "POST"])
+def auth_profile() -> Any:
+    """Retrieve or update profile of authenticated session user."""
+    if not current_user.is_authenticated:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "UNAUTHORIZED",
+                        "message": "Authentication required to access profile.",
+                    }
+                }
+            ),
+            401,
+        )
+
+    from backend.extensions import db
+
+    if request.method in ("PUT", "POST"):
+        payload = request.get_json(silent=True) or request.form.to_dict() or {}
+        display_name = str(payload.get("display_name") or payload.get("name") or "").strip()
+        avatar_url = payload.get("avatar_url")
+        if display_name:
+            if len(display_name) < 2 or len(display_name) > 150:
+                return (
+                    jsonify(
+                        {
+                            "error": {
+                                "code": "VALIDATION_ERROR",
+                                "message": "Tên hiển thị phải từ 2 đến 150 ký tự.",
+                            }
+                        }
+                    ),
+                    400,
+                )
+            current_user.display_name = display_name
+        if avatar_url is not None:
+            from backend.services.user_service import validate_avatar_url
+
+            try:
+                current_user.avatar_url = validate_avatar_url(avatar_url)
+            except ValueError as val_err:
+                return (
+                    jsonify(
+                        {
+                            "error": {
+                                "code": "VALIDATION_ERROR",
+                                "message": str(val_err),
+                            }
+                        }
+                    ),
+                    400,
+                )
+        current_user.updated_at = utc_now()
+        db.session.commit()
+
+    user_payload = {
+        "id": str(getattr(current_user, "public_id", current_user.id)),
+        "public_id": str(getattr(current_user, "public_id", current_user.id)),
+        "email": current_user.email,
+        "display_name": current_user.display_name,
+        "primary_role": getattr(current_user, "primary_role", "STUDENT"),
+        "active_role": session.get("active_role")
+        or getattr(current_user, "primary_role", "STUDENT"),
+        "role_codes": sorted(getattr(current_user, "role_codes", ["STUDENT"])),
+        "roles": sorted(getattr(current_user, "role_codes", ["STUDENT"])),
+        "admin_sub_role": getattr(current_user, "admin_sub_role", None),
+        "admin_sub_role_label": getattr(current_user, "admin_sub_role_label", ""),
+        "is_primary_admin": getattr(current_user, "is_primary_admin", False),
+        "avatar_url": getattr(current_user, "avatar_url", None),
+        "is_email_verified": getattr(current_user, "is_email_verified", False),
+        "created_at": (current_user.created_at.isoformat() if current_user.created_at else None),
+    }
+
+    return (
+        jsonify(
+            {
+                "status": "ok",
+                "user": user_payload,
+                "profile": user_payload,
+            }
+        ),
+        200,
+    )
+
+
+@auth_bp.route("/preferences", methods=["GET", "PUT", "PATCH"])
+def auth_preferences() -> Any:
+    """Retrieve or update notification preferences of authenticated session user."""
+    if not current_user.is_authenticated:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "UNAUTHORIZED",
+                        "message": "Authentication required to access preferences.",
+                    }
+                }
+            ),
+            401,
+        )
+
+    from backend.extensions import db
+    from backend.services.notification_service import (
+        get_user_preferences,
+        update_user_preferences,
+    )
+
+    if request.method in ("PUT", "PATCH"):
+        payload = request.get_json(silent=True) or request.form.to_dict() or {}
+        raw_prefs = payload.get("preferences", payload)
+        if isinstance(raw_prefs, dict):
+            mapped_prefs: dict[str, bool] = {}
+            for k, v in raw_prefs.items():
+                cat_key = k.upper().replace("EMAIL_", "")
+                mapped_prefs[cat_key] = bool(v)
+            raw_prefs = mapped_prefs
+        elif not isinstance(raw_prefs, list):
+            raw_prefs = {}
+
+        try:
+            updated_prefs = update_user_preferences(
+                actor=current_user,
+                preferences_payload=raw_prefs,
+                session=db.session,
+            )
+            map_dict = {f"email_{p['category'].lower()}": p["email_enabled"] for p in updated_prefs}
+            res_dict: dict[str, Any] = {
+                "status": "ok",
+                "preferences": updated_prefs,
+                "preferences_map": map_dict,
+            }
+            res_dict.update(map_dict)
+            return jsonify(res_dict), 200
+        except Exception as exc:
+            return jsonify({"error": {"code": "VALIDATION_ERROR", "message": str(exc)}}), 400
+
+    prefs = get_user_preferences(actor=current_user, session=db.session)
+    map_dict = {f"email_{p['category'].lower()}": p["email_enabled"] for p in prefs}
+    res_dict = {"status": "ok", "preferences": prefs, "preferences_map": map_dict}
+    res_dict.update(map_dict)
+    return jsonify(res_dict), 200
+
+
+@auth_bp.route("/events/stream", methods=["GET"])
+def auth_events_stream() -> Any:
+    """Stream realtime events for authenticated session users via Server-Sent Events."""
+    from backend.services.realtime_service import build_sse_stream_response
+
+    return build_sse_stream_response()

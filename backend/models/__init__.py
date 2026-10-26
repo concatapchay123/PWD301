@@ -1,0 +1,203 @@
+"""Canonical domain models registered in the application metadata."""
+
+from __future__ import annotations
+
+from backend.models.ai_rag import (
+    AIConversation,
+    AIGeneratedQuestionDraft,
+    AIMessage,
+    AIRequest,
+    AISourceUsage,
+    KnowledgeChunk,
+    KnowledgeDocument,
+    KnowledgeVersion,
+)
+from backend.models.assessment import (
+    Assessment,
+    AssessmentBlueprint,
+    AssessmentBlueprintRule,
+    AssessmentQuestionAssignment,
+    AssessmentQuestionPool,
+    AssessmentSection,
+)
+from backend.models.attempt_regrade import (
+    AssessmentAppeal,
+    AssessmentAttempt,
+    AssessmentResult,
+    AssessmentResultHistory,
+    AttemptAnswer,
+    AttemptAnswerChoice,
+    AttemptAnswerEvent,
+    AttemptChoiceSnapshot,
+    AttemptFocusEvent,
+    AttemptQuestion,
+    AttemptQuestionGrade,
+    AttemptQuestionGradeHistory,
+    QuestionCorrection,
+    RegradeItem,
+    RegradeJob,
+)
+from backend.models.course import (
+    Course,
+    CourseChangeRequest,
+    CourseCompletionRule,
+    CourseCompletionSummary,
+    CoursePrerequisite,
+    Enrollment,
+    EnrollmentEvent,
+    EnrollmentPeriod,
+    LearningUnit,
+    Lesson,
+    LessonProgress,
+    LessonProgressReceipt,
+)
+from backend.models.file_import import (
+    DocumentImportJob,
+    FileAsset,
+    FileBlob,
+    FileRevision,
+    FileScanResult,
+    ImportDuplicateCandidate,
+    ImportQuestion,
+    ImportQuestionResource,
+    LessonResource,
+    QuestionRevisionResource,
+)
+from backend.models.identity import (
+    AnonymousUser,
+    AuthSession,
+    InstructorApplication,
+    JwtTokenGrant,
+    Role,
+    SecurityEvent,
+    User,
+    UserRole,
+    UserSecurityToken,
+)
+from backend.models.notification_audit import (
+    AuditEvent,
+    EmailDelivery,
+    Notification,
+    NotificationEvent,
+    NotificationPreference,
+)
+from backend.models.operations import (
+    AnalyticsSnapshot,
+    BackgroundJob,
+    BackupRun,
+    GradeExport,
+    MaintenanceWindow,
+    SystemAlert,
+    SystemBackup,
+    SystemHealthSnapshot,
+)
+from backend.models.playback import MediaProgress, PlaybackReceipt, PlaybackSession
+from backend.models.question_bank import (
+    Question,
+    QuestionChoice,
+    QuestionProvenance,
+    QuestionRevision,
+    QuestionRevisionAcceptedAnswer,
+    QuestionRevisionChoice,
+)
+from backend.models.types import register_sqlite_functions
+from backend.models.wallet import UserBalance, WalletTransaction
+
+__all__ = [
+    "PlaybackSession",
+    "MediaProgress",
+    "PlaybackReceipt",
+    # Wallet & Payments
+    "UserBalance",
+    "WalletTransaction",
+    # Identity & Auth
+    "User",
+    "AnonymousUser",
+    "Role",
+    "UserRole",
+    "AuthSession",
+    "JwtTokenGrant",
+    "UserSecurityToken",
+    "InstructorApplication",
+    "SecurityEvent",
+    # Course & Learning
+    "Course",
+    "CoursePrerequisite",
+    "CourseCompletionRule",
+    "CourseChangeRequest",
+    "LearningUnit",
+    "Lesson",
+    "Enrollment",
+    "EnrollmentPeriod",
+    "EnrollmentEvent",
+    "LessonProgress",
+    "LessonProgressReceipt",
+    "CourseCompletionSummary",
+    # Question Bank
+    "Question",
+    "QuestionRevision",
+    "QuestionChoice",
+    "QuestionRevisionChoice",
+    "QuestionRevisionAcceptedAnswer",
+    "QuestionProvenance",
+    # Assessment Structure
+    "Assessment",
+    "AssessmentSection",
+    "AssessmentQuestionAssignment",
+    "AssessmentBlueprint",
+    "AssessmentBlueprintRule",
+    "AssessmentQuestionPool",
+    # Assessment Attempt & Regrading
+    "AssessmentAppeal",
+    "AssessmentAttempt",
+    "AttemptQuestion",
+    "AttemptChoiceSnapshot",
+    "AttemptAnswer",
+    "AttemptAnswerChoice",
+    "AttemptAnswerEvent",
+    "AttemptFocusEvent",
+    "AttemptQuestionGrade",
+    "AttemptQuestionGradeHistory",
+    "AssessmentResult",
+    "AssessmentResultHistory",
+    "QuestionCorrection",
+    "RegradeJob",
+    "RegradeItem",
+    # File Storage & Import
+    "FileBlob",
+    "FileAsset",
+    "FileRevision",
+    "FileScanResult",
+    "LessonResource",
+    "QuestionRevisionResource",
+    "DocumentImportJob",
+    "ImportQuestion",
+    "ImportDuplicateCandidate",
+    "ImportQuestionResource",
+    # AI & RAG
+    "AIConversation",
+    "AIMessage",
+    "AIRequest",
+    "AIGeneratedQuestionDraft",
+    "KnowledgeDocument",
+    "KnowledgeVersion",
+    "KnowledgeChunk",
+    "AISourceUsage",
+    # Notification & Audit
+    "NotificationEvent",
+    "Notification",
+    "NotificationPreference",
+    "EmailDelivery",
+    "AuditEvent",
+    # Operations & Health
+    "BackgroundJob",
+    "SystemAlert",
+    "BackupRun",
+    "SystemBackup",
+    "MaintenanceWindow",
+    "GradeExport",
+    "AnalyticsSnapshot",
+    "SystemHealthSnapshot",
+    # Dialect compatibility helpers
+    "register_sqlite_functions",
+]

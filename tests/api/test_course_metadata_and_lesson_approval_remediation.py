@@ -12,19 +12,19 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import Course, CourseChangeRequest, Lesson
-from pwd301.models.identity import Role, User
-from pwd301.services.course_service import change_course_status, create_course
-from pwd301.services.course_workflow_service import review_version
-from pwd301.services.lesson_service import (
+from backend.extensions import db
+from backend.models.course import Course, CourseChangeRequest, Lesson
+from backend.models.identity import Role, User
+from backend.services.course_service import change_course_status, create_course
+from backend.services.course_workflow_service import review_version
+from backend.services.lesson_service import (
     create_learning_unit,
     create_lesson,
     create_lesson_change_request,
     discard_lesson_working_draft,
     submit_course_changeset,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 from tests.conftest import login_web_user
 
 

@@ -5,17 +5,17 @@ from __future__ import annotations
 import pytest
 from flask import Flask
 
-from pwd301.extensions import db
-from pwd301.models.notification_audit import EmailDelivery
-from pwd301.models.operations import BackgroundJob
-from pwd301.services.background_job_service import (
+from backend.extensions import db
+from backend.models.notification_audit import EmailDelivery
+from backend.models.operations import BackgroundJob
+from backend.services.background_job_service import (
     BackgroundJobError,
     claim_next_background_job,
     enqueue_background_job,
     execute_background_job,
     run_worker_once,
 )
-from pwd301.services.email_service import enqueue_email
+from backend.services.email_service import enqueue_email
 
 
 def test_enqueue_valid_job(app: Flask) -> None:

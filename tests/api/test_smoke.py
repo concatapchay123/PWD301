@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from flask.testing import FlaskClient
 
-import pwd301
+import backend
 
 
 def test_health_endpoint(client: FlaskClient) -> None:
@@ -16,7 +16,7 @@ def test_health_endpoint(client: FlaskClient) -> None:
     data = response.get_json()
     assert data["status"] == "ok"
     assert data["env"] == "testing"
-    assert data["version"] == pwd301.__version__
+    assert data["version"] == backend.__version__
 
 
 def test_root_endpoint_json(client: FlaskClient) -> None:
@@ -28,7 +28,7 @@ def test_root_endpoint_json(client: FlaskClient) -> None:
     data = response.get_json()
     assert data["status"] == "running"
     assert "PWD301" in data["name"]
-    assert data["version"] == pwd301.__version__
+    assert data["version"] == backend.__version__
 
 
 def test_root_endpoint_html(client: FlaskClient) -> None:

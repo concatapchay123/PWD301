@@ -13,16 +13,16 @@ import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.ai_rag import (
+from backend.extensions import db
+from backend.models.ai_rag import (
     AIConversation,
     AIGeneratedQuestionDraft,
 )
-from pwd301.models.course import Course
-from pwd301.models.identity import Role, User
-from pwd301.models.question_bank import Question, QuestionProvenance, QuestionRevision
-from pwd301.models.types import utc_now
-from pwd301.services.ai_service import (
+from backend.models.course import Course
+from backend.models.identity import Role, User
+from backend.models.question_bank import Question, QuestionProvenance, QuestionRevision
+from backend.models.types import utc_now
+from backend.services.ai_service import (
     _map_bloom_to_db_difficulty,
     approve_question_draft,
     create_conversation,
@@ -31,7 +31,7 @@ from pwd301.services.ai_service import (
     reject_question_draft,
     send_chat_message,
 )
-from pwd301.services.exceptions import (
+from backend.services.exceptions import (
     AIConversationExpiredError,
     AIError,
     AIPromptInjectionError,
@@ -40,7 +40,7 @@ from pwd301.services.exceptions import (
     AIValidationError,
     ForbiddenError,
 )
-from pwd301.services.gemini_service import (
+from backend.services.gemini_service import (
     MockGeminiClient,
     RealGeminiClient,
     detect_prompt_injection,
@@ -50,15 +50,15 @@ from pwd301.services.gemini_service import (
     sanitize_prompt,
     validate_and_sanitize_prompt,
 )
-from pwd301.services.rag_service import (
+from backend.services.rag_service import (
     _compute_bm25_score,
     _compute_cosine_semantic_score,
 )
-from pwd301.services.rate_limit_service import (
+from backend.services.rate_limit_service import (
     AI_ROLE_LIMITS,
     check_ai_rate_limit,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -697,7 +697,7 @@ def test_send_chat_message_lesson_and_recommendation_grounding(
     app: Flask, student_user: User, sample_course: Course
 ) -> None:
     """Verify that send_chat_message injects lesson markdown and recommendation into context."""
-    from pwd301.models.course import LearningUnit, Lesson
+    from backend.models.course import LearningUnit, Lesson
 
     sess: Session = db.session
 
@@ -730,7 +730,7 @@ def test_send_chat_message_lesson_and_recommendation_grounding(
         session=sess,
     )
 
-    from pwd301.services.gemini_service import MockGeminiClient, set_gemini_client_override
+    from backend.services.gemini_service import MockGeminiClient, set_gemini_client_override
 
     captured_context: list[str] = []
     mock_client = MockGeminiClient()
@@ -780,8 +780,8 @@ def test_course_syllabus_grounding_in_chat(
     app: Flask, student_user: User, sample_course: Course
 ) -> None:
     """AI receives structured course syllabus when context is a Course."""
-    from pwd301.models.course import LearningUnit, Lesson
-    from pwd301.services.gemini_service import MockGeminiClient, set_gemini_client_override
+    from backend.models.course import LearningUnit, Lesson
+    from backend.services.gemini_service import MockGeminiClient, set_gemini_client_override
 
     sess = db.session
     u1 = LearningUnit(course_id=sample_course.id, title="Chương 1: Cơ bản", position=1)
@@ -834,7 +834,7 @@ def test_course_syllabus_grounding_in_chat(
 
 def test_global_recommendation_context_delivered_to_model(app: Flask, student_user: User) -> None:
     """When on GLOBAL context, course recommendations are included in the prompt payload."""
-    from pwd301.services.gemini_service import RealGeminiClient
+    from backend.services.gemini_service import RealGeminiClient
 
     client = RealGeminiClient(api_key="AIzaSyTestMockKeyForContextTest12345")
     with unittest.mock.patch.object(client, "_call_gemini_api") as mock_call:
@@ -871,8 +871,8 @@ def test_global_recommendation_context_delivered_to_model(app: Flask, student_us
 
 def test_conversation_history_sliding_window_limits_turns(app: Flask, student_user: User) -> None:
     """Conversation history sent to Gemini is bounded by sliding window (max 6 turns)."""
-    from pwd301.models.ai_rag import AIMessage
-    from pwd301.services.gemini_service import MockGeminiClient, set_gemini_client_override
+    from backend.models.ai_rag import AIMessage
+    from backend.services.gemini_service import MockGeminiClient, set_gemini_client_override
 
     sess = db.session
     conv = create_conversation(actor=student_user, context_type="GLOBAL", session=sess)
@@ -929,9 +929,9 @@ def test_conversation_history_sliding_window_limits_turns(app: Flask, student_us
 
 def test_refusal_messages_excluded_from_llm_history(app: Flask, student_user: User) -> None:
     """Out-of-scope refusal turns are filtered out so they do not pollute LLM prompt memory."""
-    from pwd301.models.ai_rag import AIMessage
-    from pwd301.services.gemini_service import MockGeminiClient, set_gemini_client_override
-    from pwd301.services.scope_classifier import REFUSAL_MESSAGE_OUT_OF_SCOPE
+    from backend.models.ai_rag import AIMessage
+    from backend.services.gemini_service import MockGeminiClient, set_gemini_client_override
+    from backend.services.scope_classifier import REFUSAL_MESSAGE_OUT_OF_SCOPE
 
     sess = db.session
     conv = create_conversation(actor=student_user, context_type="GLOBAL", session=sess)

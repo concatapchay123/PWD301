@@ -10,11 +10,11 @@ import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.course import CourseCompletionRule, CoursePrerequisite
-from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import AuditEvent, Notification, NotificationEvent
-from pwd301.services.course_service import (
+from backend.extensions import db
+from backend.models.course import CourseCompletionRule, CoursePrerequisite
+from backend.models.identity import Role, User
+from backend.models.notification_audit import AuditEvent, Notification, NotificationEvent
+from backend.services.course_service import (
     change_course_status,
     create_course,
     get_course_detail,
@@ -24,7 +24,7 @@ from pwd301.services.course_service import (
     trash_course,
     update_course,
 )
-from pwd301.services.exceptions import (
+from backend.services.exceptions import (
     CourseAlreadyExistsError,
     CourseDependencyError,
     CourseStateViolationError,
@@ -33,8 +33,8 @@ from pwd301.services.exceptions import (
     InvalidRoleAssignmentError,
     UserNotFoundError,
 )
-from pwd301.services.file_service import store_file_stream
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.file_service import store_file_stream
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -413,7 +413,7 @@ def test_course_lifecycle_notifications_use_audit_scoped_event_keys(
         return None, None
 
     monkeypatch.setattr(
-        "pwd301.services.notification_service.dispatch_notification",
+        "backend.services.notification_service.dispatch_notification",
         capture_notification,
     )
 
@@ -637,7 +637,7 @@ def test_reassign_course_owner_notifications_use_recipient_scoped_audit_keys(
         return None, None
 
     monkeypatch.setattr(
-        "pwd301.services.notification_service.dispatch_notification",
+        "backend.services.notification_service.dispatch_notification",
         capture_notification,
     )
 

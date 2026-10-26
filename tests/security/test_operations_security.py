@@ -19,14 +19,14 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.identity import Role, User
-from pwd301.models.operations import BackupRun
-from pwd301.models.types import utc_now
-from pwd301.services.exceptions import AuditPersistenceError
-from pwd301.services.jwt_auth_service import create_token_pair
-from pwd301.services.operations_service import create_database_backup
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.extensions import db
+from backend.models.identity import Role, User
+from backend.models.operations import BackupRun
+from backend.models.types import utc_now
+from backend.services.exceptions import AuditPersistenceError
+from backend.services.jwt_auth_service import create_token_pair
+from backend.services.operations_service import create_database_backup
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -263,7 +263,7 @@ def test_fail_closed_on_audit_persistence_failure(
     with app.app_context():
         with (
             mock.patch(
-                "pwd301.services.operations_service.record_audit_event",
+                "backend.services.operations_service.record_audit_event",
                 side_effect=AuditPersistenceError("Database disk full or audit trigger aborted"),
             ),
             pytest.raises(AuditPersistenceError),

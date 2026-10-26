@@ -10,12 +10,12 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
-from pwd301.extensions import db
-from pwd301.models.ai_rag import AIRequest
-from pwd301.models.identity import Role, User
-from pwd301.services.jwt_auth_service import create_token_pair
-from pwd301.services.session_auth_service import create_auth_session
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.extensions import db
+from backend.models.ai_rag import AIRequest
+from backend.models.identity import Role, User
+from backend.services.jwt_auth_service import create_token_pair
+from backend.services.session_auth_service import create_auth_session
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -368,8 +368,8 @@ def test_hybrid_ai_guardrail_blocks_ai_abuse(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Simulated AI guardrail intercepting subtle abuse blocks both web chat and REST API."""
-    from pwd301.services.gemini_service import MockGeminiClient
-    from pwd301.services.scope_classifier import REFUSAL_MESSAGE_AI_ABUSE, ScopeResult
+    from backend.services.gemini_service import MockGeminiClient
+    from backend.services.scope_classifier import REFUSAL_MESSAGE_AI_ABUSE, ScopeResult
 
     def mock_classify_intent(self: Any, query: str, context: str | None = None) -> ScopeResult:
         if "đồ án ngoài" in query:

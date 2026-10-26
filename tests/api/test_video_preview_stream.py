@@ -4,14 +4,14 @@ import hashlib
 
 import pytest
 
-from pwd301.extensions import db
-from pwd301.models.course import Course
-from pwd301.models.file_import import FileAsset, FileBlob, FileRevision, FileScanResult
-from pwd301.models.identity import Role, UserRole
-from pwd301.models.types import utc_now
-from pwd301.services.course_service import create_course
-from pwd301.services.enrollment_service import enroll_student
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.extensions import db
+from backend.models.course import Course
+from backend.models.file_import import FileAsset, FileBlob, FileRevision, FileScanResult
+from backend.models.identity import Role, UserRole
+from backend.models.types import utc_now
+from backend.services.course_service import create_course
+from backend.services.enrollment_service import enroll_student
+from backend.services.user_service import assign_role_to_user, register_user
 from tests.conftest import login_web_user
 
 

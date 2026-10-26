@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock
 
-from pwd301.models.file_import import FileAsset, FileRevision
+from backend.models.file_import import FileAsset, FileRevision
 
 
 def test_sec01_active_asset_with_rejected_revision_is_infected():

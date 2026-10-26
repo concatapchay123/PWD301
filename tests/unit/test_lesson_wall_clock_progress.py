@@ -3,16 +3,16 @@
 import pytest
 from flask import Flask
 
-from pwd301.extensions import db
-from pwd301.models.course import Course, Enrollment, EnrollmentPeriod
-from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import AuditEvent
-from pwd301.services.course_service import change_course_status, create_course
-from pwd301.services.lesson_service import (
+from backend.extensions import db
+from backend.models.course import Course, Enrollment, EnrollmentPeriod
+from backend.models.identity import Role, User
+from backend.models.notification_audit import AuditEvent
+from backend.services.course_service import change_course_status, create_course
+from backend.services.lesson_service import (
     create_lesson,
     record_lesson_progress,
 )
-from pwd301.services.user_service import assign_role_to_user, register_user
+from backend.services.user_service import assign_role_to_user, register_user
 
 
 @pytest.fixture
@@ -105,7 +105,7 @@ def test_cannot_bypass_minimum_duration_with_high_view_fraction(
     sess.commit()
 
     # An attacker or script attempts to send view_fraction=0.95 with only seconds_increment=5
-    from pwd301.services.exceptions import LessonValidationError
+    from backend.services.exceptions import LessonValidationError
 
     with pytest.raises(LessonValidationError, match="playback session"):
         record_lesson_progress(
