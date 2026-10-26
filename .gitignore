@@ -33,6 +33,8 @@ PROJECT_CONTEXT_FOR_GEMINI_AI.md
 
 # Flask/runtime local state
 instance/*
+source_code/instance/*
+!source_code/instance/.gitkeep
 !instance/.gitkeep
 src/instance/
 logs/
