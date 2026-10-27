@@ -3,10 +3,11 @@
 # ==============================================================================
 
 # 1. Kiem tra quyen Administrator
-$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsPrincipal]::Administrator)
+$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+$principal = New-Object Security.Principal.WindowsPrincipal($identity)
+$isAdmin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) {
-    Write-Host "[!] Yeu cau quyen Administrator. Dang mo hop thoai UAC de nang quyen..." -ForegroundColor Yellow
-    Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
+    Write-Host "[!] Yeu cau quyen Administrator. Vui long chay PowerShell voi 'Run as Administrator'." -ForegroundColor Red
     exit
 }
 
@@ -221,5 +222,5 @@ if ($mysqlOdbcFinal) {
 
 LogMsg "`nBan sao luu cac Database PWD301, xsentinel, openlibrary an toan tai: E:\backup1\" "Cyan"
 LogMsg "Hoan tat! Ban co the khoi dong lai may de lam moi hoan toan Windows." "Cyan"
-LogMsg "Nhan phim bat ky de thoat..." "Gray"
-[void][System.Console]::ReadKey()
+LogMsg "Nhan phím Enter de thoat..." "Gray"
+try { [void][System.Console]::ReadKey() } catch { Read-Host }

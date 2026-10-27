@@ -697,13 +697,27 @@ def create_app(
 
         path = request.path
 
-        # Static assets and health probes fast path
+        # Static assets, agent discovery files, and health probes fast path
         if (
             path.startswith("/static/")
             or path.startswith("/frontend/")
             or path.startswith("/assets/")
             or path == "/"
-            or path in ("/health", "/health/deep", "/favicon.ico")
+            or path in (
+                "/health",
+                "/health/deep",
+                "/favicon.ico",
+                "/sitemap.xml",
+                "/robots.txt",
+                "/llms.txt",
+                "/llms-full.txt",
+                "/about",
+                "/about/",
+                "/contact",
+                "/contact/",
+                "/privacy",
+                "/privacy/",
+            )
         ):
             return None
 

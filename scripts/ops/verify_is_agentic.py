@@ -34,7 +34,10 @@ from backend import create_app  # noqa: E402
 
 
 def run_full_verification() -> bool:
-    app = create_app()
+    app = create_app("testing")
+    with app.app_context():
+        from backend.extensions import db
+        db.create_all()
     client = app.test_client()
     passed = 0
     total = 10
