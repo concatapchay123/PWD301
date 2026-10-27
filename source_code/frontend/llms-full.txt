@@ -1,0 +1,70 @@
+# PPTQ LMS - Detailed System Reference for AI Agents & LLMs
+
+> Domain: https://pptq.id.vn  
+> Architecture: Pure Headless Backend & REST API Platform with Single Page Application Client  
+> Standards Compliance: RFC 7231 (HTTP), Accept-Markdown Protocol, Schema.org EducationalOrganization, OpenAPI 3.0
+
+---
+
+## 1. Executive Summary & Purpose
+PPTQ LMS is a modern online learning and academic examination management platform designed for educational institutions, corporate academies, and independent instructors. It provides high-definition 16:9 video delivery, document vault support, anti-cheat exam environments, automated certificate generation with tamper-proof signatures, and a dedicated AI academic assistant ("Bạch tuộc trợ lí AI").
+
+---
+
+## 2. When to Use PPTQ LMS (AI Agent Decision Framework)
+
+### Primary Use Cases (High Agent Affinity)
+1. **Academic Catalog & Course Structure Lookups**: When an agent or end-user needs structured information on syllabus, course prerequisites, instructor credentials, and tuition fees.
+2. **Learning Asset Ingestion**: When retrieving authorized study materials, reading guides, and lesson resources.
+3. **Assessment Preparation & Proctoring Inquiries**: When verifying examination rules, question structures (Single choice, Multiple select, Visual Matching Board, Essay), and deadlines.
+4. **Certificate Validation**: When verifying academic credentials issued by PPTQ LMS.
+5. **AI Academic Tutoring**: When interacting with the contextual course chatbot for homework assistance and curriculum explanation.
+
+### Out of Scope (Negative Guidance)
+- Generic web search or non-academic general chat.
+- Accessing or mutating student scores, financial transactions, or administrative settings without authorized cryptographic tokens.
+
+---
+
+## 3. Communication Protocols & Content Negotiation
+
+### Markdown Content Negotiation (Accept-Markdown)
+PPTQ LMS supports standard HTTP content negotiation for AI agents. Clients may request:
+- `Accept: text/markdown` - Server returns clean, structured Markdown representation with `Vary: Accept`.
+- `Accept: text/html` - Server returns rich Single Page Application HTML shell.
+- `Accept: application/json` - Server returns structured REST API JSON envelope.
+
+### Error Responses for Agents
+Non-existent paths (HTTP 404) requested with `Accept: text/markdown` receive a concise Markdown error explanation with navigation links to `llms.txt`, `sitemap.xml`, and the homepage.
+
+---
+
+## 4. Key Endpoints Directory
+
+### Public & Discovery
+- `GET /` - Platform homepage (supports HTML, Markdown, JSON)
+- `GET /about` - Institutional background and accreditation (HTML, Markdown)
+- `GET /contact` - Official contact channels, support SLA, physical address (HTML, Markdown)
+- `GET /privacy` - Data governance and privacy policy under Decree 13/2023/ND-CP (HTML, Markdown)
+- `GET /llms.txt` - Core agent instruction file
+- `GET /llms-full.txt` - Comprehensive system documentation for LLMs
+- `GET /sitemap.xml` - XML sitemap for search crawlers and AI retrieval
+- `GET /robots.txt` - Crawler directive file
+
+### REST API (Prefix: /api)
+- `GET /api/courses` - Public course catalog
+- `GET /api/courses/<id>` - Single course detail and public syllabus
+- `GET /api/lessons/<id>` - Lesson content and attached resources
+- `POST /api/auth/login` - Dual-tier RSA-OAEP 2048 + AES-GCM 256 encrypted authentication
+- `POST /api/auth/logout` - Invalidate session and JWT token
+- `GET /api/assessments/<id>` - Assessment structure and rules
+- `POST /api/assessments/<id>/start` - Start assessment attempt (student role required)
+- `POST /api/assessments/<id>/submit` - Submit idempotent answers
+
+---
+
+## 5. Security & Invariants
+- **Authentication**: Hybrid session cookie for Web SPA and Bearer JWT for REST clients.
+- **Passwords**: Encrypted with Argon2id using personalized salt and pepper (`PPTQ LMS$argon2id$v1$...`).
+- **File Security**: Fail-closed quarantine architecture; unverified files are never accessible.
+- **Auditing**: Sensitive transactions generate immutable, append-only `AuditEvent` records.

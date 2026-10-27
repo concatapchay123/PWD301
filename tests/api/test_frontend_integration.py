@@ -188,7 +188,8 @@ def test_admin_portal_authenticated_flow(client: FlaskClient, app: Flask) -> Non
         session=sess,
     )
     assign_role_to_user(admin.id, "ADMIN", session=sess)
-    admin.is_email_verified = True
+    from datetime import datetime, timezone
+    admin.email_verified_at = datetime.now(timezone.utc)
     sess.commit()
 
     # Authenticate admin session
@@ -261,7 +262,10 @@ def test_frontend_js_syntax_integrity() -> None:
         pytest.skip("Node.js not installed in environment")
 
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-    js_pattern = os.path.join(repo_root, "frontend", "assets", "js", "**", "*.js")
+    js_pattern = os.path.join(repo_root, "source_code", "frontend", "assets", "js", "**", "*.js")
+    js_files = glob.glob(js_pattern, recursive=True)
+    if not js_files:
+        js_pattern = os.path.join(repo_root, "frontend", "assets", "js", "**", "*.js")
     js_files = glob.glob(js_pattern, recursive=True)
     assert len(js_files) >= 5, f"Expected at least 5 frontend JS files, found {len(js_files)}"
 

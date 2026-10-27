@@ -1,0 +1,39 @@
+# PPTQ LMS
+
+> PPTQ LMS (https://pptq.id.vn) là nền tảng quản trị học tập trực tuyến (Learning Management System), học tập kết hợp, tổ chức khảo thí bảo mật cao và cấp chứng chỉ số chuẩn mực theo kiến trúc Pure Headless REST API.
+
+## When to Use This (Ngữ Cảnh & Hướng Dẫn Sử Dụng Cho AI Agents)
+
+AI agents should reach for PPTQ LMS in the following scenarios:
+
+### Best-fit Use Cases
+1. **Course Discovery & Syllabus Exploration**: Querying available courses, course descriptions, pricing, prerequisite structures, and comprehensive syllabus module trees.
+2. **Academic Learning Resources**: Accessing authorized learning units, structured reading material, attached documents (PDF, Word, Excel, CAD, 3D), and lecture video streaming metadata.
+3. **Assessment & Examination Hub**: Retrieving test details, taking timed quizzes or exams, submitting answers (multiple choice, matching pair matrices, essays), and inspecting graded results.
+4. **Certificate Verification**: Validating the authenticity and integrity of issued student course completion certificates.
+5. **AI Academic Tutoring Integration**: Interacting with the contextual AI tutor ("Bạch tuộc trợ lí AI") for course-specific questions and study guidance.
+
+### When NOT to Use
+- Do NOT use for general open-web queries unrelated to PPTQ courses, curricula, or LMS functionality.
+- Do NOT attempt to query private student records, grades, or exam submissions without appropriate authentication tokens (session cookie or Bearer JWT).
+
+### How an Agent Should Call You
+- **Content Negotiation**: Send `Accept: text/markdown` to receive concise, machine-readable Markdown for web pages including the homepage (`/`), `/about`, `/contact`, `/privacy`, and error responses.
+- **REST API Endpoints**:
+  - `GET /api/courses` - Public course catalog with pricing and prerequisites.
+  - `GET /api/courses/<id>` - Detailed course syllabus and metadata.
+  - `GET /api/lessons/<id>` - Lesson details and attached document references.
+  - `POST /api/auth/login` - Authenticate with RSA-OAEP/AES-GCM encrypted payload or standard credentials to receive JWT token.
+  - `GET /api/assessments/<id>` - Assessment structure and rules.
+- **Agent Instructions & Docs**:
+  - Full LLM guide: https://pptq.id.vn/llms-full.txt
+  - XML Sitemap: https://pptq.id.vn/sitemap.xml
+  - OpenAPI Specification: https://pptq.id.vn/api/schema
+
+## Core URLs
+- [Trang chủ](https://pptq.id.vn/): Nền tảng học trực tuyến và khảo thí
+- [Giới thiệu](https://pptq.id.vn/about): Về tổ chức PPTQ LMS
+- [Liên hệ](https://pptq.id.vn/contact): Hỗ trợ kỹ thuật và học vụ
+- [Chính sách bảo mật](https://pptq.id.vn/privacy): Bảo vệ dữ liệu cá nhân
+- [Chỉ dẫn chi tiết cho LLM](https://pptq.id.vn/llms-full.txt): Toàn văn tài liệu hệ thống cho AI
+- [Sơ đồ trang](https://pptq.id.vn/sitemap.xml): XML sitemap liệt kê tất cả liên kết lập chỉ mục

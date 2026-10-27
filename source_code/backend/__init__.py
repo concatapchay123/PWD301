@@ -20,6 +20,7 @@ from flask import (
     Response,
     g,
     jsonify,
+    make_response,
     request,
     session,
 )
@@ -209,6 +210,26 @@ def _format_error_response(
     retry_after: int | None = None,
 ) -> tuple[Response, int]:
     """Format an error response adhering to the PWD301 error model."""
+    accept = request.headers.get("Accept", "") if request else ""
+    if status_code == 404 and "text/markdown" in accept:
+        md_body = (
+            "# 404 - Không Tìm Thấy Tài Nguyên (Resource Not Found)\n\n"
+            f"{message}\n\n"
+            "## Điều hướng tài nguyên hệ thống cho AI Agents & Người dùng:\n"
+            "- [Trang chủ hệ thống](https://pptq.id.vn/)\n"
+            "- [Chỉ dẫn cho AI Agents (llms.txt)](https://pptq.id.vn/llms.txt)\n"
+            "- [Tài liệu hệ thống (llms-full.txt)](https://pptq.id.vn/llms-full.txt)\n"
+            "- [Sơ đồ trang web (sitemap.xml)](https://pptq.id.vn/sitemap.xml)\n"
+            "- [Giới thiệu về chúng tôi](https://pptq.id.vn/about)\n"
+            "- [Thông tin liên hệ hỗ trợ](https://pptq.id.vn/contact)\n"
+            "- [Chính sách bảo mật](https://pptq.id.vn/privacy)\n"
+            "- [API Catalog](https://pptq.id.vn/api)\n"
+        )
+        resp = make_response(md_body, 404)
+        resp.headers["Content-Type"] = "text/markdown; charset=utf-8"
+        resp.headers["Vary"] = "Accept"
+        return resp, 404
+
     correlation_id = getattr(g, "correlation_id", uuid.uuid4().hex)
 
     resp = jsonify(
@@ -378,6 +399,26 @@ def _register_error_handlers(app: Flask) -> None:
 
     @app.errorhandler(404)
     def not_found_error(error: HTTPException | Exception) -> Response | tuple[Response, int]:
+        accept = request.headers.get("Accept", "") if request else ""
+        if "text/markdown" in accept:
+            md_body = (
+                "# 404 - Không Tìm Thấy Trang (Resource Not Found)\n\n"
+                "Tài nguyên hoặc đường dẫn bạn yêu cầu không tồn tại trên hệ thống PPTQ LMS.\n\n"
+                "## Điều hướng tài nguyên hệ thống cho AI Agents & Người dùng:\n"
+                "- [Trang chủ hệ thống](https://pptq.id.vn/)\n"
+                "- [Chỉ dẫn cho AI Agents (llms.txt)](https://pptq.id.vn/llms.txt)\n"
+                "- [Tài liệu hệ thống (llms-full.txt)](https://pptq.id.vn/llms-full.txt)\n"
+                "- [Sơ đồ trang web (sitemap.xml)](https://pptq.id.vn/sitemap.xml)\n"
+                "- [Giới thiệu về chúng tôi](https://pptq.id.vn/about)\n"
+                "- [Thông tin liên hệ hỗ trợ](https://pptq.id.vn/contact)\n"
+                "- [Chính sách bảo mật](https://pptq.id.vn/privacy)\n"
+                "- [API Catalog](https://pptq.id.vn/api)\n"
+            )
+            resp = make_response(md_body, 404)
+            resp.headers["Content-Type"] = "text/markdown; charset=utf-8"
+            resp.headers["Vary"] = "Accept"
+            return resp
+
         return _format_error_response(
             code="RESOURCE_NOT_FOUND",
             message=getattr(error, "description", "The requested resource was not found."),

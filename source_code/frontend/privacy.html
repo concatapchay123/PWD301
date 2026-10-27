@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="vi" class="h-full">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chính Sách Bảo Mật &amp; Quyền Riêng Tư Dữ Liệu PPTQ LMS</title>
+  <link rel="canonical" href="https://pptq.id.vn/privacy">
+  <meta name="description" content="Chính sách bảo mật thông tin, quyền riêng tư dữ liệu cá nhân học viên và tiêu chuẩn tuân thủ Nghị định 13/2023/NĐ-CP của hệ thống PPTQ LMS.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://pptq.id.vn/privacy">
+  <meta property="og:title" content="Chính Sách Bảo Mật &amp; Quyền Riêng Tư Dữ Liệu PPTQ LMS">
+  <meta property="og:description" content="Chính sách bảo vệ dữ liệu cá nhân, lưu trữ và an toàn bảo mật trên nền tảng PPTQ LMS.">
+  <meta property="og:image" content="https://pptq.id.vn/frontend/assets/img/pptq_icon.png">
+  <link rel="icon" type="image/x-icon" href="/frontend/favicon.ico">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#FAF9F5] text-[#222120] antialiased min-h-full flex flex-col font-['Inter',sans-serif]">
+  <!-- Header Navigation -->
+  <header class="border-b border-[#E8E6DF] bg-[#FAF9F5]/90 backdrop-blur sticky top-0 z-20">
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
+      <a href="/" class="flex items-center gap-2.5 font-black text-lg tracking-tight text-[#222120]">
+        <img src="/frontend/assets/img/pptq_icon.png" alt="PPTQ Logo" class="w-8 h-8 rounded-lg shadow-xs">
+        <span>PPTQ LMS</span>
+      </a>
+      <nav class="flex items-center gap-4 text-xs font-semibold">
+        <a href="/" class="text-[#5C5B57] hover:text-[#222120]">Trang chủ</a>
+        <a href="/about" class="text-[#5C5B57] hover:text-[#222120]">Giới thiệu</a>
+        <a href="/contact" class="text-[#5C5B57] hover:text-[#222120]">Liên hệ</a>
+        <a href="/privacy" class="text-[#222120] font-bold">Bảo mật</a>
+        <a href="/#/student/catalog" class="px-3 py-1.5 rounded-lg bg-[#222120] text-white hover:bg-[#3E3D3A] transition-colors">Vào lớp học</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="flex-1 max-w-4xl mx-auto px-4 sm:px-6 py-10 sm:py-16 space-y-10">
+    <header class="space-y-3">
+      <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#E8E6DF] text-xs font-semibold text-[#5C5B57]">
+        Tuân thủ pháp luật &amp; Nghị định 13/2023/NĐ-CP
+      </div>
+      <h1 class="text-3xl sm:text-4xl font-extrabold tracking-tight text-[#222120] font-['Plus_Jakarta_Sans',sans-serif]">
+        Chính Sách Bảo Mật &amp; Quyền Riêng Tư Dữ Liệu PPTQ LMS
+      </h1>
+      <p class="text-base text-[#5C5B57] leading-relaxed">
+        PPTQ LMS cam kết bảo vệ dữ liệu cá nhân và quyền riêng tư của mọi học viên, giảng viên và đối tác theo đúng quy định của pháp luật Việt Nam.
+      </p>
+    </header>
+
+    <section class="space-y-4">
+      <h2 class="text-2xl font-bold tracking-tight text-[#222120] font-['Plus_Jakarta_Sans',sans-serif]">
+        1. Nguyên Tắc Thu Thập &amp; Xử Lý Dữ Liệu
+      </h2>
+      <p class="text-sm sm:text-base text-[#5C5B57] leading-relaxed">
+        Hệ thống chỉ thu thập các trường dữ liệu cần thiết phục vụ trực tiếp cho hoạt động quản trị học tập, khảo thí, cấp chứng chỉ và đối soát tài chính:
+      </p>
+      <ul class="list-disc list-inside space-y-2 text-sm sm:text-base text-[#5C5B57] pl-2">
+        <li><strong>Thông tin tài khoản:</strong> Địa chỉ email định danh, họ tên hiển thị, mật khẩu được băm một chiều qua giải thuật chuẩn hóa Argon2id với salt và pepper bảo mật.</li>
+        <li><strong>Dữ liệu tiến độ học tập:</strong> Thời gian xem video bài giảng, trạng thái hoàn thành đơn vị học phần và các tài liệu đã tải xuống.</li>
+        <li><strong>Dữ liệu bài thi &amp; khảo thí:</strong> Câu trả lời đã nộp, thời điểm bắt đầu/kết thúc bài làm, lịch sử chấm điểm và các bản ghi sự kiện giám sát phòng thi (rời màn hình, mở tab khác).</li>
+        <li><strong>Lịch sử giao dịch:</strong> Mã tham chiếu thanh toán VietQR và trạng thái đơn hàng (không lưu trữ số thẻ ngân hàng hay mã bảo mật CVV).</li>
+      </ul>
+    </section>
+
+    <section class="space-y-4">
+      <h2 class="text-2xl font-bold tracking-tight text-[#222120] font-['Plus_Jakarta_Sans',sans-serif]">
+        2. Biện Pháp Kỹ Thuật Bảo Mật Thông Tin
+      </h2>
+      <p class="text-sm sm:text-base text-[#5C5B57] leading-relaxed">
+        Hệ thống triển khai các tiêu chuẩn bảo mật đa tầng nhằm triệt tiêu nguy cơ rò rỉ hoặc can thiệp trái phép:
+      </p>
+      <ul class="list-disc list-inside space-y-2 text-sm sm:text-base text-[#5C5B57] pl-2">
+        <li><strong>Mã hóa đầu cuối trong truyền tải:</strong> Giao thức HTTPS TLS 1.3 bắt buộc kết hợp mã hóa tải trọng đăng nhập lai RSA-OAEP 2048-bit và AES-GCM 256-bit chống nghe lén và tấn công replay.</li>
+        <li><strong>Kiểm soát phiên làm việc duy nhất:</strong> Mỗi lượt làm bài thi áp dụng cơ chế khóa phiên đơn lẻ (Single Active Editing Lease) nhằm ngăn chặn gian lận thi hộ đồng thời.</li>
+        <li><strong>Nhật ký kiểm toán bất biến:</strong> Toàn bộ các thao tác nhạy cảm (sửa điểm, phê duyệt khóa học, nạp tiền, đổi quyền) đều được ghi vào bảng kiểm toán append-only không thể xóa sửa.</li>
+        <li><strong>Cô lập tệp tin tải lên:</strong> Tệp tin của học viên và giảng viên được cách ly và quét virus tự động trước khi cho phép truy cập.</li>
+      </ul>
+    </section>
+
+    <section class="space-y-4">
+      <h2 class="text-2xl font-bold tracking-tight text-[#222120] font-['Plus_Jakarta_Sans',sans-serif]">
+        3. Quyền Của Chủ Thể Dữ Liệu
+      </h2>
+      <p class="text-sm sm:text-base text-[#5C5B57] leading-relaxed">
+        Học viên và giảng viên có đầy đủ quyền theo quy định của Nghị định 13/2023/NĐ-CP về bảo vệ dữ liệu cá nhân:
+      </p>
+      <ol class="list-decimal list-inside space-y-2 text-sm sm:text-base text-[#5C5B57] pl-2">
+        <li>Quyền được biết và đồng ý về mục đích xử lý dữ liệu học tập.</li>
+        <li>Quyền tra cứu, xuất bản sao lịch sử học tập và chứng chỉ đã đạt được.</li>
+        <li>Quyền yêu cầu chỉnh sửa thông tin cá nhân sai lệch hoặc cập nhật hồ sơ.</li>
+        <li>Quyền khiếu nại, phản ánh vi phạm an toàn dữ liệu qua kênh tiếp nhận chính thức.</li>
+      </ol>
+    </section>
+
+    <section class="space-y-4">
+      <h2 class="text-2xl font-bold tracking-tight text-[#222120] font-['Plus_Jakarta_Sans',sans-serif]">
+        4. Chính Sách Cookie &amp; Lưu Trữ Cục Bộ
+      </h2>
+      <p class="text-sm sm:text-base text-[#5C5B57] leading-relaxed">
+        PPTQ LMS sử dụng Cookie kỹ thuật cần thiết (HTTPOnly, SameSite=Lax, Secure) để duy trì phiên đăng nhập và bảo vệ chống tấn công CSRF. Hệ thống tuyệt đối không chia sẻ dữ liệu duyệt web cho bên thứ ba vì mục đích quảng cáo thương mại.
+      </p>
+    </section>
+
+    <section class="p-6 rounded-2xl bg-white border border-[#E8E6DF] shadow-xs space-y-3">
+      <h3 class="font-bold text-base text-[#222120]">Đầu mối Phụ trách Bảo vệ Dữ liệu (DPO)</h3>
+      <div class="text-xs sm:text-sm text-[#5C5B57] space-y-1">
+        <p><strong>Bộ phận:</strong> Ban Quản trị An ninh Thông tin &amp; Pháp chế PPTQ LMS</p>
+        <p><strong>Email chuyên trách:</strong> <a href="mailto:privacy@pptq.id.vn" class="text-indigo-600 hover:underline">privacy@pptq.id.vn</a></p>
+        <p><strong>Hotline:</strong> +84-908-667-141</p>
+        <p><strong>Thời điểm cập nhật chính sách:</strong> 27 tháng 10 năm 2026</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-[#E8E6DF] py-6 text-center text-xs text-[#8F8E8A]">
+    <div class="max-w-4xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+      <span>&copy; 2026 PPTQ LMS. Tất cả quyền được bảo lưu.</span>
+      <div class="flex gap-4">
+        <a href="/about" class="hover:underline">Giới thiệu</a>
+        <a href="/contact" class="hover:underline">Liên hệ</a>
+        <a href="/privacy" class="hover:underline">Bảo mật</a>
+        <a href="/sitemap.xml" class="hover:underline">Sitemap</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

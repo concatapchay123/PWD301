@@ -29,19 +29,20 @@ def _get_frontend_dir() -> str:
     if env_dir and os.path.isdir(env_dir):
         return os.path.abspath(env_dir)
 
-    # Relative to this file: src/pwd301/blueprints/frontend/routes.py -> repo_root/frontend
-    base_dir = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "..", "frontend")
-    )
-    if os.path.isdir(base_dir):
-        return base_dir
+    this_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.abspath(os.path.join(this_dir, "..", "..", "..", "frontend")),
+        os.path.abspath(os.path.join(this_dir, "..", "..", "..", "source_code", "frontend")),
+        os.path.abspath(os.path.join(this_dir, "..", "..", "..", "..", "frontend")),
+        "/app/frontend",
+        "/app/source_code/frontend",
+        "/var/www/frontend",
+    ]
+    for candidate in candidates:
+        if os.path.isdir(candidate):
+            return candidate
 
-    # Fallback if running inside Docker container with /app/frontend
-    for d in ('/app/source_code/frontend', '/app/frontend'):
-        if os.path.isdir(d):
-            return d
-
-    return base_dir
+    return candidates[0]
 
 
 SCREEN_METADATA: dict[str, dict[str, str]] = {
@@ -198,16 +199,129 @@ SCREEN_METADATA: dict[str, dict[str, str]] = {
 }
 
 
+
+
+def _get_homepage_markdown() -> str:
+    """Generate structured markdown representation of the PPTQ LMS platform for AI agents."""
+    return (
+        "# PPTQ LMS - Nền Tảng Học Trực Tuyến & Đào Tạo Khảo Thí Toàn Diện\n\n"
+        "> Hệ thống đào tạo trực tuyến, tổ chức khóa học học thuật, bài thi chống gian lận và cấp chứng chỉ số chuẩn mực PWD301.\n\n"
+        "## Giới thiệu Tổng quan\n"
+        "PPTQ LMS (https://pptq.id.vn) là nền tảng quản trị học tập (Learning Management System) hiện đại, "
+        "kết hợp trải nghiệm học tập đa phương tiện (video 16:9 DRM, tài liệu học tập phong phú), "
+        "trung tâm khảo thí trực tuyến bảo mật cao (ngân hàng câu hỏi trắc nghiệm, Matching Board 2 cột, tự luận), "
+        "cấp chứng chỉ số PDF xác thực tức thì và trợ lý học vụ thông minh 'Bạch tuộc trợ lí AI'.\n\n"
+        "## Tính Năng Nền Tảng\n"
+        "- **Không gian Học tập Tương tác**: Bài giảng video tỷ lệ chuẩn 16:9, tài liệu đính kèm phong phú (PDF, DOCX, XLSX, AutoCAD, 3D), ghi nhận tiến độ thời gian thực.\n"
+        "- **Khảo thí & Giám sát Chống Gian lận**: Đa dạng câu hỏi thi, chấm điểm tự động và cơ chế Blackout Shield phát hiện mất tiêu điểm màn hình, mở DevTools, chia sẻ màn hình.\n"
+        "- **Chứng chỉ Số & Đánh giá Chuẩn mực**: Tự động đánh giá điều kiện tốt nghiệp và phát hành chứng chỉ điện tử PDF có mã định danh xác thực.\n"
+        "- **Trợ lý Học thuật Bạch tuộc AI**: Đồng hành giải đáp bài học, tóm tắt nội dung và định hướng học tập 24/7.\n"
+        "- **Cổng Thanh toán Tự động**: Thanh toán học phí và nạp ví qua mã VietQR chuẩn xác, kích hoạt quyền học tập vĩnh viễn (Lifetime Enrollment).\n"
+        "- **Kiến trúc Pure Headless REST API**: Kết nối linh hoạt cho Web SPA, ứng dụng di động và AI agents với bảo mật RSA-OAEP 2048 + AES-GCM 256.\n\n"
+        "## When to Use This (Chỉ Dẫn Cho AI Agents)\n"
+        "- **Best-fit Use Cases**: Tra cứu danh mục khóa học, xem đề cương chi tiết, tìm kiếm tài liệu học tập (PDF, Word, Excel, CAD, 3D), làm bài kiểm tra khảo thí bảo mật cao và xác thực chứng chỉ số đào tạo.\n"
+        "- **How an Agent Should Call You**: Gửi tiêu đề HTTP Accept: text/markdown để nhận phản hồi Markdown tối ưu cho AI, hoặc gọi REST API /api/courses để lấy dữ liệu JSON có cấu trúc.\n"
+        "- **When NOT to Use**: Không dùng cho các truy vấn web mở ngoài phạm vi đào tạo PPTQ LMS; không truy vấn điểm số học viên cá nhân khi chưa xác thực qua JWT/Session.\n"
+        "- **Tài liệu hướng dẫn agent**: [llms.txt](https://pptq.id.vn/llms.txt)\n"
+        "- **Tài liệu hệ thống đầy đủ**: [llms-full.txt](https://pptq.id.vn/llms-full.txt)\n"
+        "- **Sơ đồ trang web**: [sitemap.xml](https://pptq.id.vn/sitemap.xml)\n"
+        "- **API Catalog**: [REST API](https://pptq.id.vn/api)\n\n"
+        "## Trang Thông Tin & Độ Tin Cậy (Trust Anchors)\n"
+        "- [Giới thiệu về chúng tôi (About Us)](https://pptq.id.vn/about)\n"
+        "- [Thông tin liên hệ & hỗ trợ (Contact)](https://pptq.id.vn/contact)\n"
+        "- [Chính sách bảo mật (Privacy Policy)](https://pptq.id.vn/privacy)\n\n"
+        "## Thông Tin Đơn Vị Vận Hành\n"
+        "- **Tên đơn vị**: Hệ thống Đào tạo PPTQ LMS\n"
+        "- **Hotline**: +84-908-667-141\n"
+        "- **Email hỗ trợ**: admin@pptq.id.vn\n"
+        "- **Địa chỉ**: Khu Công Nghệ Cao, Thành phố Thủ Đức, TP. Hồ Chí Minh, Việt Nam\n"
+    )
+
+
+def _get_about_markdown() -> str:
+    """Generate markdown representation of About Us for AI agents."""
+    return (
+        "# Giới Thiệu Về Hệ Thống Đào Tạo PPTQ LMS\n\n"
+        "> Nền tảng quản lý đào tạo trực tuyến, triết lý sư phạm chuẩn mực và công nghệ khảo thí tiên tiến.\n\n"
+        "## 1. Sứ Mệnh & Tầm Nhìn\n"
+        "PPTQ LMS ra đời với mục tiêu cung cấp giải pháp đào tạo trực tuyến và khảo thí chuẩn mực, "
+        "kết hợp nội dung học thuật chất lượng cao, trải nghiệm người học mượt mà và cơ chế đánh giá khảo thí trung thực. "
+        "Hệ thống cho phép học viên tiếp thu kiến thức chủ động theo tốc độ cá nhân, "
+        "đồng thời bảo đảm kết quả đánh giá phản ánh chính xác năng lực thực tế.\n\n"
+        "## 2. Nền Tảng Công Nghệ & Kiến Trúc\n"
+        "- **Kiến trúc Pure Headless REST API**: Phục vụ chuẩn dữ liệu JSON máy đọc được cho Web SPA và AI agents.\n"
+        "- **Phòng chống gian lận đa tầng**: Giám sát phòng thi Blackout Shield chống chuyển tab và mở DevTools.\n"
+        "- **Bảo vệ bản quyền số DRM**: Luồng video HLS mã hóa với token bảo vệ gắn liền phiên học viên.\n"
+        "- **Chứng chỉ số xác thực tức thì**: Phát hành chứng chỉ PDF chính thức có mã định danh xác thực.\n"
+        "- **Trợ lý học thuật AI**: Tích hợp 'Bạch tuộc trợ lí AI' hỗ trợ giải đáp học tập 24/7.\n\n"
+        "## 3. Cam Kết Đào Tạo & Quyền Lợi\n"
+        "Mọi khóa học đều được kiểm duyệt học thuật trước khi công bố. "
+        "Quyền lợi học viên được bảo đảm vĩnh viễn (Lifetime Enrollment) sau khi hoàn tất đăng ký khóa học.\n\n"
+        "## 4. Thông Tin Tổ Chức\n"
+        "- Đơn vị: Hệ thống Đào tạo PPTQ LMS\n"
+        "- Địa chỉ: Khu Công Nghệ Cao, Thành phố Thủ Đức, TP. Hồ Chí Minh, Việt Nam\n"
+        "- Hotline: +84-908-667-141 | Email: admin@pptq.id.vn\n"
+        "- Website: https://pptq.id.vn\n"
+    )
+
+
+def _get_contact_markdown() -> str:
+    """Generate markdown representation of Contact info for AI agents."""
+    return (
+        "# Thông Tin Liên Hệ & Hỗ Trợ Kỹ Thuật PPTQ LMS\n\n"
+        "> Kênh tiếp nhận hỗ trợ học vụ, giải đáp kỹ thuật và tiếp nhận phản ánh dịch vụ 24/7.\n\n"
+        "## Kênh Liên Hệ Trực Tiếp\n"
+        "- **Hotline hỗ trợ**: +84-908-667-141\n"
+        "- **Email học vụ**: admin@pptq.id.vn\n"
+        "- **Báo cáo an ninh**: security@pptq.id.vn\n"
+        "- **Trụ sở chính**: Khu Công Nghệ Cao, Phường Tân Phú, Thành phố Thủ Đức, TP. Hồ Chí Minh, Việt Nam\n\n"
+        "## Thời Gian Làm Việc & SLA Cam Kết\n"
+        "- Bộ phận hỗ trợ: Thứ Hai - Thứ Bảy: 08:00 - 17:30 (Giờ Việt Nam - UTC+7)\n"
+        "- Hệ thống máy chủ & khảo thí: Tự động vận hành 24/7/365\n"
+        "- Cam kết phản hồi sự cố phòng thi: Dưới 15 phút\n"
+        "- Xử lý phúc khảo điểm thi: 24 - 48 giờ làm việc\n"
+    )
+
+
+def _get_privacy_markdown() -> str:
+    """Generate markdown representation of Privacy Policy for AI agents."""
+    return (
+        "# Chính Sách Bảo Mật & Quyền Riêng Tư Dữ Liệu PPTQ LMS\n\n"
+        "> Tiêu chuẩn bảo vệ dữ liệu cá nhân theo Nghị định 13/2023/NĐ-CP của Chính phủ Việt Nam.\n\n"
+        "## 1. Dữ Liệu Thu Thập & Mục Đích Xử Lý\n"
+        "Hệ thống chỉ thu thập các dữ liệu cần thiết phục vụ quản trị học tập: thông tin tài khoản (email, họ tên, mật khẩu băm Argon2id), tiến độ xem bài giảng, bài nộp khảo thí và mã giao dịch học phí VietQR.\n\n"
+        "## 2. Tiêu Chuẩn Bảo Mật Kỹ Thuật\n"
+        "- Mã hóa truyền tải HTTPS TLS 1.3 và tải trọng đăng nhập lai RSA-OAEP 2048 + AES-GCM 256.\n"
+        "- Khóa phiên làm bài thi đơn lẻ (Single Active Editing Lease) chống thi hộ đồng thời.\n"
+        "- Bảng kiểm toán append-only ghi nhận toàn bộ biến động điểm số, tài khoản và giao dịch.\n"
+        "- Tệp tin tải lên được cách ly và kiểm dịch tự động trước khi công bố.\n\n"
+        "## 3. Quyền Của Học Viên\n"
+        "Học viên có quyền tra cứu, trích xuất dữ liệu học tập, yêu cầu chỉnh sửa thông tin sai lệch và khiếu nại bảo mật qua email privacy@pptq.id.vn.\n\n"
+        "## 4. Đầu Mối Phụ Trách Dữ Liệu (DPO)\n"
+        "- Ban Quản trị An ninh Thông tin PPTQ LMS\n"
+        "- Email: privacy@pptq.id.vn | Hotline: +84-908-667-141\n"
+        "- Cập nhật lần cuối: 27/10/2026\n"
+    )
+
+
 @frontend_bp.route("/", methods=["GET"])
 @frontend_bp.route("/frontend/", methods=["GET"])
 @frontend_bp.route("/frontend", methods=["GET"])
 def index() -> Response:
-    """Serve the SPA Web application index or return JSON for automated API clients."""
+    """Serve the SPA Web application index, Markdown for AI agents, or JSON for automated API clients."""
     accept = request.headers.get("Accept", "")
-    wants_json = "application/json" in accept and "text/html" not in accept
+    wants_markdown = "text/markdown" in accept
+    wants_json = "application/json" in accept and "text/html" not in accept and not wants_markdown
+
+    if wants_markdown:
+        md_content = _get_homepage_markdown()
+        resp = make_response(md_content, 200)
+        resp.headers["Content-Type"] = "text/markdown; charset=utf-8"
+        resp.headers["Vary"] = "Accept"
+        return resp
 
     if wants_json:
-        return jsonify(
+        resp = jsonify(
             {
                 "name": "PWD301 Online Course Management Platform",
                 "status": "running",
@@ -216,12 +330,14 @@ def index() -> Response:
                 "api_docs": "/api",
             }
         )
+        resp.headers["Vary"] = "Accept"
+        return resp
 
     frontend_dir = _get_frontend_dir()
     index_path = os.path.join(frontend_dir, "index.html")
 
     if not os.path.isfile(index_path):
-        return jsonify(
+        resp = jsonify(
             {
                 "name": "PWD301 Online Course Management Platform",
                 "status": "running",
@@ -229,12 +345,15 @@ def index() -> Response:
                 "notice": "Frontend index.html is being initialized.",
             }
         )
+        resp.headers["Vary"] = "Accept"
+        return resp
 
     from flask_wtf.csrf import generate_csrf
 
     token = generate_csrf()
     resp = make_response(send_file(index_path, mimetype="text/html"))
     resp.set_cookie("csrf_token", token, samesite="Lax")
+    resp.headers["Vary"] = "Accept"
     return resp
 
 
@@ -329,3 +448,127 @@ def post_client_telemetry() -> tuple[Response, int]:
     """Ingest frontend client security and operational telemetry events."""
     data = request.get_json(silent=True) or {}
     return jsonify({"success": True, "event": data.get("event_type")}), 200
+
+
+
+@frontend_bp.route("/about", methods=["GET"])
+@frontend_bp.route("/about/", methods=["GET"])
+def serve_about() -> Response:
+    """Serve the About page supporting HTML and Markdown content negotiation."""
+    accept = request.headers.get("Accept", "")
+    if "text/markdown" in accept:
+        resp = make_response(_get_about_markdown(), 200)
+        resp.headers["Content-Type"] = "text/markdown; charset=utf-8"
+        resp.headers["Vary"] = "Accept"
+        return resp
+
+    frontend_dir = _get_frontend_dir()
+    page_path = os.path.join(frontend_dir, "about.html")
+    if os.path.isfile(page_path):
+        resp = make_response(send_file(page_path, mimetype="text/html"))
+    else:
+        resp = make_response(_get_about_markdown(), 200)
+        resp.headers["Content-Type"] = "text/markdown; charset=utf-8"
+    resp.headers["Vary"] = "Accept"
+    return resp
+
+
+@frontend_bp.route("/contact", methods=["GET"])
+@frontend_bp.route("/contact/", methods=["GET"])
+def serve_contact() -> Response:
+    """Serve the Contact page supporting HTML and Markdown content negotiation."""
+    accept = request.headers.get("Accept", "")
+    if "text/markdown" in accept:
+        resp = make_response(_get_contact_markdown(), 200)
+        resp.headers["Content-Type"] = "text/markdown; charset=utf-8"
+        resp.headers["Vary"] = "Accept"
+        return resp
+
+    frontend_dir = _get_frontend_dir()
+    page_path = os.path.join(frontend_dir, "contact.html")
+    if os.path.isfile(page_path):
+        resp = make_response(send_file(page_path, mimetype="text/html"))
+    else:
+        resp = make_response(_get_contact_markdown(), 200)
+        resp.headers["Content-Type"] = "text/markdown; charset=utf-8"
+    resp.headers["Vary"] = "Accept"
+    return resp
+
+
+@frontend_bp.route("/privacy", methods=["GET"])
+@frontend_bp.route("/privacy/", methods=["GET"])
+def serve_privacy() -> Response:
+    """Serve the Privacy policy page supporting HTML and Markdown content negotiation."""
+    accept = request.headers.get("Accept", "")
+    if "text/markdown" in accept:
+        resp = make_response(_get_privacy_markdown(), 200)
+        resp.headers["Content-Type"] = "text/markdown; charset=utf-8"
+        resp.headers["Vary"] = "Accept"
+        return resp
+
+    frontend_dir = _get_frontend_dir()
+    page_path = os.path.join(frontend_dir, "privacy.html")
+    if os.path.isfile(page_path):
+        resp = make_response(send_file(page_path, mimetype="text/html"))
+    else:
+        resp = make_response(_get_privacy_markdown(), 200)
+        resp.headers["Content-Type"] = "text/markdown; charset=utf-8"
+    resp.headers["Vary"] = "Accept"
+    return resp
+
+
+@frontend_bp.route("/llms.txt", methods=["GET"])
+@frontend_bp.route("/.well-known/llms.txt", methods=["GET"])
+def serve_llms_txt() -> Response:
+    """Serve agent instruction file with when-to-use guidance for AI agents."""
+    frontend_dir = _get_frontend_dir()
+    llms_path = os.path.join(frontend_dir, "llms.txt")
+    if os.path.isfile(llms_path):
+        resp = make_response(send_file(llms_path, mimetype="text/markdown"))
+    else:
+        resp = make_response(_get_homepage_markdown(), 200)
+    resp.headers["Content-Type"] = "text/markdown; charset=utf-8"
+    resp.headers["Vary"] = "Accept"
+    return resp
+
+
+@frontend_bp.route("/llms-full.txt", methods=["GET"])
+def serve_llms_full_txt() -> Response:
+    """Serve full system documentation file for LLMs."""
+    frontend_dir = _get_frontend_dir()
+    full_path = os.path.join(frontend_dir, "llms-full.txt")
+    if os.path.isfile(full_path):
+        resp = make_response(send_file(full_path, mimetype="text/markdown"))
+    else:
+        resp = make_response(_get_homepage_markdown(), 200)
+    resp.headers["Content-Type"] = "text/markdown; charset=utf-8"
+    resp.headers["Vary"] = "Accept"
+    return resp
+
+
+@frontend_bp.route("/sitemap.xml", methods=["GET"])
+def serve_sitemap() -> Response:
+    """Serve XML sitemap for search crawlers and AI agents."""
+    frontend_dir = _get_frontend_dir()
+    sitemap_path = os.path.join(frontend_dir, "sitemap.xml")
+    if os.path.isfile(sitemap_path):
+        resp = make_response(send_file(sitemap_path, mimetype="application/xml"))
+    else:
+        fallback = '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://pptq.id.vn/</loc><lastmod>2026-10-27</lastmod></url></urlset>'
+        resp = make_response(fallback, 200)
+    resp.headers["Content-Type"] = "application/xml; charset=utf-8"
+    return resp
+
+
+@frontend_bp.route("/robots.txt", methods=["GET"])
+def serve_robots_txt() -> Response:
+    """Serve robots.txt directing crawlers to the XML sitemap."""
+    frontend_dir = _get_frontend_dir()
+    robots_path = os.path.join(frontend_dir, "robots.txt")
+    if os.path.isfile(robots_path):
+        resp = make_response(send_file(robots_path, mimetype="text/plain"))
+    else:
+        fallback = "User-agent: *\nAllow: /\nSitemap: https://pptq.id.vn/sitemap.xml\n"
+        resp = make_response(fallback, 200)
+    resp.headers["Content-Type"] = "text/plain; charset=utf-8"
+    return resp
